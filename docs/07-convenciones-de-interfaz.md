@@ -137,6 +137,14 @@ una invariante de datos; el correo es la excepción, por el motivo 2.
   cuanto el **dígito verificador** no cuadra, sin esperar al guardado
   (`shared/identificacion.ts`, espejo del servidor, que es quien manda). El
   teléfono admite solo números con un `+` opcional delante.
+- **Un dato que el servidor deriva se enseña, no se teclea.** Cuando una cifra
+  sale de otra —la entrega del informe es la hora de llegada más las horas de
+  SLA de la compañía—, su casilla aparece **deshabilitada y ya calculada**, con
+  una línea debajo que dice de dónde sale («48,5 h de SLA desde la llegada»).
+  Ni se esconde ni se deja escribir: esconderla obligaría a fiarse, y dejarla
+  escribir inventaría un dato pactado. La cuenta se repite en el cliente solo
+  para verla mientras se elige; **quien manda es el servidor**, que la vuelve a
+  hacer al guardar con la misma regla.
 - **A una persona se la identifica ANTES de pedir sus datos.** Al abrir un caso,
   lo primero es el tipo y el número de documento, con un botón «Buscar
   paciente»; **las casillas del nombre no existen hasta haber buscado**, porque

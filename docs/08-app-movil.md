@@ -120,9 +120,12 @@ hay, la casa matriz si no; sin coordenadas cae a buscar por dirección)— y
 **«Ya llegué»**, que ya no es solo navegación: llama a
 `POST /auditor/visitas/{id}/llegada` y el servidor sella `llegada_at` con su
 propia hora antes de pasar al trabajo (409 si el caso ya no está programado;
-repetirlo no mueve el sello). Ese sello importa: si la ventana vence sin él, el
-servidor pasa el caso solo a **`no_auditado`** —la app lo pinta en rojo en el
-historial—. Si el caso ya tiene llegada registrada, notas o informe, la app
+repetirlo no mueve el sello). Ese sello importa: si el **plazo de llegada**
+vence sin él, el servidor pasa el caso solo a **`no_auditado`** —la app lo pinta
+en rojo en el historial— y **el caso le desaparece de lo que tiene por delante**.
+No es definitivo: la coordinación de Accumedical puede darle más horas
+(«Extender», contadas desde que las concede) y el caso vuelve a su agenda, así
+que puede marcar su llegada al llegar aunque sea tarde. Si el caso ya tiene llegada registrada, notas o informe, la app
 entra directo al trabajo: no se devuelve a nadie a la puerta.
 
 **El trabajo**, dentro del hospital:
@@ -207,8 +210,11 @@ entra directo al trabajo: no se devuelve a nadie a la puerta.
 
 En la bandeja, cada programada lleva un **semáforo contra el reloj**, con
 texto además del color: verde con 2 h o más por delante («Faltan 5 h»),
-anaranjado a menos de 2 h del inicio («Faltan 45 min») y rojo dentro de la
-ventana («EN CURSO») o pasada sin culminar («Vencida»).
+anaranjado a menos de 2 h del inicio («Faltan 45 min») y rojo pasada la hora de
+llegada («EN CURSO») o vencida sin culminar («Vencida»). El semáforo mira la
+hora de llegada y la entrega del informe, que desde sep 2026 son dos plazos
+distintos: el primero es su cita, el segundo el plazo de su informe
+(`docs/modulos/concurrencia.md`).
 
 ---
 

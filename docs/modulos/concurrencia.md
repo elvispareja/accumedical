@@ -7,8 +7,8 @@ y permisos intactos.
 
 Seguimiento de los pacientes hospitalizados de una aseguradora en los prestadores
 de su red. La primera pieza construida es la **bandeja de visitas**: programar la
-ida del médico auditor a un prestador, en una ventana de fecha y hora, avisando a
-quien haga falta.
+ida del médico auditor a un prestador —se fija **a qué hora debe llegar**, y de
+ahí salen los otros dos plazos— avisando a quien haga falta.
 
 ---
 
@@ -27,9 +27,11 @@ La visita del médico auditor. Es el expediente raíz del módulo.
 | `aseguradora_id` | **La palanca de ownership.** Toda consulta arranca acotada por ella |
 | `prestador_id` | A quién se visita. Tiene que tener convenio **vigente** con esa aseguradora |
 | `sede_id` | A dónde se va. `NULL` significa **casa matriz**: la dirección propia del prestador |
-| `desde` / `hasta` | La ventana. `CHECK (hasta > desde)` |
+| `desde` | **A qué hora debe llegar el auditor.** Lo único que se teclea de los tres plazos |
+| `hasta` | **Cuándo vence la entrega del informe**: `desde` + las horas de SLA de esa compañía. No se teclea ni se acepta por la API. `CHECK (hasta > desde)` |
+| `llegada_limite` | **Hasta cuándo se le acepta la llegada.** Nace igual a `desde`; cada prórroga lo empuja a «ahora + las horas concedidas». `CHECK (llegada_limite >= desde)` |
 | `estado` | `programada` · `asignada` · `auditando` · `cancelada` · `culminada` · `no_auditado`. **Ninguno se elige**: cada uno lo pone una acción (ver «La máquina de estados»). No se acepta por la API —no existe el campo en ningún esquema de escritura— ni hay desplegable en ninguna pantalla |
-| `llegada_at` | Cuándo el auditor marcó **«Ya llegué»** desde la app. `NULL` = nunca llegó. Es la marca que libra al caso de pasar a `no_auditado` cuando la ventana vence |
+| `llegada_at` | Cuándo el auditor marcó **«Ya llegué»** desde la app. `NULL` = nunca llegó. Es la marca que libra al caso de pasar a `no_auditado` cuando vence el **plazo de llegada** |
 | `observaciones` | Texto libre |
 | `auditor_id` | A qué médico auditor se derivó el caso. `NULL` = sin asignar. FK a `users` con RESTRICT: un auditor con casos no se puede borrar |
 | `comprobante_horario_path` | La imagen que comprueba el cambio de horario pedido por correo. Solo la ruta relativa en el volumen de subidas, como los logos |
@@ -75,10 +77,10 @@ su informe. Cada flecha la dispara una acción concreta:
 ```
 crear ──► programada ──► asignada ──► auditando ──► culminada
                ▲   │         │
-               │   │         └──► no_auditado   (la ventana venció sin llegada)
-               │   └──► cancelada               (el operador, mientras nadie llegó)
+               │   │         └──► no_auditado   (venció el plazo de llegada)
+               │   └──► cancelada               (la compañía, hasta que termina)
                └──────────────────┘
-                 reprogramar: una ventana futura devuelve el caso a la agenda
+                 prorrogar u hora futura lo devuelven a la agenda
 ```
 
 | A | Quién | Con qué acción |
@@ -87,10 +89,11 @@ crear ──► programada ──► asignada ──► auditando ──► culm
 | `asignada` | coordinador de plataforma | al derivar el caso a un auditor. Quitarle la asignación lo devuelve a `programada` |
 | `auditando` | auditor | «Ya llegué» en la app. Sella `llegada_at` y **libra al caso de vencer** |
 | `culminada` | auditor | al enviar el informe (desde `asignada` o `auditando`; enviar no resucita una cancelada ni una no auditada) |
-| `cancelada` | operador | `POST /visitas/{id}/cancelar`, **solo desde `programada` o `asignada`** |
-| — | nadie | **Un caso CERRADO ya no se edita**: `PATCH /visitas/{id}` responde `409` sobre `culminada` —el auditor mandó su informe, y cambiarle después el paciente, el prestador o la ventana lo convertiría en mentira— y sobre `cancelada` —no hay visita que preparar—. `no_auditado` **sí se edita**: la ventana venció sin que nadie llegara, y corregir el caso antes de reprogramarlo es lo que se quiere poder hacer. En la bandeja, el menú de un caso cerrado se queda solo con «Ver» |
-| `no_auditado` | el servidor | tarea periódica: pendiente + ventana vencida + sin llegada |
-| de `no_auditado` **de vuelta** | operador o coordinador | **reprogramar**: darle una ventana FUTURA. Vuelve a `asignada` si conserva su auditor —le reaparece en la app— o a `programada` si no lo tiene. El operador, guardando la ficha con la fecha nueva; el coordinador, con «Nueva fecha». La regla vive una sola vez en `service.revivir_al_reprogramar` |
+| `cancelada` | la compañía | `POST /visitas/{id}/cancelar`, **hasta que el caso termina**, con el auditor ya dentro incluido: si al asegurado le dan el alta mientras se audita, no hay por qué esperar un informe que ya no sirve. Lo acabado (`culminada`, `cancelada`) responde `409` |
+| — | nadie | **Un caso CERRADO ya no se edita**: `PATCH /visitas/{id}` responde `409` sobre `culminada` —el auditor mandó su informe, y cambiarle después el paciente, el prestador o los plazos lo convertiría en mentira— y sobre `cancelada` —no hay visita que preparar—. `no_auditado` **sí se edita**: el plazo de llegada venció sin que nadie llegara, y corregir el caso antes de reprogramarlo es lo que se quiere poder hacer. En la bandeja, el menú de un caso cerrado se queda solo con «Ver» |
+| `no_auditado` | el servidor | tarea periódica: pendiente + **plazo de llegada** vencido + sin llegada. **Es interno de Accumedical**: a la compañía se le sigue enseñando el estado que tenía —`asignada` o `programada`— y su aviso de campana va SOLO a la coordinación de plataforma, que es quien lo resuelve |
+| de `no_auditado` **de vuelta** | coordinador | **prorrogar**: más horas para llegar, contadas desde ahora («Extender»), que es **la única acción del coordinador sobre el plazo**. El caso vuelve a `asignada` o `programada` sin cambiar de día |
+| de `no_auditado` **de vuelta** | operador o coordinador | **reprogramar**: darle una hora de llegada FUTURA. Vuelve a `asignada` si conserva su auditor —le reaparece en la app— o a `programada` si no lo tiene. **Solo el operador**, guardando la ficha con la fecha nueva: el coordinador ya no mueve de día (se retiró «Nueva fecha» de su pantalla en sep 2026), porque lo suyo es dar horas con «Extender». La regla vive una sola vez en `service.revivir_al_reprogramar` |
 
 Tres decisiones que conviene no deshacer:
 
@@ -104,12 +107,14 @@ Tres decisiones que conviene no deshacer:
 - **Cancelar es un endpoint propio, no un campo del PATCH.** Así la auditoría
   guarda `visita_cancelada` con nombre y no un `estado: cancelada` perdido
   entre los campos editados, y la regla de hasta cuándo se puede vive en un
-  solo sitio. Con el auditor ya dentro del hospital no hay nada que cancelar:
-  ese caso termina con su informe o vence.
+  solo sitio. **Se puede hasta que el caso termina** —con el auditor ya dentro
+  incluido, desde sep 2026—: si al asegurado le dan el alta mientras se audita,
+  la compañía no tiene por qué esperar un informe que ya no sirve. Lo acabado
+  (`culminada`, `cancelada`) no se toca.
 
 - **Un caso vencido se corrige y se reprograma; no se resucita solo.** Por eso
   `no_auditado` **sí se edita** —al revés que culminada y cancelada—: la visita
-  no ocurrió, y lo que hace falta es darle fecha nueva. Solo una ventana en el
+  no ocurrió, y lo que hace falta es darle fecha nueva. Solo una hora en el
   FUTURO lo devuelve a la agenda: corregirle el nombre al paciente de un caso
   vencido no resucita nada. El auditor no puede hacerlo desde su app, porque el
   caso ya no está en su trabajo por delante.
@@ -150,7 +155,15 @@ inventa un estado para eso.
 - **La sede tiene que ser de ese prestador.** Cambiar de prestador en una edición
   obliga a revisar la sede: se valida el **estado resultante**, no cada campo
   suelto.
-- **La ventana va hacia adelante**: `hasta > desde`, en la base y en el servicio.
+- **De los tres plazos solo se teclea uno.** Se pone la hora de llegada del
+  auditor y el servidor deriva los otros dos: la entrega del informe es esa hora
+  más las **horas de SLA** que la compañía tiene pactadas para Concurrencia
+  (reloj corrido: con 23 h, llegar el 27 a las 15:00 entrega el 28 a las 14:00),
+  y el plazo de llegada nace en la hora tecleada. **Sin SLA no se abre el
+  caso**: no se sabría para cuándo es. Reprogramar recalcula la entrega con el
+  SLA vigente y devuelve el plazo de llegada a la hora nueva —las prórrogas de
+  la cita anterior no valen para una cita distinta—. `hasta` se materializa en
+  la fila: renegociar el SLA mañana no mueve un caso ya abierto.
 - **Derivar es del supervisor de plataforma.** La bandeja global —los casos de
   TODAS las aseguradoras— y la asignación de auditor solo responden a personal
   de plataforma con rol `supervisor` en el módulo: un usuario de compañía
@@ -159,13 +172,33 @@ inventa un estado para eso.
   con acceso vivo a Concurrencia, validado contra la base al momento de asignar;
   `null` deja el caso sin asignar. Cada derivación escribe `visita_derivada` en
   `audit_log`, con el antes y el después.
+- **`no_auditado` es interno de Accumedical.** La compañía no lo ve: su bandeja,
+  su panel y sus cifras le siguen enseñando el estado que el caso tenía al
+  vencer —`asignada` si ya había auditor, `programada` si no—, y su filtro de
+  estado usa la misma equivalencia, para que filtrar «Asignada» encuentre lo que
+  la lista enseña como asignada (`service.estado_visible` y
+  `service.condicion_de_estado`). El motivo: para ella el caso sigue pendiente y
+  el vencimiento suele resolverse con una prórroga en un par de horas;
+  anunciarle un problema de casa ajena que quizá dure dos horas sobra. Lo que sí
+  ve es el final: cancelada o culminada no se traducen.
+- **La prórroga es del coordinador de Accumedical.** «Extender» le da al auditor
+  más horas para llegar, **contadas desde que se pulsa** —a las 16:00, dos horas
+  son las 18:00, no la hora original más dos— y se puede repetir hasta que
+  llegue. Devuelve el caso vencido a la agenda (si no, el auditor seguiría sin
+  poder marcar su llegada) y **no mueve la entrega del informe**: son dos plazos
+  distintos y mezclarlos borraría la prueba de si el informe llegó tarde. Nunca
+  recorta: sobre un caso que aún no vence, «ahora + 2 h» puede caer antes del
+  plazo vigente y se queda el mayor de los dos.
 - **El NO AUDITADO lo pone solo el servidor.** Una tarea periódica del arranque
   (`main.py`, cada 5 minutos con primera pasada inmediata, bajo advisory lock
   para que un solo worker la corra) busca toda visita **pendiente**
-  —`programada` o `asignada`— cuya ventana ya venció (`hasta < now()`) **sin
-  llegada registrada** (`llegada_at IS NULL`) y la pasa a `no_auditado`,
-  escribiendo `visita_no_auditada` en `audit_log` por cada caso (acción del
-  sistema: sin usuario ni request). **Mira los dos estados**: si solo mirara
+  —`programada` o `asignada`— cuyo **plazo de llegada** ya venció
+  (`llegada_limite < now()`) **sin llegada registrada** (`llegada_at IS NULL`) y
+  la pasa a `no_auditado`, escribiendo `visita_no_auditada` en `audit_log` por
+  cada caso (acción del sistema: sin usuario ni request) y avisando por la
+  campana **solo a la coordinación de Accumedical**. Mira el plazo de llegada y
+  no la entrega del informe: así un auditor que nunca fue se detecta el mismo
+  día y no cuando ya no hay margen para nada. **Mira los dos estados**: si solo mirara
   `programada`, un caso derivado que nadie visitó no vencería nunca. Las
   `auditando` quedan fuera porque ahí el auditor SÍ llegó: ese caso termina con
   su informe y, mientras tanto, se ve tal cual en el panel.
@@ -323,8 +356,8 @@ que un endpoint nuevo nace protegido; el permiso concreto va en cada uno.
 | GET | `/operadores` | `visitas:leer` + **solo supervisor de compañía** | Los operadores de MI aseguradora (también inactivos: sus casos viejos siguen existiendo), para filtrar el historial por quién creó cada caso |
 | GET | `/visitas` | `visitas:leer` | Bandeja: `?search=` (paciente —las cuatro partes concatenadas con `concat_ws`, así «MARIA PAREJA» cruza segundo nombre y apellido—, número de documento, código del caso o prestador), `?estado=`, `?desde=`, `?hasta=`, `?creado_por=` (id del operador autor; **solo obedece al supervisor**: al operador se le impone su propio id), paginación |
 | GET | `/visitas/{id}` | `visitas:leer` | Detalle con sus correos. Para el operador, solo los casos que él creó: el de un compañero es un 404 |
-| POST | `/visitas/{id}/cancelar` | `visitas:editar` + su propio caso | **La única forma de mover el estado desde la compañía.** Pasa el caso a `cancelada` si está `programada` o `asignada`; con el auditor ya llegado o el caso terminado, `409`. Escribe `visita_cancelada` en `audit_log` con el antes y el después |
-| POST | `/visitas` | `visitas:crear` + **no ser supervisor de compañía** | Alta: prestador, sede, ventana, `correos` y observaciones. **Avisa por correo como tarea de fondo, después de responder** (la respuesta nunca espera al SMTP: uno inalcanzable llegó a colgar el alta hasta el 504 de nginx), con los datos exactos del caso, a cada correo de la visita, al **operador que creó el caso**, a **quien coordina Concurrencia en Accumedical** y a **quien coordina la propia aseguradora** (cada rol etiquetado en la lista de destinatarios que enumera el propio mensaje). Los dos coordinadores se buscan **por sus dos puertas** —la fila del módulo y, según el caso, la familia o `user_aseguradora_coordinador`—, las mismas que usa la campana: mirar solo `user_module_access`, como se hacía, dejaba sin correo justo a los coordinadores que hoy existen |
+| POST | `/visitas/{id}/cancelar` | `visitas:editar` + su propio caso | **La única forma de mover el estado desde la compañía.** Pasa el caso a `cancelada` mientras no haya terminado —`auditando` incluido—; sobre lo acabado, `409`. Escribe `visita_cancelada` en `audit_log` con el antes y el después |
+| POST | `/visitas` | `visitas:crear` + **no ser supervisor de compañía** | Alta: prestador, sede, **la hora de llegada del auditor** (`desde`; la entrega sale del SLA y no se acepta del cliente), `correos` y observaciones. **Avisa por correo como tarea de fondo, después de responder** (la respuesta nunca espera al SMTP: uno inalcanzable llegó a colgar el alta hasta el 504 de nginx), con los datos exactos del caso, a cada correo de la visita, al **operador que creó el caso**, a **quien coordina Concurrencia en Accumedical** y a **quien coordina la propia aseguradora** (cada rol etiquetado en la lista de destinatarios que enumera el propio mensaje). Los dos coordinadores se buscan **por sus dos puertas** —la fila del módulo y, según el caso, la familia o `user_aseguradora_coordinador`—, las mismas que usa la campana: mirar solo `user_module_access`, como se hacía, dejaba sin correo justo a los coordinadores que hoy existen |
 | PATCH | `/visitas/{id}` | `visitas:editar` + **no ser supervisor de compañía** | Edición parcial; `correos` se reconcilia como lista completa. El operador solo edita lo suyo: el caso de un compañero es un 404 |
 | GET | `/auditor/visitas` | `visitas:leer` + personal de plataforma | Los casos derivados **al propio usuario**, completos, próximos primero, **con el punto exacto del destino** (`destino_latitud`/`longitud`: la sede si la hay, la casa matriz si no) para abrir el mapa desde la app. Sin parámetros: el ownership es `auditor_id = su id` |
 | GET | `/auditor/visitas/{id}/panel` | `visitas:leer` + plataforma + **caso derivado a él** | El panel del caso en la app: las notas dictadas, el informe vigente y `llegada_at`. El caso de otro auditor es un 404 idéntico |
@@ -341,16 +374,19 @@ que un endpoint nuevo nace protegido; el permiso concreto va en cada uno.
 | POST | `/auditor/visitas/{id}/informe/enviar` | ídem | El botón «Enviar informe»: manda el **PDF adjunto** a los correos marcados del caso **y al mismo trío de todos los avisos —operador creador, coordinación de Concurrencia y coordinación de la aseguradora—** (la lista vive en `_destinatarios_del_caso`, compartida con el alta para que jamás diverjan; 422 si no hay correos; 404 si falta el informe). **Enviar es terminar el trabajo: la visita `programada` pasa a `culminada` en la misma transacción** (los demás estados no se tocan: enviar no resucita una cancelada ni una no auditada), y así la ve la aseguradora en su panel. Valida y responde al instante con `{destinatarios}`; los correos salen **en tarea de fondo tras responder** —dentro del request retenían la respuesta hasta el 504 con SMTP lento y cada reintento del botón duplicaba el envío—. Primero la huella `informe_enviado` en AuditLog; cada correo aislado deja la suya y la tanda cierra con `informe_enviado_correo` |
 | GET | `/visitas/{id}/informe.pdf` | `visitas:leer` (compañía) | El mismo PDF para la aseguradora, con su ownership de siempre: el operador solo el de sus casos; su supervisor, todos. El detalle de la visita trae `tiene_informe` para saber cuándo ofrecerlo |
 | GET | `/supervision/visitas/{id}/informe.pdf` | `visitas:leer` + supervisión | El mismo PDF para la supervisión de plataforma y el panel de Auditorías del admin; el detalle de supervisión también trae `tiene_informe` |
-| GET | `/supervision/visitas` | `visitas:leer` **+ plataforma con rol supervisor** | Los casos de todas las compañías, con su aseguradora y su auditor. Filtros: búsqueda (aseguradora, prestador, código), estado, «solo sin asignar», **rango de fechas** (`?desde=`, `?hasta=`) y el **documento del paciente** (`?paciente_tipo_documento=` + `?paciente_numero_documento=`, los dos juntos o ninguno: media identificación no identifica a nadie), que es lo que pide la ficha del cliente, que acota por la VENTANA del caso con las mismas reglas que la bandeja de la compañía: entra el que toque cualquier día del rango, no solo el que empiece dentro |
+| GET | `/supervision/visitas` | `visitas:leer` **+ plataforma con rol supervisor** | Los casos de todas las compañías, con su aseguradora y su auditor. Filtros: búsqueda (aseguradora, prestador, código), estado, «solo sin asignar», **rango de fechas** (`?desde=`, `?hasta=`) y el **documento del paciente** (`?paciente_tipo_documento=` + `?paciente_numero_documento=`, los dos juntos o ninguno: media identificación no identifica a nadie), que es lo que pide la ficha del paciente, y que acota por los plazos del caso con las mismas reglas que la bandeja de la compañía: entra el que toque cualquier día del rango, no solo el que empiece dentro |
 | GET | `/supervision/dashboard` | `visitas:leer` + supervisión | **Los cuadros del panel**: las mismas cinco cifras que ve el supervisor de una compañía de lo suyo, pero de TODAS las aseguradoras. Sin `proximas`: aquí el panel es la lista entera. La cuenta se escribe una sola vez en el servicio y la comparten los dos paneles |
 | GET | `/supervision/aseguradoras` | `visitas:leer` + supervisión | Las compañías **activas y con Concurrencia habilitado**: sobre ellas puede programar el coordinador. Primer paso de su alta |
 | GET | `/supervision/aseguradoras/{id}/prestadores` | `visitas:leer` + supervisión | La red de ESA aseguradora, con sedes y contactos — el mismo shape que `/prestadores`, mismo mapeo compartido |
 | GET | `/supervision/pacientes/buscar` | `visitas:leer` + supervisión | La misma búsqueda de paciente del alta, acotada a la aseguradora elegida (`?aseguradora_id=&tipo=&numero=`) |
+| GET | `/sla` | `visitas:leer` | Las horas de SLA de MI compañía para Concurrencia: de ahí sale la entrega del informe, y el formulario la enseña calculada mientras se elige la hora de llegada |
+| GET | `/supervision/sla` | `visitas:leer` + supervisión | Lo mismo para el coordinador, que elige de qué compañía nace el caso (`?aseguradora_id=`) |
+| POST | `/supervision/visitas/{id}/prorroga` | `visitas:editar` + supervisión | **La prórroga**: `{horas}` más para que el auditor llegue, **contadas desde ahora** (a las 16:00, dos horas son las 18:00). Repetible. Devuelve un caso vencido a la agenda —si no, el auditor seguiría sin poder marcar su llegada— y **no mueve la entrega del informe**. De 1 a 72 horas, y nunca recorta el plazo vigente |
 | POST | `/supervision/visitas` | `visitas:crear` + supervisión | **El alta del coordinador de plataforma** (los pedidos le llegan por correo): el mismo cuerpo del alta de compañía más `aseguradora_id` (422 si no existe, está inactiva o sin el módulo). Mismas validaciones —convenio vigente de ESA red, sede suya, paciente completo—, audita `crear` con `origen: supervision`, y avisa igual que el alta de compañía (tarea de fondo), con el coordinador etiquetado como quien **creó el caso** |
 | GET | `/supervision/auditores` | `visitas:editar` + supervisión | A quién se puede derivar: auditores de plataforma activos del módulo, **con su ciudad y provincia**. El diálogo de derivación los agrupa por cercanía al destino del caso — solo ordena, se puede derivar a cualquiera |
 | PATCH | `/supervision/visitas/{id}/auditor` | `visitas:editar` + supervisión | `{"auditor_id": ...}` deriva —pasa el caso a `asignada`, **avisa por campana a la coordinación de la aseguradora y al operador que creó el caso** en la misma transacción y **por correo al auditor** en tarea de fondo, tras responder—; `null` desasigna sin avisar. Devuelve la fila entera |
 | GET | `/supervision/visitas/{id}` | `visitas:leer` + supervisión | El caso entero —correos y observaciones incluidos—, tal como lo capturó la compañía |
-| PATCH | `/supervision/visitas/{id}/horario` | `visitas:editar` + supervisión | **Reprogramar**: la ventana nueva entera. Audita `visita_reprogramada` y, en tarea de fondo tras responder, **avisa a todos** —correos del caso, supervisor y auditor— con la ventana vieja y la nueva |
+| PATCH | `/supervision/visitas/{id}/horario` | `visitas:editar` + supervisión | **Reprogramar**: la hora de llegada nueva (la entrega se recalcula con el SLA y el plazo de llegada vuelve a la hora nueva). Audita `visita_reprogramada` y, en tarea de fondo tras responder, **avisa a todos** —correos del caso, supervisor y auditor—. **Ninguna pantalla lo llama desde sep 2026**: «Nueva fecha» se retiró del coordinador y quien reprograma es el operador, editando su ficha. Sigue vivo porque es lo que da sentido al comprobante de cambio de horario |
 | POST | `/supervision/visitas/{id}/comprobante` | `visitas:editar` + supervisión | La imagen que comprueba el cambio pedido por correo. Mismas defensas que el logo: MIME real, tope de tamaño, nombre derivado de la visita. Reemplaza la anterior |
 | GET | `/supervision/visitas/{id}/comprobante` | `visitas:leer` + supervisión | El archivo, con Content-Type fijado y sin sniffing |
 
@@ -426,16 +462,20 @@ autorización real la ejerce el backend en cada endpoint.
 - **`/concurrencia/supervision/{id}`** — el estado se enseña con **su insignia**
   y no con un desplegable apagado (que era lo que había): el estado no se elige
   en ninguna pantalla, así que tampoco se pinta como si se pudiera. Si el caso
-  está vencido, al lado dice que «Nueva fecha» lo devuelve a la agenda. El caso
+  está vencido, al lado se explica que **la compañía no ve ese estado** y que
+  «Extender» le da al auditor más horas para llegar. El caso
   visto desde la supervisión,
   **como página entera y no como diálogo** (lo fue hasta sep 2026): dirección
   propia, enlazable, y «atrás» hace lo esperado. El administrador global llega a
   la misma pantalla por `/admin/auditorias/concurrencia/{id}`, que es la suya.
   Enseña **el caso tal como lo capturó la compañía, con TODO deshabilitado** —el
   paciente en sus **cuatro casillas**, las mismas del alta, no el nombre ya
-  compuesto— más las dos únicas acciones habilitadas: **«Nueva fecha»**
-  (reprogramar, con el aviso a todos) y **subir o reemplazar el comprobante** del
-  cambio pedido por correo, que se ve ahí mismo. Es a donde llevan el lápiz de la
+  compuesto— con los **tres plazos** a la vista (llegada del auditor, entrega
+  del informe y plazo de llegada) y las dos únicas acciones habilitadas:
+  **«Extender»** —más horas para que el auditor llegue, contadas desde que se
+  pulsa— y **subir o reemplazar el comprobante** del cambio pedido por correo,
+  que se ve ahí mismo. **«Nueva fecha» se retiró en sep 2026**: mover un caso de
+  día es del operador, desde su ficha; lo del coordinador es dar horas. Es a donde llevan el lápiz de la
   lista, la fila de la bandeja de entrada y el aviso de la campana.
 - **`/concurrencia`** — la bandeja de entrada del operador: **solo las visitas
   que él programó** (la puerta está en el backend, no en la pantalla). Búsqueda
@@ -460,7 +500,8 @@ autorización real la ejerce el backend en cada endpoint.
   teclear todo lo que no sea una letra. Se elige
   prestador de una lista con buscador; al elegirlo, la pantalla enseña **si tiene
   sedes** —y pide el destino— **o la dirección propia** a la que se irá. Debajo,
-  la ventana de fecha y hora y el bloque de avisos en dos partes: **los contactos
+  **cuándo debe llegar el auditor** —con la entrega del informe debajo,
+  calculada con el SLA y deshabilitada— y el bloque de avisos en dos partes: **los contactos
   del prestador con casillas** —se marcan solo los que deben enterarse, con
   contador «2 de 5 marcados» y la misma regla de tres filas y scroll— y **«Otros
   correos»**, transcritos a mano. Marcar un contacto y teclear además su mismo
@@ -475,12 +516,12 @@ autorización real la ejerce el backend en cada endpoint.
   pantalla.
 
   Un caso **no auditado** se abre a editar como cualquiera, pero con su aviso
-  sobre las dos casillas de fecha —«venció sin que el auditor llegara; ponle
-  fecha nueva y vuelve a la agenda»— y el botón de guardar rotulado
+  sobre la casilla de la fecha —«venció sin que el auditor llegara; ponle fecha
+  nueva y vuelve a la agenda»— y el botón de guardar rotulado
   **«Reprogramar visita»**: sobre un caso vencido, guardar es reprogramar, y el
   botón lo dice.
 
-  En la **ficha del cliente** el módulo pone solo sus casos **terminados**, y
+  En la **ficha del paciente** el módulo pone solo sus casos **terminados**, y
   ahí la fila lleva **al PDF del informe** en vez de a la pantalla del caso —si
   lo tiene: uno culminado sin informe abre el caso, que es lo honesto—. El
   filtro se pide como `soloFinalizados`, no por el nombre del estado: cada

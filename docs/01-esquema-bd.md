@@ -811,6 +811,39 @@ nunca marcó «Ya llegué», el caso pasa solo a `no_auditado`.
 
 ---
 
+### 3.12-bis Tres plazos, y solo uno se teclea (`d7e2f9a3c418`)
+
+Hasta aquí el alta pedía una ventana entera —`desde` y `hasta` a mano— y el
+vencimiento miraba `hasta`. Desde esta migración cada plazo dice una cosa
+distinta y **solo el primero se escribe**:
+
+| Columna | Qué es | De dónde sale |
+|---|---|---|
+| `desde` | A qué hora debe llegar el auditor | **Lo único que se teclea** |
+| `hasta` | Cuándo vence la entrega del informe | `desde` + las horas de `aseguradora_sla` de esa compañía para Concurrencia |
+| `llegada_limite` | Hasta cuándo se le acepta la llegada | Nace igual a `desde`; cada prórroga lo empuja a «ahora + las horas concedidas» |
+
+- **`hasta` se materializa en la fila a propósito.** Renegociar el SLA mañana no
+  puede mover el plazo de un caso ya abierto: lo pactado cuando se programó es
+  lo que vale.
+- **Son dos columnas y no una** porque son dos plazos: con una sola, extender la
+  llegada correría también la entrega y dejaríamos de poder decir si un informe
+  llegó tarde.
+- `CHECK (llegada_limite >= desde)`: prorrogar solo da más tiempo, nunca menos
+  del ya concedido. Por eso el servicio toma `max(plazo vigente, ahora + horas)`
+  —sobre un caso que aún no vence, «ahora + 2 h» puede caer antes—.
+- Los casos que ya existían recibieron `llegada_limite = desde`, que es la regla
+  que se les venía aplicando; su `hasta` no se tocó, porque fue tecleado.
+- **El vencimiento pasa a mirar `llegada_limite`**, no `hasta`: así un auditor
+  que nunca fue se detecta el mismo día y no al vencer el SLA, cuando ya no hay
+  margen para nada.
+
+Sin SLA pactado no se puede abrir un caso: no se sabría para cuándo es. Es
+obligatorio desde `c3f7b8e1d952`, así que faltar solo puede significar que a la
+compañía le falta contratar el módulo.
+
+---
+
 ### 3.13 Los dos estados que faltaban: `asignada` y `auditando` (`f2c7d9a4e531`)
 
 El CHECK de `conc_visitas.estado` pasa a
@@ -1674,7 +1707,7 @@ CREATE TABLE cc_cartas (
 | 12f | `prestador_sedes` | uuid | soft delete + `estado` | `uq_..._nombre` (parcial, por prestador), `ix_..._prestador_id` (parcial); FK compuesta de ciudad; CHECK de rango de coordenadas |
 | 13 | `aseguradora_prestador` | uuid | soft delete + `estado` | `uq_..._par` (parcial), `ix_..._prestador_id`, CHECK de red (`red_privada OR red_publica`) |
 | 13a | `aseguradora_prestador_fc` | `(convenio_id, concepto)` | — | CHECK de concepto, modo, base solo en los porcentajes, base distinta del concepto y rango del valor según el modo |
-| 13b | `conc_visitas` | uuid | soft delete + `estado` | `uq_..._codigo_interno`, `ix_..._bandeja` (aseguradora + fecha, parcial), `ix_..._prestador_id` (parcial); CHECK de ventana y de estado |
+| 13b | `conc_visitas` | uuid | soft delete + `estado` | `uq_..._codigo_interno`, `ix_..._bandeja` (aseguradora + fecha, parcial), `ix_..._prestador_id` (parcial); CHECK de ventana, de estado y de límite (`llegada_limite >= desde`) |
 | 13c | `conc_visita_correos` | uuid | soft delete | `uq_..._email` (parcial, por visita), `ix_..._visita_id` (parcial) |
 | 14 | `audit_log` | bigint identity | append-only | `(user_id, created_at DESC)`, `(entidad, entidad_id)`, BRIN `created_at` |
 

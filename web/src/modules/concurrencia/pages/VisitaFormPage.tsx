@@ -11,6 +11,8 @@ import {
   actualizarVisita,
   buscarPaciente,
   buscarPacienteSupervision,
+  obtenerSla,
+  obtenerSlaSupervision,
   crearVisita,
   crearVisitaSupervision,
   listarCorreosPorDefecto,
@@ -42,6 +44,17 @@ import {
 } from '@/shared/personas/CamposNombre'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
+
+/** «29 sep 2026, 13:00», para enseñar un plazo que no se teclea. */
+function formatoLargo(fecha: Date): string {
+  return new Intl.DateTimeFormat('es-EC', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(fecha)
+}
 const BANDEJA = '/concurrencia'
 
 /**
@@ -83,7 +96,6 @@ interface Formulario {
   prestador_id: string
   sede_id: string
   desde: string
-  hasta: string
   /** Ids de los contactos del prestador marcados. Lo que viaja es su correo. */
   contactos_elegidos: string[]
   /** Correos transcritos a mano, aparte de los contactos, con quién es cada uno. */
@@ -98,7 +110,6 @@ const VACIO: Formulario = {
   prestador_id: '',
   sede_id: '',
   desde: '',
-  hasta: '',
   contactos_elegidos: [],
   correos: [],
   observaciones: '',
@@ -319,7 +330,6 @@ export function VisitaFormPage({
       // Sin sede guardada, la visita era a la casa matriz.
       sede_id: detalle.data.sede_id ?? MATRIZ,
       desde: aLocal(detalle.data.desde),
-      hasta: aLocal(detalle.data.hasta),
       contactos_elegidos: [],
       correos: detalle.data.correos.map((c) => ({
         _key: crypto.randomUUID(),
@@ -420,6 +430,48 @@ export function VisitaFormPage({
       toast.error('No pudimos consultar el paciente; escribe sus datos')
     }
   }
+
+  /**
+   * **La entrega del informe no se teclea**: es la hora de llegada más las
+   * horas de SLA que la compañía tiene pactadas para Concurrencia. Se calcula
+   * aquí solo para enseñarla mientras se elige la hora; quien manda es el
+   * servidor, que la vuelve a calcular al guardar con la misma regla.
+   */
+  const sla = useQuery({
+    queryKey: ['concurrencia-sla', supervision ? aseguradoraId : 'propia'],
+    queryFn: () => (supervision ? obtenerSlaSupervision(aseguradoraId) : obtenerSla()),
+    enabled: !soloLectura && (!supervision || Boolean(aseguradoraId)),
+    retry: false,
+  })
+
+  const entrega = useMemo(() => {
+    if (editando && detalle.data) {
+      return {
+        texto: formatoLargo(new Date(detalle.data.hasta)),
+        ayuda: 'Se fijó al programar el caso, con el SLA de la compañía.',
+      }
+    }
+    if (sla.isError) {
+      return {
+        texto: '—',
+        ayuda: 'Esta compañía no tiene horas de SLA pactadas para Concurrencia.',
+      }
+    }
+    if (!sla.data || !form.desde) {
+      return {
+        texto: '—',
+        ayuda: supervision && !aseguradoraId
+          ? 'Elige la aseguradora y la hora de llegada.'
+          : 'Se calcula al poner la hora de llegada.',
+      }
+    }
+    const llegada = new Date(form.desde)
+    const vence = new Date(llegada.getTime() + sla.data.horas * 3600_000)
+    return {
+      texto: formatoLargo(vence),
+      ayuda: `${sla.data.horas} h de SLA desde la llegada.`,
+    }
+  }, [editando, detalle.data, sla.data, sla.isError, form.desde, supervision, aseguradoraId])
 
   // Hasta saber de quién es el caso, no se pide nada más. En edición no aplica:
   // el paciente ya está identificado desde que se creó.
@@ -537,7 +589,6 @@ export function VisitaFormPage({
         // La casa matriz se guarda como ausencia de sede.
         sede_id: form.sede_id === MATRIZ ? null : form.sede_id || null,
         desde: aISO(form.desde),
-        hasta: aISO(form.hasta),
         correos: correosAEnviar(),
         observaciones: form.observaciones.trim() || null,
       }
@@ -614,10 +665,7 @@ export function VisitaFormPage({
     if (elegido && elegido.sedes.length > 0 && !form.sede_id) {
       return toast.error('Elige a dónde va el médico auditor: la casa matriz o una sede')
     }
-    if (!form.desde || !form.hasta) return toast.error('Indica desde y hasta cuándo es la visita')
-    if (new Date(form.hasta) <= new Date(form.desde)) {
-      return toast.error('La hora de fin tiene que ser posterior a la de inicio')
-    }
+    if (!form.desde) return toast.error('Indica cuándo debe llegar el auditor')
     const correos = form.correos.map((c) => c.valor.trim()).filter(Boolean)
     if (new Set(correos.map((c) => c.toLocaleLowerCase())).size !== correos.length) {
       return toast.error('Hay un correo repetido')
@@ -1026,7 +1074,7 @@ export function VisitaFormPage({
 
         <Bloque
           titulo="Cuándo"
-          descripcion="La ventana en la que el médico auditor estará allí."
+          descripcion="A qué hora debe llegar el médico auditor. La entrega del informe sale del SLA de la compañía."
           retraso={0.1}
         >
           <div className="grid gap-5 sm:grid-cols-2">
@@ -1039,7 +1087,7 @@ export function VisitaFormPage({
             )}
             <div className="space-y-2">
               <Label htmlFor="desde">
-                Desde <span className="text-peligro">*</span>
+                Cuándo debe llegar el auditor <span className="text-peligro">*</span>
               </Label>
               <Input
                 id="desde"
@@ -1049,18 +1097,15 @@ export function VisitaFormPage({
                 required
               />
             </div>
+            {/* La entrega NO se teclea: sale del SLA que la compañía tiene
+                pactado para Concurrencia. Se enseña calculada para que quien
+                programa sepa para cuándo es, sin poder moverla. */}
             <div className="space-y-2">
-              <Label htmlFor="hasta">
-                Hasta <span className="text-peligro">*</span>
-              </Label>
-              <Input
-                id="hasta"
-                type="datetime-local"
-                value={form.hasta}
-                min={form.desde || undefined}
-                onChange={(e) => setForm((previo) => ({ ...previo, hasta: e.target.value }))}
-                required
-              />
+              <Label htmlFor="entrega">Entrega del informe</Label>
+              <Input id="entrega" value={entrega.texto} disabled />
+              <p className="text-xs text-tenue-fg" aria-live="polite">
+                {entrega.ayuda}
+              </p>
             </div>
           </div>
         </Bloque>

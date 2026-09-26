@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -85,8 +86,10 @@ class VisitaCrear(BaseModel):
     # Nulo significa casa matriz: se visita la dirección propia del prestador.
     # Si viene una sede, el servicio comprueba contra la base que sea suya.
     sede_id: str | None = None
+    # **Lo único que se teclea de los tres plazos**: a qué hora debe llegar el
+    # auditor. La entrega del informe sale del SLA de la compañía y el plazo de
+    # llegada nace aquí; ninguno de los dos se acepta del cliente.
     desde: dt.datetime
-    hasta: dt.datetime
     correos: list[CorreoVisita] = Field(default_factory=list)
     observaciones: str | None = None
 
@@ -165,8 +168,9 @@ class VisitaActualizar(BaseModel):
     paciente_tipo_documento_codigo: Annotated[str, Field(min_length=1, max_length=10)] | None = None
     paciente_numero_documento: Annotated[str, Field(min_length=1, max_length=20)] | None = None
     sede_id: str | None = None
+    # Mover esto es reprogramar: el servidor recalcula la entrega con el SLA y
+    # devuelve el plazo de llegada a la hora nueva.
     desde: dt.datetime | None = None
-    hasta: dt.datetime | None = None
     correos: list[CorreoVisita] | None = None
     observaciones: str | None = None
 
@@ -198,8 +202,12 @@ class VisitaResumen(BaseModel):
     lugar: str | None
     ciudad_nombre: str | None
     provincia_nombre: str | None
+    # A qué hora debe llegar el auditor.
     desde: dt.datetime
+    # Cuándo vence la entrega del informe: `desde` + el SLA de la compañía.
     hasta: dt.datetime
+    # Hasta cuándo se le acepta la llegada, prórrogas incluidas.
+    llegada_limite: dt.datetime
     estado: str
     total_correos: int
 
@@ -360,10 +368,30 @@ class VisitaSupervisionDetalle(VisitaSupervisionResumen):
 
 
 class ReprogramarRequest(BaseModel):
-    """La nueva ventana, entera: reprogramar es fijar desde y hasta de nuevo."""
+    """La nueva hora de llegada. La entrega se recalcula con el SLA."""
 
     desde: dt.datetime
-    hasta: dt.datetime
+
+
+class ProrrogaRequest(BaseModel):
+    """
+    Cuántas horas más se le dan al auditor para llegar, **contadas desde
+    ahora**: el coordinador concede a las 16:00 dos horas y el plazo queda en
+    las 18:00, no en la hora original más dos.
+    """
+
+    horas: Annotated[Decimal, Field(gt=0, le=72, max_digits=4, decimal_places=2)]
+
+
+class ProrrogaOut(BaseModel):
+    llegada_limite: dt.datetime
+    estado: str
+
+
+class SlaDelModulo(BaseModel):
+    """Lo pactado para Concurrencia, que es de donde sale la entrega."""
+
+    horas: float
 
 
 class PaginaSupervision(BaseModel):

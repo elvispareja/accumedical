@@ -52,8 +52,11 @@ from app.modules.concurrencia.schemas import (
     PaginaVisitas,
     PanelAuditorOut,
     PrestadorElegible,
+    ProrrogaOut,
+    ProrrogaRequest,
     ReprogramarRequest,
     SedeElegible,
+    SlaDelModulo,
     VisitaActualizar,
     VisitaCrear,
     VisitaCrearSupervision,
@@ -123,7 +126,7 @@ def _solo_supervisor_de_compania(ctx: AuthContext) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="No autorizado")
 
 
-def _resumen(fila) -> VisitaResumen:
+def _resumen(fila, *, interno: bool = False) -> VisitaResumen:
     (
         visita,
         prestador_nombre,
@@ -163,7 +166,10 @@ def _resumen(fila) -> VisitaResumen:
         provincia_nombre=sede_provincia if visita.sede_id else prestador_provincia,
         desde=visita.desde,
         hasta=visita.hasta,
-        estado=visita.estado,
+        llegada_limite=visita.llegada_limite,
+        # `no_auditado` es interno: a la compañía se le enseña el estado que el
+        # caso tenía al vencer (`service.estado_visible`).
+        estado=service.estado_visible(visita.estado, visita.auditor_id, interno=interno),
         total_correos=total_correos,
     )
 
@@ -172,7 +178,7 @@ def _resumen_supervision(fila) -> VisitaSupervisionResumen:
     visita = fila[0]
     razon_social, nombre_comercial, auditor_nombre = fila[9:12]
     return VisitaSupervisionResumen(
-        **_resumen(fila).model_dump(),
+        **_resumen(fila, interno=True).model_dump(),
         aseguradora_nombre=nombre_comercial or razon_social,
         auditor_id=str(visita.auditor_id) if visita.auditor_id else None,
         # `concat_ws` sobre un LEFT JOIN sin fila da cadena vacía, no NULL: sin
@@ -1224,7 +1230,8 @@ def obtener_supervision(
         **personas.partes_prefijadas(fila[0], "paciente_"),
         observaciones=fila[0].observaciones,
         correos=_correos_out(db, visita_id),
-        tiene_informe=bool(fila[0].informe),
+        # `tiene_informe` ya viene del resumen de supervisión: repetirlo aquí
+        # reventaba el alta del coordinador con un «multiple values».
         tiene_comprobante=bool(fila[0].comprobante_horario_path),
     )
 
@@ -1434,12 +1441,16 @@ def reprogramar(
     """
     _solo_supervision(ctx)
     visita = service.obtener_para_supervision(db, visita_id)
-    service._validar_ventana(datos.desde, datos.hasta)
+    # La entrega se recalcula con el SLA de la compañía, y el plazo de llegada
+    # vuelve a la hora nueva: las prórrogas de la cita anterior no valen para
+    # una cita distinta.
+    nueva_entrega = service.entrega_por_sla(db, visita.aseguradora_id, datos.desde)
 
     desde_anterior, hasta_anterior = visita.desde, visita.hasta
-    if (desde_anterior, hasta_anterior) != (datos.desde, datos.hasta):
+    if desde_anterior != datos.desde:
         visita.desde = datos.desde
-        visita.hasta = datos.hasta
+        visita.hasta = nueva_entrega
+        visita.llegada_limite = datos.desde
         visita.updated_by = ctx.user.id
         # Reprogramar un caso vencido lo devuelve a la agenda: misma regla que
         # cuando lo reprograma el operador desde su ficha (ver el servicio).
@@ -1451,7 +1462,10 @@ def reprogramar(
                 "desde": desde_anterior.isoformat(),
                 "hasta": hasta_anterior.isoformat(),
             },
-            "despues": {"desde": datos.desde.isoformat(), "hasta": datos.hasta.isoformat()},
+            "despues": {
+                "desde": datos.desde.isoformat(),
+                "hasta": nueva_entrega.isoformat(),
+            },
         }
         if revivido is not None:
             detalle["antes"]["estado"] = estado_anterior
@@ -1486,7 +1500,8 @@ def _detalle_supervision(db: DbSession, visita_id: uuid.UUID) -> VisitaSupervisi
         **personas.partes_prefijadas(fila[0], "paciente_"),
         observaciones=fila[0].observaciones,
         correos=_correos_out(db, visita_id),
-        tiene_informe=bool(fila[0].informe),
+        # `tiene_informe` ya viene del resumen de supervisión: repetirlo aquí
+        # reventaba el alta del coordinador con un «multiple values».
         tiene_comprobante=bool(fila[0].comprobante_horario_path),
     )
 
@@ -1637,7 +1652,8 @@ def cancelar_visita(
     acción con nombre en la auditoría, en vez de un `estado: cancelada` perdido
     entre los otros campos editados.
 
-    Solo mientras nadie haya llegado; el servicio corta lo demás con un 409.
+    Se puede hasta que el caso termina, con el auditor ya dentro incluido; el
+    servicio corta lo acabado con un 409.
     """
     aseguradora_id = _aseguradora_operadora(ctx)
     # El operador solo cancela lo suyo: el caso de un compañero es un 404.
@@ -1662,3 +1678,67 @@ def cancelar_visita(
     )
     db.commit()
     return _detalle(db, aseguradora_id, visita_id)
+
+
+@router.get("/sla", response_model=SlaDelModulo)
+def sla_del_modulo(
+    ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
+    db: DbSession = Depends(get_db),
+) -> SlaDelModulo:
+    """
+    Las horas de SLA de MI compañía para Concurrencia: de ahí sale la entrega
+    del informe, y el formulario la enseña calculada mientras se elige la hora
+    de llegada.
+    """
+    return SlaDelModulo(horas=float(service.horas_de_sla(db, _aseguradora_de(ctx))))
+
+
+@router.get("/supervision/sla", response_model=SlaDelModulo)
+def sla_del_modulo_supervision(
+    aseguradora_id: uuid.UUID,
+    ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
+    db: DbSession = Depends(get_db),
+) -> SlaDelModulo:
+    """Lo mismo para el coordinador, que elige de qué compañía nace el caso."""
+    _solo_supervision(ctx)
+    return SlaDelModulo(horas=float(service.horas_de_sla(db, aseguradora_id)))
+
+
+@router.post("/supervision/visitas/{visita_id}/prorroga", response_model=ProrrogaOut)
+def prorrogar_visita(
+    request: Request,
+    visita_id: uuid.UUID,
+    datos: ProrrogaRequest,
+    ctx: AuthContext = Depends(require_permission(permissions.EDITAR_VISITA)),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> ProrrogaOut:
+    """
+    **La prórroga es de Accumedical**, no de la compañía: es quien coordina a
+    los auditores y quien ve el `no_auditado` que la compañía no ve. Le da al
+    auditor más tiempo para llegar, contado desde AHORA, y devuelve el caso a la
+    agenda si ya había vencido.
+    """
+    _solo_supervision(ctx)
+    visita = service.obtener_para_supervision(db, visita_id)
+    limite_anterior, estado_anterior = visita.llegada_limite, visita.estado
+    limite = service.extender(db, visita, datos.horas, ctx.user.id)
+    audit.registrar(
+        db,
+        accion="visita_prorrogada",
+        request=request,
+        user_id=ctx.user.id,
+        session_id=ctx.sesion.id,
+        module_code=ctx.module_code,
+        entidad="conc_visitas",
+        entidad_id=str(visita_id),
+        detalle={
+            "visita": visita.codigo_interno,
+            "horas": str(datos.horas),
+            # ISO explícito: la columna es JSONB y un datetime crudo no se escribe.
+            "antes": {"llegada_limite": limite_anterior.isoformat(), "estado": estado_anterior},
+            "despues": {"llegada_limite": limite.isoformat(), "estado": visita.estado},
+        },
+    )
+    db.commit()
+    return ProrrogaOut(llegada_limite=limite, estado=visita.estado)

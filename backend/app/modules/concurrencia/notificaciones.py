@@ -252,6 +252,26 @@ def avisar_culminacion_en_campana(db: DbSession, visita) -> int:
     )
 
 
+def avisar_vencimiento_en_campana(db: DbSession, visita) -> int:
+    """
+    El aviso cuando un caso vence sin que el auditor llegara. **Solo a la
+    coordinación de Accumedical**: `no_auditado` es interno —la compañía sigue
+    viendo su caso como pendiente— y es Accumedical quien tiene que resolverlo,
+    prorrogando el plazo o buscando otro auditor.
+
+    Avisar a la compañía de esto sería contarle un problema de casa ajena que
+    probablemente se arregle en un par de horas, y encima contradiría lo que su
+    propia pantalla le enseña.
+
+    Dentro de la transacción de la tarea que vence los casos.
+    """
+    destinos = [
+        (quien, f"/concurrencia/supervision/{visita.id}")
+        for quien in _coordinadores_de_plataforma(db)
+    ]
+    return _escribir_aviso(db, visita, destinos, "no_auditado")
+
+
 def _coordinadores_de_plataforma(db: DbSession) -> list[User]:
     """
     Quién coordina Concurrencia en Accumedical: es quien va a derivar el caso, y

@@ -57,8 +57,11 @@ ACCIONES = (
     "firma_configurada",
     # Concurrencia: el auditor marca «Ya llegué» al hospital desde su app.
     "llegada_registrada",
-    # Concurrencia: la ventana venció sin llegada y el SERVIDOR marca el caso.
+    # Concurrencia: el plazo de llegada venció sin el auditor y el SERVIDOR
+    # marca el caso.
     "visita_no_auditada",
+    # Concurrencia: la coordinación le da al auditor más horas para llegar.
+    "visita_prorrogada",
 )
 
 

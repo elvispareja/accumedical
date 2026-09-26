@@ -62,7 +62,10 @@ export interface VisitaResumen {
   ciudad_nombre: string | null
   provincia_nombre: string | null
   desde: string
+  /** Cuándo vence la entrega del informe: `desde` + el SLA de la compañía. */
   hasta: string
+  /** Hasta cuándo se le acepta la llegada al auditor, prórrogas incluidas. */
+  llegada_limite: string
   estado: string
   total_correos: number
 }
@@ -123,8 +126,10 @@ export interface VisitaFormulario {
   paciente_tipo_documento_codigo: string
   paciente_numero_documento: string
   sede_id: string | null
+  // A qué hora debe llegar el auditor: **lo único que se manda de los plazos**.
+  // La entrega del informe la calcula el servidor con el SLA de la compañía, y
+  // el plazo de llegada nace aquí; mandarlos sería inventar un dato pactado.
   desde: string
-  hasta: string
   correos: CorreoVisita[]
   observaciones: string | null
   // Sin `estado`: el servidor ni lo acepta. Un caso nace programado y de ahí lo
@@ -435,14 +440,6 @@ export async function asignarAuditor(visitaId: string, auditorId: string | null)
 }
 
 /** Cambia la ventana de la visita y dispara el aviso de reprogramación. */
-export async function reprogramarVisita(id: string, desde: string, hasta: string) {
-  const { data } = await api.patch<VisitaSupervisionDetalle>(
-    `/concurrencia/supervision/visitas/${id}/horario`,
-    { desde, hasta },
-  )
-  return data
-}
-
 export async function subirComprobante(id: string, archivo: File) {
   const cuerpo = new FormData()
   cuerpo.append('archivo', archivo)
@@ -457,4 +454,30 @@ export async function subirComprobante(id: string, archivo: File) {
 
 export function urlComprobante(id: string) {
   return `/api/v1/concurrencia/supervision/visitas/${id}/comprobante`
+}
+
+/** Las horas de SLA de MI compañía para Concurrencia: de ahí sale la entrega. */
+export async function obtenerSla() {
+  const { data } = await api.get<{ horas: number }>('/concurrencia/sla')
+  return data
+}
+
+/** Lo mismo para el coordinador, que elige de qué compañía nace el caso. */
+export async function obtenerSlaSupervision(aseguradoraId: string) {
+  const { data } = await api.get<{ horas: number }>('/concurrencia/supervision/sla', {
+    params: { aseguradora_id: aseguradoraId },
+  })
+  return data
+}
+
+/**
+ * La prórroga del coordinador: más horas para que llegue el auditor, contadas
+ * desde ahora. Devuelve el plazo nuevo y el estado en el que queda el caso.
+ */
+export async function prorrogarVisita(visitaId: string, horas: number) {
+  const { data } = await api.post<{ llegada_limite: string; estado: string }>(
+    `/concurrencia/supervision/visitas/${visitaId}/prorroga`,
+    { horas },
+  )
+  return data
 }

@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowLeft, CalendarClock, FileText, ImageUp } from 'lucide-react'
+import { ArrowLeft, Clock, FileText, ImageUp } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { useSesion } from '@/core/auth/useSesion'
 import {
   obtenerVisitaSupervision,
-  reprogramarVisita,
+  prorrogarVisita,
   subirComprobante,
   urlComprobante,
   urlInformePdfSupervision,
@@ -196,12 +196,21 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
         <p className={seccion}>Cuándo</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="sl-desde">Desde</Label>
+            <Label htmlFor="sl-desde">Llegada del auditor</Label>
             <Input id="sl-desde" type="datetime-local" value={aLocal(caso.desde)} disabled />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="sl-hasta">Hasta</Label>
+            <Label htmlFor="sl-hasta">Entrega del informe</Label>
             <Input id="sl-hasta" type="datetime-local" value={aLocal(caso.hasta)} disabled />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="sl-limite">Plazo de llegada</Label>
+            <Input
+              id="sl-limite"
+              type="datetime-local"
+              value={aLocal(caso.llegada_limite)}
+              disabled
+            />
           </div>
         </div>
         <div className="space-y-2">
@@ -212,7 +221,10 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
             <EstadoVisitaBadge estado={caso.estado} />
             {caso.estado === 'no_auditado' && (
               <span className="text-sm text-tenue-fg">
-                La ventana venció sin llegada. Con «Nueva fecha» vuelve a la agenda.
+                El plazo de llegada venció sin el auditor.{' '}
+                <strong className="font-medium">La compañía no ve este estado</strong>: para
+                ella el caso sigue pendiente. Con «Extender» le das al auditor más horas para
+                llegar; para moverlo de día, el operador lo reprograma desde su ficha.
               </span>
             )}
           </div>
@@ -268,84 +280,78 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
         </div>
       )}
 
-      <NuevaFecha caso={caso} />
+      <Extender caso={caso} />
       <Comprobante caso={caso} />
     </div>
   )
 }
 
 /**
- * Cambiar la ventana de la visita. Nace del pedido que llega por correo: se fija
- * la fecha nueva y el servidor avisa a todos —correos del caso, supervisor y
- * auditor— con la ventana vieja y la nueva. La app del auditor se entera sola.
+ * **La prórroga**: más horas para que el auditor llegue, contadas DESDE AHORA.
+ * A las 16:00 se conceden dos y el plazo queda en las 18:00, no en la hora
+ * original más dos; se puede repetir cuantas veces haga falta.
+ *
+ * Es de Accumedical, no de la compañía: es quien coordina a los auditores y
+ * quien ve el `no_auditado` que a la compañía se le oculta. No mueve la entrega
+ * del informe, que sigue donde la puso el SLA.
  */
-function NuevaFecha({ caso }: { caso: VisitaSupervisionDetalle }) {
+function Extender({ caso }: { caso: VisitaSupervisionDetalle }) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const [abierto, setAbierto] = useState(false)
-  const [desde, setDesde] = useState('')
-  const [hasta, setHasta] = useState('')
+  const [horas, setHoras] = useState('2')
 
   const guardar = useMutation({
-    mutationFn: () =>
-      reprogramarVisita(caso.id, new Date(desde).toISOString(), new Date(hasta).toISOString()),
-    onSuccess: (actualizada) => {
+    mutationFn: () => prorrogarVisita(caso.id, Number(horas.replace(',', '.'))),
+    onSuccess: (resultado) => {
       queryClient.invalidateQueries({ queryKey: ['supervision'] })
       queryClient.invalidateQueries({ queryKey: ['supervision-visita', caso.id] })
-      toast.exito(`${actualizada.codigo_interno} reprogramada · aviso enviado`)
+      toast.exito(
+        `Plazo extendido hasta las ${new Date(resultado.llegada_limite).toLocaleTimeString(
+          'es-EC',
+          { hour: '2-digit', minute: '2-digit' },
+        )}`,
+      )
       setAbierto(false)
     },
     onError: (error) =>
       toast.error(
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-          'No se pudo reprogramar',
+          'No se pudo extender el plazo',
       ),
   })
 
+  // Con el auditor ya dentro, o con el caso terminado, no hay plazo que mover.
+  if (!['programada', 'asignada', 'no_auditado'].includes(caso.estado)) return null
+
   if (!abierto) {
     return (
-      <Boton
-        type="button"
-        variante="contorno"
-        onClick={() => {
-          setDesde(aLocal(caso.desde))
-          setHasta(aLocal(caso.hasta))
-          setAbierto(true)
-        }}
-      >
-        <CalendarClock aria-hidden="true" />
-        Nueva fecha
+      <Boton type="button" variante="contorno" onClick={() => setAbierto(true)}>
+        <Clock aria-hidden="true" />
+        Extender
       </Boton>
     )
   }
   return (
     <div className="space-y-3 rounded-md border border-marca/40 bg-marca-suave/30 p-4">
       <p className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
-        Nueva fecha
+        Extender el plazo de llegada
       </p>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="nf-desde">
-            Desde <span className="text-peligro">*</span>
+          <Label htmlFor="ex-horas">
+            Horas más <span className="text-peligro">*</span>
           </Label>
           <Input
-            id="nf-desde"
-            type="datetime-local"
-            value={desde}
-            onChange={(e) => setDesde(e.target.value)}
+            id="ex-horas"
+            inputMode="decimal"
+            value={horas}
+            onChange={(e) => setHoras(e.target.value)}
+            className="tabular"
           />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="nf-hasta">
-            Hasta <span className="text-peligro">*</span>
-          </Label>
-          <Input
-            id="nf-hasta"
-            type="datetime-local"
-            value={hasta}
-            min={desde || undefined}
-            onChange={(e) => setHasta(e.target.value)}
-          />
+          <p className="text-xs text-tenue-fg">
+            Se cuentan desde ahora, no desde la hora original.
+          </p>
         </div>
       </div>
       <div className="flex gap-2">
@@ -353,21 +359,21 @@ function NuevaFecha({ caso }: { caso: VisitaSupervisionDetalle }) {
           type="button"
           cargando={guardar.isPending}
           onClick={() => {
-            if (!desde || !hasta) return toast.error('Indica desde y hasta')
-            if (new Date(hasta) <= new Date(desde)) {
-              return toast.error('La hora de fin tiene que ser posterior a la de inicio')
+            const cuantas = Number(horas.replace(',', '.'))
+            if (!Number.isFinite(cuantas) || cuantas <= 0) {
+              return toast.error('Indica cuántas horas más, en números')
             }
             guardar.mutate()
           }}
         >
-          Guardar nueva fecha
+          Extender
         </Boton>
         <Boton type="button" variante="fantasma" onClick={() => setAbierto(false)}>
           Cancelar
         </Boton>
       </div>
       <p className="text-xs text-tenue-fg">
-        Al guardar, el aviso del cambio sale a los correos del caso, al supervisor y al auditor.
+        La entrega del informe no se mueve: sigue donde la puso el SLA.
       </p>
     </div>
   )

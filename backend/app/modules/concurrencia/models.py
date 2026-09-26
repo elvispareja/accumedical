@@ -42,6 +42,8 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     __tablename__ = "conc_visitas"
     __table_args__ = (
         CheckConstraint("hasta > desde", name="ventana"),
+        # Prorrogar solo da MÁS tiempo, nunca menos del ya concedido.
+        CheckConstraint("llegada_limite >= desde", name="limite"),
         # Seis estados, y **ninguno se elige**: cada uno lo pone una acción.
         #
         #   programada  nace así al crearse
@@ -49,7 +51,9 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
         #   auditando   el auditor marca «Ya llegué» en la app
         #   culminada   el auditor envía el informe
         #   cancelada   el operador la cancela, mientras nadie haya llegado
-        #   no_auditado la ventana venció sin llegada (lo aplica una tarea)
+        #   no_auditado venció el plazo de llegada sin que nadie llegara (lo
+        #               aplica una tarea). **Es interno de Accumedical**: a la
+        #               compañía se le sigue enseñando el estado que tenía.
         #
         # Por eso no hay ningún desplegable de estado en la interfaz: el estado
         # es una consecuencia de lo que pasó, no un campo que se teclea.
@@ -103,8 +107,17 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     sede_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("prestador_sedes.id", ondelete="RESTRICT")
     )
+    # A qué hora debe llegar el auditor. **Es lo único que se teclea** de los
+    # tres plazos: los otros dos salen de aquí.
     desde: Mapped[dt.datetime] = mapped_column(TS, nullable=False)
+    # Cuándo vence la ENTREGA DEL INFORME: `desde` + las horas de SLA que esa
+    # compañía tiene pactadas para Concurrencia. Se materializa a propósito —
+    # renegociar el SLA mañana no puede mover el plazo de un caso ya abierto.
     hasta: Mapped[dt.datetime] = mapped_column(TS, nullable=False)
+    # Hasta cuándo se le acepta la LLEGADA al auditor. Nace igual a `desde` y
+    # cada prórroga del coordinador lo empuja a «ahora + las horas que ponga»:
+    # se cuenta desde que pulsa, no desde la hora original.
+    llegada_limite: Mapped[dt.datetime] = mapped_column(TS, nullable=False)
     estado: Mapped[str] = mapped_column(String(20), nullable=False, server_default="programada")
     observaciones: Mapped[str | None] = mapped_column(Text)
     # La imagen que comprueba el cambio de horario pedido por correo. Solo la
@@ -120,8 +133,8 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     # auditor. Regenerarlo lo reemplaza; la película la lleva AuditLog.
     informe: Mapped[str | None] = mapped_column(Text)
     informe_actualizado_at: Mapped[dt.datetime | None] = mapped_column(TS)
-    # Cuándo tocó «Ya llegué» el auditor. Nulo = nunca llegó: si la ventana
-    # vence así, la tarea del servidor marca el caso como no_auditado.
+    # Cuándo tocó «Ya llegué» el auditor. Nulo = nunca llegó: si el plazo de
+    # llegada vence así, la tarea del servidor marca el caso como no_auditado.
     llegada_at: Mapped[dt.datetime | None] = mapped_column(TS)
 
 
