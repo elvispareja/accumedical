@@ -1,0 +1,712 @@
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Inbox,
+  MapPin,
+  Pencil,
+  Plus,
+  RotateCw,
+  Search,
+  UserCheck,
+} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+
+import { useSesion } from '@/core/auth/useSesion'
+import { cn } from '@/lib/utils'
+import {
+  asignarAuditor,
+  listarAuditores,
+  listarSupervision,
+  obtenerDashboardSupervision,
+  type AuditorElegible,
+  type VisitaSupervision,
+} from '@/modules/concurrencia/api'
+import {
+  CuadrosDeVisitas,
+  type FiltroDeCuadro,
+} from '@/modules/concurrencia/components/cifras'
+import {
+  ESTADOS_VISITA,
+  EstadoVisitaBadge,
+  Ventana,
+} from '@/modules/concurrencia/components/visitas'
+import { Boton } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import { Input } from '@/shared/components/ui/input'
+import { Modal } from '@/shared/components/ui/modal'
+import { Select } from '@/shared/components/ui/select'
+import { useToast } from '@/shared/components/ui/toast'
+
+const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
+const POR_PAGINA = 20
+
+function mensajeDeError(error: unknown, porDefecto: string): string {
+  const detalle = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  return typeof detalle === 'string' ? detalle : porDefecto
+}
+
+/**
+ * La bandeja del supervisor de plataforma: los casos que llegan de TODAS las
+ * aseguradoras, para derivar cada uno a un médico auditor desde la propia fila.
+ * El backend solo sirve esta vista a personal de plataforma con rol supervisor.
+ *
+ * Arriba, **los mismos cuadros que ve el supervisor de una compañía de lo suyo**
+ * —es el mismo componente, no una copia—, aquí con las cifras de todas; pulsar
+ * uno no navega, acota la lista de abajo. Y los filtros son cuatro: búsqueda,
+ * estado, **rango de fechas** y solo los que están sin asignar.
+ *
+ * La misma pantalla sirve al coordinador (`/concurrencia`) y al administrador
+ * global (`/admin/auditorias/concurrencia`); lo único que cambia es por dónde
+ * abre cada uno el caso.
+ */
+export function SupervisionPage() {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const sinMovimiento = useReducedMotion()
+  const ubicacion = useLocation()
+  const navegar = useNavigate()
+
+  const [busqueda, setBusqueda] = useState('')
+  const [busquedaAplicada, setBusquedaAplicada] = useState('')
+  const [estado, setEstado] = useState('')
+  const [soloSinAsignar, setSoloSinAsignar] = useState(false)
+  // El rango, en `YYYY-MM-DD`. Acota por la VENTANA del caso: entra el que
+  // toque cualquier día del rango, no solo el que empiece dentro.
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+  const [asignando, setAsignando] = useState<VisitaSupervision | null>(null)
+  const [pagina, setPagina] = useState(1)
+
+  // Cada quien abre el caso por SU ruta: el administrador global no tiene
+  // módulos, así que su panel —y el detalle que cuelga de él— vive en Auditorías.
+  const { data: sesion } = useSesion()
+  const rutaDelCaso = (id: string) =>
+    sesion?.user.es_admin_global
+      ? `/admin/auditorias/concurrencia/${id}`
+      : `/concurrencia/supervision/${id}`
+
+  // Una notificación vieja llega como `?caso=<id>`: se redirige a la página del
+  // caso. Las nuevas ya apuntan ahí directamente; esto es solo la puerta de
+  // atrás para las que se escribieron antes.
+  const [parametros] = useSearchParams()
+  const casoDeLaUrl = parametros.get('caso')
+  useEffect(() => {
+    if (casoDeLaUrl) navegar(rutaDelCaso(casoDeLaUrl), { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [casoDeLaUrl, sesion?.user.es_admin_global])
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setBusquedaAplicada(busqueda)
+      setPagina(1)
+    }, 300)
+    return () => window.clearTimeout(id)
+  }, [busqueda])
+
+  const consulta = useQuery({
+    queryKey: ['supervision', { busquedaAplicada, estado, soloSinAsignar, desde, hasta, pagina }],
+    queryFn: () =>
+      listarSupervision({
+        search: busquedaAplicada,
+        estado,
+        sin_asignar: soloSinAsignar,
+        desde,
+        hasta,
+        page: pagina,
+        page_size: POR_PAGINA,
+      }),
+    placeholderData: keepPreviousData,
+  })
+
+  // Las cifras de TODAS las compañías, las mismas que ve cada aseguradora de lo
+  // suyo. No siguen al rango de fechas: son la foto completa, y pulsar una es
+  // lo que acota la lista.
+  const cifras = useQuery({
+    queryKey: ['supervision-cifras'],
+    queryFn: obtenerDashboardSupervision,
+    // Un panel que se queda abierto en la oficina no debe mentir.
+    refetchInterval: 60_000,
+  })
+  const auditores = useQuery({ queryKey: ['auditores'], queryFn: listarAuditores })
+
+  const derivar = useMutation({
+    mutationFn: ({ visita, auditorId }: { visita: VisitaSupervision; auditorId: string | null }) =>
+      asignarAuditor(visita.id, auditorId),
+    onSuccess: (actualizada) => {
+      queryClient.invalidateQueries({ queryKey: ['supervision'] })
+      toast.exito(
+        actualizada.auditor_nombre
+          ? `${actualizada.codigo_interno} derivada a ${actualizada.auditor_nombre}`
+          : `${actualizada.codigo_interno} sin asignar`,
+      )
+    },
+    onError: (error) => {
+      queryClient.invalidateQueries({ queryKey: ['supervision'] })
+      toast.error(mensajeDeError(error, 'No se pudo derivar el caso'))
+    },
+  })
+
+  /**
+   * Pulsar un cuadro pone ESE filtro y quita los demás: si se sumara a lo que ya
+   * hubiera puesto, el número del cuadro y lo que se ve debajo no cuadrarían.
+   * Sin argumentos, limpia.
+   */
+  function aplicarFiltro(filtro: FiltroDeCuadro = {}) {
+    setBusqueda('')
+    setBusquedaAplicada('')
+    setSoloSinAsignar(false)
+    setEstado(filtro.estado ?? '')
+    setDesde(filtro.desde ?? '')
+    setHasta(filtro.hasta ?? '')
+    setPagina(1)
+  }
+
+  const datos = consulta.data
+  const totalPaginas = datos ? Math.max(1, Math.ceil(datos.total / datos.page_size)) : 1
+  const hayFiltros = Boolean(busquedaAplicada || estado || soloSinAsignar || desde || hasta)
+  const sinAuditores = auditores.data?.length === 0
+
+  return (
+    <div>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="font-display text-[0.6875rem] font-semibold uppercase tracking-[0.16em] text-tenue-fg">
+            Concurrencia · Supervisión
+          </p>
+          <h1 className="mt-1.5 font-display text-2xl font-semibold tracking-tight">
+            Casos de las aseguradoras
+          </h1>
+          <p className="mt-1 text-sm text-tenue-fg">
+            Las visitas que programan todas las compañías, para derivarlas a tus médicos
+            auditores — y las que programes tú, si el pedido te llega por correo.
+          </p>
+        </div>
+        {/* La misma pantalla sirve en /concurrencia y en /admin/auditorias/…,
+            así que el destino se arma sobre la ruta actual, no en absoluto. */}
+        <Link
+          to={`${ubicacion.pathname.replace(/\/$/, '')}/programar`}
+          className="inline-flex h-10 items-center gap-2 rounded bg-marca px-4 text-sm font-medium text-marca-fg transition-opacity duration-150 hover:opacity-90"
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          Programar visita
+        </Link>
+      </header>
+
+      {sinAuditores && (
+        <p className="mt-5 rounded-md border border-dashed border-borde px-4 py-3 text-sm text-tenue-fg">
+          Todavía no hay médicos auditores activos en Concurrencia: créalos en la sección Usuarios
+          del administrador y aparecerán aquí para derivarles casos.
+        </p>
+      )}
+
+      {/* ── Los cuadros: los mismos que ve cada aseguradora de lo suyo, aquí
+          con lo de TODAS. Cada uno es también un filtro de la lista. ── */}
+      <CuadrosDeVisitas
+        className="mt-7"
+        cifras={cifras.data}
+        cargando={cifras.isPending}
+        error={cifras.isError}
+        onReintentar={() => cifras.refetch()}
+        alFiltrar={aplicarFiltro}
+      />
+
+      {/* ── Filtros ── */}
+      <div className="mt-6 grid items-center gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_12rem_10.5rem_10.5rem_auto]">
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
+            aria-hidden="true"
+          />
+          <Input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por aseguradora, prestador o código"
+            aria-label="Buscar casos"
+            mayusculas={false}
+            className="pl-9"
+          />
+        </div>
+        <Select
+          value={estado}
+          onChange={(e) => {
+            setEstado(e.target.value)
+            setPagina(1)
+          }}
+          aria-label="Filtrar por estado"
+        >
+          <option value="">Todos los estados</option>
+          {ESTADOS_VISITA.map((e) => (
+            <option key={e.valor} value={e.valor}>
+              {e.etiqueta}
+            </option>
+          ))}
+        </Select>
+        <Input
+          type="date"
+          value={desde}
+          onChange={(e) => {
+            setDesde(e.target.value)
+            setPagina(1)
+          }}
+          aria-label="Desde esta fecha"
+        />
+        <Input
+          type="date"
+          value={hasta}
+          min={desde || undefined}
+          onChange={(e) => {
+            setHasta(e.target.value)
+            setPagina(1)
+          }}
+          aria-label="Hasta esta fecha"
+        />
+        <Checkbox
+          id="sin-asignar"
+          checked={soloSinAsignar}
+          onChange={(v) => {
+            setSoloSinAsignar(v)
+            setPagina(1)
+          }}
+          titulo="Solo sin asignar"
+        />
+      </div>
+
+      {/* La salida de cualquier filtro, incluida la de haber pulsado un cuadro:
+          aparece solo cuando hay algo que quitar. */}
+      {hayFiltros && (
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => aplicarFiltro()}
+            className="text-sm font-medium text-marca transition-opacity duration-150 hover:opacity-80"
+          >
+            Quitar filtros
+          </button>
+        </div>
+      )}
+
+      {/* ── Tabla ── */}
+      <div className="mt-5 overflow-hidden rounded-md border border-borde bg-superficie">
+        {consulta.isPending ? (
+          <Esqueleto />
+        ) : consulta.isError ? (
+          <EstadoError onReintentar={() => consulta.refetch()} />
+        ) : datos && datos.items.length === 0 ? (
+          <Vacio hayFiltros={hayFiltros} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[58rem] text-sm">
+              <thead>
+                <tr className="border-b border-borde bg-superficie-hundida text-left">
+                  <Th>Código</Th>
+                  <Th>Aseguradora</Th>
+                  <Th>Prestador</Th>
+                  <Th>Cuándo</Th>
+                  <Th>Estado</Th>
+                  <Th>Auditor</Th>
+                  <th className="w-14 px-4 py-2.5">
+                    <span className="sr-only">Acciones</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence initial={false}>
+                  {datos?.items.map((fila, indice) => (
+                    <motion.tr
+                      key={fila.id}
+                      initial={sinMovimiento ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                      animate={{
+                        opacity: 1,
+                        y: 0,
+                        transition: {
+                          duration: 0.22,
+                          delay: sinMovimiento ? 0 : Math.min(indice, 8) * 0.03,
+                          ease: EASE,
+                        },
+                      }}
+                      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                      className="border-b border-borde last:border-b-0 align-top hover:bg-tenue/50"
+                    >
+                      <td className="px-4 py-3 font-mono text-xs text-tenue-fg">
+                        {fila.codigo_interno}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="max-w-[14rem] truncate font-medium">
+                          {fila.aseguradora_nombre}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-tenue-fg">
+                        <span className="block max-w-[14rem] truncate text-tinta">
+                          {fila.prestador_nombre}
+                        </span>
+                        <span className="flex max-w-[14rem] items-center gap-1 truncate text-xs">
+                          <MapPin className="size-3 shrink-0" aria-hidden="true" />
+                          <span className="truncate">
+                            {fila.sede_nombre ?? 'Casa matriz'}
+                            {fila.ciudad_nombre ? ` · ${fila.ciudad_nombre}` : ''}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-tenue-fg">
+                        <Ventana desde={fila.desde} hasta={fila.hasta} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <EstadoVisitaBadge estado={fila.estado} />
+                      </td>
+                      <td className="px-4 py-3">
+                        {/* Derivar abre un diálogo con los auditores agrupados
+                            por cercanía al destino; aquí solo se ve quién es. */}
+                        <button
+                          type="button"
+                          onClick={() => setAsignando(fila)}
+                          disabled={derivar.isPending || sinAuditores}
+                          aria-label={`Derivar ${fila.codigo_interno}`}
+                          className={cn(
+                            'flex h-9 w-48 items-center gap-2 rounded border border-borde bg-superficie pl-3 pr-3',
+                            'text-left text-sm transition-colors duration-150 hover:border-marca/50',
+                            'focus-visible:border-marca focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-anillo/35',
+                            'disabled:cursor-not-allowed disabled:opacity-60',
+                            !fila.auditor_id && 'text-tenue-fg',
+                          )}
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {fila.auditor_nombre ?? 'Sin asignar'}
+                          </span>
+                          <UserCheck className="size-4 shrink-0 text-tenue-fg" aria-hidden="true" />
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Boton
+                          variante="fantasma"
+                          tamano="icono"
+                          onClick={() => navegar(rutaDelCaso(fila.id))}
+                          aria-label={`Abrir ${fila.codigo_interno}`}
+                        >
+                          <Pencil aria-hidden="true" />
+                        </Boton>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Derivar: los auditores agrupados por cercanía al destino del caso,
+          con sus tres títulos. Elegir uno asigna y cierra. */}
+      <Modal
+        abierto={asignando !== null}
+        onCerrar={() => setAsignando(null)}
+        titulo={asignando ? `Derivar ${asignando.codigo_interno}` : ''}
+        descripcion={
+          asignando
+            ? [
+                asignando.prestador_nombre,
+                [asignando.ciudad_nombre, asignando.provincia_nombre].filter(Boolean).join(', '),
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            : undefined
+        }
+        pie={
+          <Boton type="button" variante="contorno" onClick={() => setAsignando(null)}>
+            Cancelar
+          </Boton>
+        }
+      >
+        {asignando && (
+          <ElegirAuditor
+            caso={asignando}
+            auditores={auditores.data ?? []}
+            ocupado={derivar.isPending}
+            onElegir={(auditorId) =>
+              derivar.mutate(
+                { visita: asignando, auditorId },
+                { onSuccess: () => setAsignando(null) },
+              )
+            }
+          />
+        )}
+      </Modal>
+
+      {/* ── Paginación ── */}
+      {datos && datos.total > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-tenue-fg">
+            {datos.total} {datos.total === 1 ? 'caso' : 'casos'} · página {datos.page} de{' '}
+            {totalPaginas}
+          </p>
+          <div className="flex gap-2">
+            <Boton
+              variante="contorno"
+              tamano="sm"
+              disabled={pagina <= 1}
+              onClick={() => setPagina((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft aria-hidden="true" />
+              Anterior
+            </Boton>
+            <Boton
+              variante="contorno"
+              tamano="sm"
+              disabled={pagina >= totalPaginas}
+              onClick={() => setPagina((p) => p + 1)}
+            >
+              Siguiente
+              <ChevronRight aria-hidden="true" />
+            </Boton>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="px-4 py-2.5 text-left font-display text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-tenue-fg">
+      {children}
+    </th>
+  )
+}
+
+function Esqueleto() {
+  return (
+    <div className="divide-y divide-borde" role="status" aria-label="Cargando los casos">
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="flex items-center gap-4 px-4 py-3.5">
+          <div className="h-3 w-16 animate-pulse rounded bg-tenue" />
+          <div className="h-3 w-1/4 animate-pulse rounded bg-tenue" />
+          <div className="h-3 w-1/5 animate-pulse rounded bg-tenue" />
+          <div className="ml-auto h-9 w-44 animate-pulse rounded bg-tenue" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function EstadoError({ onReintentar }: { onReintentar: () => void }) {
+  return (
+    <div className="px-6 py-14 text-center">
+      <p className="font-display text-sm font-medium">No pudimos cargar los casos</p>
+      <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">
+        Puede ser un corte momentáneo de conexión con el servidor.
+      </p>
+      <Boton variante="contorno" tamano="sm" onClick={onReintentar} className="mt-4">
+        <RotateCw aria-hidden="true" />
+        Reintentar
+      </Boton>
+    </div>
+  )
+}
+
+function Vacio({ hayFiltros }: { hayFiltros: boolean }) {
+  return (
+    <div className="px-6 py-16 text-center">
+      {hayFiltros ? (
+        <Search className="mx-auto size-6 text-tenue-fg" aria-hidden="true" />
+      ) : (
+        <Inbox className="mx-auto size-6 text-tenue-fg" aria-hidden="true" />
+      )}
+      <p className="mt-3 font-display text-sm font-medium">
+        {hayFiltros ? 'Ningún caso coincide' : 'Todavía no llegan casos'}
+      </p>
+      <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">
+        {hayFiltros
+          ? 'Prueba con otro término o quita los filtros.'
+          : 'Cuando una aseguradora programe una visita, aparecerá aquí para que la derives.'}
+      </p>
+      {!hayFiltros && (
+        <p className="mx-auto mt-3 flex max-w-sm items-center justify-center gap-1.5 text-xs text-tenue-fg">
+          <UserCheck className="size-3.5" aria-hidden="true" />
+          Derivar un caso es elegir a su auditor en la propia fila.
+        </p>
+      )}
+    </div>
+  )
+}
+
+
+/**
+ * El cuerpo del diálogo de derivación: los auditores en tres secciones según
+ * el destino del caso —en la ciudad, en la provincia, en otras provincias—,
+ * con un buscador que filtra por nombre o por dónde están. Los grupos se
+ * comparan por nombre de catálogo, el mismo del que salen ambos lados. Elegir
+ * a cualquiera es válido: la cercanía ordena, no restringe.
+ */
+function ElegirAuditor({
+  caso,
+  auditores,
+  ocupado,
+  onElegir,
+}: {
+  caso: VisitaSupervision
+  auditores: AuditorElegible[]
+  ocupado: boolean
+  onElegir: (auditorId: string | null) => void
+}) {
+  const [busqueda, setBusqueda] = useState('')
+
+  const normalizar = (texto: string) =>
+    texto
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLocaleLowerCase()
+  const termino = normalizar(busqueda.trim())
+  const filtrados = termino
+    ? auditores.filter((a) =>
+        normalizar(
+          `${a.nombre_completo} ${a.ciudad_nombre ?? ''} ${a.provincia_nombre ?? ''}`,
+        ).includes(termino),
+      )
+    : auditores
+
+  const enCiudad = caso.ciudad_nombre
+    ? filtrados.filter((a) => a.ciudad_nombre === caso.ciudad_nombre)
+    : []
+  const enProvincia = caso.provincia_nombre
+    ? filtrados.filter(
+        (a) => a.provincia_nombre === caso.provincia_nombre && !enCiudad.includes(a),
+      )
+    : []
+  const enOtras = filtrados.filter((a) => !enCiudad.includes(a) && !enProvincia.includes(a))
+  const conUbicacion = Boolean(caso.ciudad_nombre || caso.provincia_nombre)
+
+  return (
+    <div className="space-y-5">
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
+          aria-hidden="true"
+        />
+        <Input
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar auditor por nombre o ciudad"
+          aria-label="Buscar auditor"
+          mayusculas={false}
+          className="pl-9"
+        />
+      </div>
+
+      {caso.auditor_id && (
+        <Boton
+          type="button"
+          variante="contorno"
+          tamano="sm"
+          disabled={ocupado}
+          onClick={() => onElegir(null)}
+        >
+          Quitar la asignación actual
+        </Boton>
+      )}
+
+      {conUbicacion ? (
+        <>
+          <SeccionAuditores
+            titulo={`En la ciudad${caso.ciudad_nombre ? ` · ${caso.ciudad_nombre}` : ''}`}
+            lista={enCiudad}
+            vacio="Ningún auditor en esta ciudad."
+            actual={caso.auditor_id}
+            ocupado={ocupado}
+            onElegir={onElegir}
+          />
+          <SeccionAuditores
+            titulo={`En la provincia${caso.provincia_nombre ? ` · ${caso.provincia_nombre}` : ''}`}
+            lista={enProvincia}
+            vacio="Ningún otro auditor en esta provincia."
+            actual={caso.auditor_id}
+            ocupado={ocupado}
+            onElegir={onElegir}
+          />
+          <SeccionAuditores
+            titulo="En otras provincias"
+            lista={enOtras}
+            vacio="Ninguno más."
+            actual={caso.auditor_id}
+            ocupado={ocupado}
+            onElegir={onElegir}
+          />
+        </>
+      ) : (
+        <SeccionAuditores
+          titulo="Auditores"
+          lista={filtrados}
+          vacio="Ningún auditor coincide con la búsqueda."
+          actual={caso.auditor_id}
+          ocupado={ocupado}
+          onElegir={onElegir}
+        />
+      )}
+    </div>
+  )
+}
+
+function SeccionAuditores({
+  titulo,
+  lista,
+  vacio,
+  actual,
+  ocupado,
+  onElegir,
+}: {
+  titulo: string
+  lista: AuditorElegible[]
+  vacio: string
+  actual: string | null
+  ocupado: boolean
+  onElegir: (auditorId: string) => void
+}) {
+  return (
+    <section aria-label={titulo}>
+      <h3 className="font-display text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-tenue-fg">
+        {titulo}
+      </h3>
+      {lista.length === 0 ? (
+        <p className="mt-2 rounded-md border border-dashed border-borde px-3 py-2.5 text-xs text-tenue-fg">
+          {vacio}
+        </p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {lista.map((a) => {
+            const asignado = actual === a.id
+            return (
+              <button
+                key={a.id}
+                type="button"
+                disabled={ocupado}
+                onClick={() => onElegir(a.id)}
+                className={cn(
+                  'flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors duration-150',
+                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-marca',
+                  'disabled:cursor-not-allowed disabled:opacity-60',
+                  asignado ? 'border-marca/40 bg-marca-suave/40' : 'border-borde hover:bg-tenue/50',
+                )}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{a.nombre_completo}</span>
+                  <span className="block truncate text-xs text-tenue-fg">
+                    {[a.ciudad_nombre, a.provincia_nombre].filter(Boolean).join(', ') ||
+                      'Sin ubicación registrada'}
+                  </span>
+                </span>
+                {asignado && (
+                  <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-marca">
+                    <Check className="size-4" aria-hidden="true" />
+                    Asignado
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  )
+}

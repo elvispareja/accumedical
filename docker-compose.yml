@@ -1,0 +1,121 @@
+# docker-compose.yml — DESARROLLO
+# Compose v2 (sin clave `version`, deprecada).
+#
+# Dos redes en lugar de una plana: nginx y web NO pueden alcanzar Postgres.
+# `api` pertenece a ambas; `db` solo a `data`.
+# En desarrollo `data` es una bridge normal porque publicar 127.0.0.1:5432 exige
+# gateway y una red con `internal: true` no admite publicación de puertos.
+name: accumedical
+
+networks:
+  edge:
+    driver: bridge
+  data:
+    driver: bridge
+
+volumes:
+  pgdata:
+  uploads:
+
+services:
+  db:
+    image: postgres:16.10-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?definir en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definir en .env}
+      POSTGRES_DB: ${POSTGRES_DB:?definir en .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # SOLO DESARROLLO y atado a loopback: psql/DBeaver desde la propia máquina,
+    # inalcanzable desde la LAN. En docker-compose.prod.yml esta clave no existe.
+    # El puerto del host es configurable porque es habitual tener ya un Postgres
+    # local escuchando en el 5432. Dentro de la red `data` siempre es db:5432.
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-55432}:5432"
+    healthcheck:
+      # -h 127.0.0.1 fuerza TCP: sin él pg_isready usa el socket unix y reporta
+      # "healthy" durante la ventana del servidor temporal de initdb, antes de que
+      # el definitivo esté escuchando de verdad.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks: [data]
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Windows: los eventos inotify no cruzan el bind mount desde NTFS.
+      WATCHFILES_FORCE_POLLING: "true"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+    volumes:
+      - ./backend:/app
+      - uploads:/srv/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # python:3.12-slim no trae curl ni wget: se usa la stdlib.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3); sys.exit(0 if r.status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks: [edge, data]
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    environment:
+      # El puerto por el que el navegador ve la app (nginx). Sin esto el cliente
+      # HMR intenta ws://host:5173 y falla en silencio.
+      VITE_HMR_CLIENT_PORT: "8080"
+    volumes:
+      - ./web:/app
+      # Volumen anónimo: los binarios nativos (esbuild, rollup) compilados para
+      # Linux no deben ser pisados por el node_modules de Windows del host.
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5173/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks: [edge]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      # Loopback y 8080: el puerto 80 suele estar tomado en Windows (http.sys/IIS)
+      # y publicar en todas las interfaces expondría el entorno de desarrollo a la LAN.
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./infra/nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+      # Los fragmentos compartidos van FUERA de conf.d: nginx carga automáticamente
+      # todo *.conf que haya en conf.d, y montar ahí el directorio entero cargaría
+      # también el prod.conf.
+      - ./infra/nginx/includes:/etc/nginx/includes:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [edge]

@@ -1,0 +1,25 @@
+FONDO DE LA PANTALLA DE LOGIN
+=============================
+
+Deja tu imagen en esta misma carpeta con el nombre:
+
+    login-bg.jpg
+
+No hay que tocar ningún componente: el panel izquierdo del login ya la busca.
+
+Mientras el archivo no exista, se ve el degradado verde de marca y la pantalla
+funciona con normalidad. No queda rota ni sale un hueco.
+
+Recomendaciones
+---------------
+- Formato: JPG o WebP. Si usas otro nombre o extensión, cambia una sola línea:
+  la variable --login-fondo en  web/src/index.css
+- Tamaño: 2000 x 1400 px aproximadamente es suficiente. Comprime a menos de
+  400 KB; es lo primero que ve el usuario y pesa en la carga inicial.
+- Encuadre: el panel recorta la imagen al centro (background-size: cover) y su
+  proporción cambia bastante entre escritorio y móvil, así que evita fotos donde
+  el motivo importante quede en un borde.
+- Contraste: encima va un velo oscuro para que el texto blanco cumpla contraste
+  AA sobre cualquier foto. Si tu imagen es muy clara y el texto se pierde, sube
+  la variable --login-velo (por ejemplo de 0.62 a 0.75); si es muy oscura y se
+  ve apagada, bájala.

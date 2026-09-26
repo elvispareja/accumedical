@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+FROM node:22-alpine
+
+# /app lo crea WORKDIR como root. Hay que cedérselo a `node` ANTES de instalar:
+# Vite escribe su caché de dependencias en node_modules/.vite en cada arranque, y
+# si node_modules quedara con propietario root el contenedor (que corre como
+# `node`) fallaría con EACCES y la aplicación se quedaría en pantalla en blanco.
+WORKDIR /app
+RUN chown node:node /app
+USER node
+
+# Capa de dependencias cacheada. Siempre `npm ci`, nunca `npm install`: ci respeta
+# el lockfile al pie de la letra y no lo muta.
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci
+
+COPY --chown=node:node . .
+
+EXPOSE 5173
+CMD ["npm", "run", "dev"]

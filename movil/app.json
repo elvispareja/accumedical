@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "Accumedical",
+    "slug": "accumedical-auditor",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ec.med.accumedical.auditor"
+    },
+    "android": {
+      "package": "ec.med.accumedical.auditor",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Accumedical usa el micrófono para dictar tus notas de auditoría."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Accumedical usa la cámara para fotografiar documentos del caso durante la auditoría.",
+          "photosPermission": "Accumedical accede a tus fotos para adjuntar documentos del caso."
+        }
+      ],
+      "expo-sharing",
+      "expo-status-bar",
+      "expo-font",
+      "expo-asset",
+      "expo-image"
+    ],
+    "extra": {
+      "apiUrl": "http://192.168.10.238:8088"
+    }
+  }
+}

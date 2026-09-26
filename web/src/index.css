@@ -1,0 +1,269 @@
+/* Fuentes autoalojadas vía @fontsource: se empaquetan con el bundle y se sirven desde
+   nuestro propio origen. No se usa Google Fonts por CDN porque obligaría a abrir la CSP
+   estricta (style-src / font-src a dominios externos), y esa política es innegociable. */
+@import '@fontsource-variable/archivo';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ─────────────────────────────────────────────────────────────
+     DESIGN TOKENS
+     Un solo sistema para toda la plataforma. El dark mode redefine
+     únicamente los valores; ningún componente conoce un color literal.
+     ───────────────────────────────────────────────────────────── */
+  :root {
+    /* Neutros con sesgo azul: la familia del azul marino del logo (#1a2448). */
+    --fondo: 226 24% 97%;
+    --tinta: 227 32% 12%;
+    --superficie: 0 0% 100%;
+    --superficie-hundida: 226 20% 94%;
+    --tenue: 226 18% 92%;
+    --tenue-fg: 226 10% 42%;
+    --borde: 226 15% 87%;
+    --anillo: 227 46% 34%;
+
+    /* Acento institucional: el azul marino del propio logo, muestreado
+       (#1a2448), con el oro del arco como acento secundario. */
+    --marca: 227 46% 22%;
+    --marca-fg: 224 40% 98%;
+    --marca-suave: 227 45% 94%;
+    --oro: 41 39% 45%;
+
+    --peligro: 4 62% 44%;
+    --peligro-fg: 0 0% 100%;
+    --peligro-suave: 4 60% 96%;
+    --exito: 158 64% 30%;
+    /* Estado intermedio: ni activo ni dado de baja (un prestador suspendido). */
+    --aviso: 35 84% 36%;
+
+    /* Acentos por módulo (espejo de modules.color_acento en la base de datos) */
+    --modulo-suscripcion: 162 64% 32%;
+    --modulo-calificacion: 258 52% 55%;
+    --modulo-concurrencia: 199 68% 40%;
+    --modulo-carta-credito: 35 78% 40%;
+    --modulo-examen-asegurabilidad: 162 64% 32%;
+    --modulo-declaracion-salud: 180 55% 34%;
+    --modulo-calificacion-riesgo: 258 52% 55%;
+    --modulo-auditoria-alta: 222 60% 45%;
+    --modulo-auditoria-credito-hospitalario: 350 55% 42%;
+    --modulo-ambulatorio: 190 70% 34%;
+    --modulo-auditoria-vida: 282 45% 48%;
+    --modulo-reembolso: 130 45% 34%;
+
+    --radio: 0.5rem;
+    --sombra-sutil: 0 1px 2px hsl(165 24% 11% / 0.05), 0 1px 3px hsl(165 24% 11% / 0.04);
+    --sombra-elevada: 0 12px 32px -12px hsl(165 24% 11% / 0.22), 0 2px 8px -4px hsl(165 24% 11% / 0.1);
+
+    /* ─── HUECO PARA EL FONDO DEL LOGIN ───────────────────────────
+       Deja tu imagen en  web/public/login-bg.jpg  y no hace falta tocar
+       nada más. Para usar otro nombre o formato, cambia solo esta línea.
+       Mientras no exista el archivo, el degradado de abajo se ve entero
+       y la pantalla no queda rota.                                   */
+    --login-fondo: url('/login-bg.jpg');
+    /* Opacidad del velo que va sobre la foto. Súbelo si tu imagen es clara
+       y el texto pierde contraste; bájalo si es oscura. */
+    --login-velo: 0.62;
+  }
+
+  .dark {
+    /* El modo oscuro ES el azul del logo: todos los fondos salen de su hue. */
+    --fondo: 227 42% 8%;
+    --tinta: 224 30% 92%;
+    --superficie: 227 36% 12%;
+    --superficie-hundida: 227 38% 10%;
+    --tenue: 227 28% 18%;
+    --tenue-fg: 226 16% 68%;
+    --borde: 227 24% 23%;
+    --anillo: 227 60% 64%;
+
+    --marca: 227 62% 72%;
+    --marca-fg: 227 45% 12%;
+    --marca-suave: 227 36% 20%;
+    --oro: 41 45% 58%;
+
+    --peligro: 4 68% 62%;
+    --peligro-fg: 4 40% 10%;
+    --peligro-suave: 4 32% 16%;
+    --exito: 158 52% 52%;
+    --aviso: 38 76% 58%;
+
+    --modulo-suscripcion: 162 52% 52%;
+    --modulo-calificacion: 258 62% 72%;
+    --modulo-concurrencia: 199 62% 60%;
+    --modulo-carta-credito: 35 68% 58%;
+    --modulo-examen-asegurabilidad: 162 52% 52%;
+    --modulo-declaracion-salud: 180 48% 56%;
+    --modulo-calificacion-riesgo: 258 62% 72%;
+    --modulo-auditoria-alta: 222 62% 66%;
+    --modulo-auditoria-credito-hospitalario: 350 60% 66%;
+    --modulo-ambulatorio: 190 60% 56%;
+    --modulo-auditoria-vida: 282 50% 70%;
+    --modulo-reembolso: 130 40% 58%;
+
+    --sombra-sutil: 0 1px 2px hsl(0 0% 0% / 0.4);
+    --sombra-elevada: 0 16px 40px -16px hsl(0 0% 0% / 0.7), 0 2px 8px -4px hsl(0 0% 0% / 0.5);
+
+    --login-velo: 0.7;
+  }
+
+  * {
+    @apply border-borde;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-fondo text-tinta font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04';
+  }
+
+  /* Foco visible siempre, en todo elemento interactivo. No se elimina nunca. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-anillo ring-offset-2 ring-offset-fondo;
+  }
+
+  ::selection {
+    @apply bg-marca/20;
+  }
+
+  /* La accesibilidad manda sobre la estética: si el sistema pide menos
+     movimiento, todo queda en fundidos instantáneos. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Panel visual del login.
+     Tres capas apiladas, de arriba abajo:
+       1. el velo, que garantiza contraste AA del texto sobre CUALQUIER foto;
+       2. tu imagen (--login-fondo);
+       3. un degradado de marca que se ve entero mientras no exista la imagen,
+          de modo que la pantalla nunca queda rota ni en blanco.
+     Es siempre una superficie oscura, en tema claro y en oscuro: así la foto
+     que pongas se lee igual en ambos y el texto encima no cambia de color. */
+  .panel-login {
+    background-color: hsl(227 50% 9%);
+    background-image:
+      linear-gradient(
+        170deg,
+        rgb(8 12 28 / calc(var(--login-velo) * 0.72)),
+        rgb(8 12 28 / var(--login-velo)) 62%,
+        rgb(8 12 28 / calc(var(--login-velo) * 1.05))
+      ),
+      var(--login-fondo),
+      linear-gradient(155deg, hsl(227 52% 18%), hsl(229 46% 11%) 48%, hsl(210 42% 14%));
+    background-size: cover, cover, cover;
+    background-position: center, center, center;
+    background-repeat: no-repeat, no-repeat, no-repeat;
+  }
+
+  /* Retícula tenue sobre el panel: evoca el papel pautado de un expediente
+     sin competir con la foto. */
+  .trama-expediente {
+    background-image:
+      repeating-linear-gradient(
+        to bottom,
+        rgb(255 255 255 / 0.05) 0 1px,
+        transparent 1px 34px
+      );
+    mask-image: linear-gradient(to bottom, transparent, black 22%, black 78%, transparent);
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Barra de desplazamiento propia, para los paneles de la interfaz —el menú
+     lateral y lo que venga—. La del sistema en Windows es ancha, cuadrada y con
+     flechas en los extremos: dentro de un panel de 15 rem se come el sitio y
+     pesa más que el contenido.
+
+     Queda una pastilla de 4 px con aire a los lados: el ancho real del área
+     arrastrable son 10 px —el borde transparente cuenta como pulgar—, así que
+     se ve fina pero se agarra bien. Se pinta con los tokens, de modo que sigue
+     al tema sin una regla por modo, y el carril va transparente: sin nada que
+     desplazar no se dibuja ningún canal vacío.
+
+     Va en `::-webkit-` y no en las propiedades estándar porque `scrollbar-width:
+     thin` adelgaza la barra pero **deja las flechas**, y no hay forma de
+     quitarlas con lo estándar. Ojo al tocarlo: en Chromium, fijar
+     `scrollbar-width` o `scrollbar-color` a cualquier valor que no sea `auto`
+     hace que se ignore TODO lo de aquí abajo. */
+  /* El número que va DENTRO de la burbuja de una provincia en el mapa de la
+     red. Es un tooltip permanente de Leaflet centrado sobre el círculo, y no un
+     icono con HTML inyectado: así el rótulo lo escribe React y no se rompe la
+     regla de no inyectar HTML. Aquí solo se le quita a Leaflet su bocadillo
+     —fondo, borde, sombra y la flechita— para que quede el número a secas.
+
+     `pointer-events: none` es imprescindible: sin él, el rótulo tapa el centro
+     del círculo y el clic que entra a la provincia no llega. */
+  .leaflet-tooltip.burbuja-mapa {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.75rem;
+    line-height: 1;
+    pointer-events: none;
+  }
+
+  .leaflet-tooltip.burbuja-mapa::before {
+    display: none;
+  }
+
+  .barra-fina::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .barra-fina::-webkit-scrollbar-track,
+  .barra-fina::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .barra-fina::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-color: hsl(var(--tenue-fg) / 0.3);
+    background-clip: padding-box;
+  }
+
+  .barra-fina::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--tenue-fg) / 0.5);
+  }
+
+  /* Las flechas de los extremos, fuera: no llevan a ningún sitio al que no se
+     llegue arrastrando o con la rueda, y son lo que afea la barra. */
+  .barra-fina::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Firefox no entiende nada de lo anterior; para él —y solo para él— van las
+     propiedades estándar, que ahí sí dan una barra fina sin flechas. */
+  @supports (-moz-appearance: none) {
+    .barra-fina {
+      scrollbar-width: thin;
+      scrollbar-color: hsl(var(--tenue-fg) / 0.35) transparent;
+    }
+  }
+}

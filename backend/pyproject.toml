@@ -1,0 +1,51 @@
+[project]
+name = "accumedical-api"
+version = "0.1.0"
+description = "API de la plataforma modular de seguros de salud"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115.6",
+    "uvicorn[standard]>=0.34.0",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14.0",
+    "psycopg[binary]>=3.2.3",
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.0",
+    "email-validator>=2.2.0",
+    "argon2-cffi>=23.1.0",
+    "structlog>=24.4.0",
+    "slowapi>=0.1.9",
+    "python-magic>=0.4.27",
+    "python-multipart>=0.0.20",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "httpx>=0.28.1",
+    # STT local para el dictado del auditor: el audio clínico no sale del servidor.
+    "faster-whisper>=1.1.0",
+    # El PDF del informe de auditoría, con el diseño de la marca.
+    "reportlab>=4.2",
+    # Firma electrónica PAdES sobre ese PDF, con el .p12 de la empresa.
+    "pyhanko>=0.25",
+    "ruff>=0.8.4",
+]
+
+[tool.uv]
+# Aplicación, no librería: uv instala solo las dependencias y no intenta
+# empaquetar ni instalar el propio proyecto. El código llega por bind mount
+# en desarrollo y por COPY en la imagen de producción.
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+ignore = ["B008"]  # Depends() en argumentos por defecto es el patrón de FastAPI
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*" = ["E501"]
+"tests/*" = ["S101"]

@@ -1,0 +1,28 @@
+# Secretos: NUNCA se versionan. Solo .env.example, que lleva marcadores.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+dist/
+
+# Archivos subidos en desarrollo (viven en un volumen de Docker, no en el repo)
+uploads/
+
+# Entorno de trabajo
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

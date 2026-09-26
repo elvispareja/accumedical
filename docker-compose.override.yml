@@ -1,0 +1,10 @@
+# SOLO DESARROLLO CON LA APP MÓVIL — Compose carga este archivo solo.
+#
+# Publica nginx también en la red local (puerto 8088) para que el teléfono con
+# Expo Go alcance la API; el 8080 sigue atado a 127.0.0.1 como siempre. Es una
+# apertura deliberada y acotada al desarrollo de la app del auditor: cuando no
+# haga falta, borrar este archivo la cierra (docs/08-app-movil.md).
+services:
+  nginx:
+    ports:
+      - "8088:80"

@@ -1,0 +1,100 @@
+import { cn } from '@/lib/utils'
+import type { EstadoVisita } from '@/modules/concurrencia/api'
+
+// Piezas comunes de las dos bandejas —la de compañía y la de supervisión—:
+// mismos estados, misma insignia y misma forma de pintar la ventana horaria.
+// Se comparten, no se duplican por pantalla.
+
+export const ESTADOS_VISITA: { valor: EstadoVisita; etiqueta: string; caja: string; punto: string }[] = [
+  {
+    valor: 'programada',
+    etiqueta: 'Programada',
+    caja: 'border-modulo-concurrencia/30 bg-modulo-concurrencia/10 text-modulo-concurrencia',
+    punto: 'bg-modulo-concurrencia',
+  },
+  // La derivó el coordinador a un auditor; todavía no ha llegado.
+  {
+    valor: 'asignada',
+    etiqueta: 'Asignada',
+    caja: 'border-marca/30 bg-marca-suave text-marca',
+    punto: 'bg-marca',
+  },
+  // El auditor marcó «Ya llegué»: está dentro del hospital.
+  {
+    valor: 'auditando',
+    etiqueta: 'Auditando',
+    caja: 'border-aviso/30 bg-aviso/10 text-aviso',
+    punto: 'bg-aviso',
+  },
+  {
+    valor: 'cancelada',
+    etiqueta: 'Cancelada',
+    caja: 'border-borde bg-tenue text-tenue-fg',
+    punto: 'bg-tenue-fg/60',
+  },
+  {
+    valor: 'culminada',
+    etiqueta: 'Culminada',
+    caja: 'border-exito/30 bg-exito/10 text-exito',
+    punto: 'bg-exito',
+  },
+  // Lo aplica solo el servidor: la ventana venció sin que el auditor llegara.
+  {
+    valor: 'no_auditado',
+    etiqueta: 'No auditado',
+    caja: 'border-peligro/30 bg-peligro/10 text-peligro',
+    punto: 'bg-peligro',
+  },
+]
+
+/**
+ * Un caso CERRADO se lee, no se toca: culminado, el auditor ya mandó su informe;
+ * cancelado, no hay visita que preparar. Espejo de `MOTIVOS_SIN_EDICION` en el
+ * servicio, que es quien manda: esto solo evita ofrecer una puerta cerrada.
+ *
+ * `no_auditado` queda fuera a propósito: la ventana venció sin que nadie
+ * llegara, y corregir el caso antes de reprogramarlo tiene sentido.
+ */
+export function sePuedeEditar(estado: string | undefined): boolean {
+  return estado !== 'culminada' && estado !== 'cancelada'
+}
+
+export function EstadoVisitaBadge({ estado }: { estado: string }) {
+  // Un estado desconocido se pinta neutro, como cancelada: sin color que mienta.
+  const neutro = ESTADOS_VISITA.find((e) => e.valor === 'cancelada')!
+  const aspecto = ESTADOS_VISITA.find((e) => e.valor === estado) ?? neutro
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5',
+        'font-display text-[0.6875rem] font-medium',
+        aspecto.caja,
+      )}
+    >
+      <span className={cn('size-1.5 rounded-full', aspecto.punto)} aria-hidden="true" />
+      {aspecto.etiqueta}
+    </span>
+  )
+}
+
+/** «12 mar 2026, 09:00 → 13:30» y, si cruza días, con la fecha de fin. */
+export function Ventana({ desde, hasta }: { desde: string; hasta: string }) {
+  const inicio = new Date(desde)
+  const fin = new Date(hasta)
+  const mismoDia = inicio.toDateString() === fin.toDateString()
+  const fecha = new Intl.DateTimeFormat('es-EC', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+  const hora = new Intl.DateTimeFormat('es-EC', { hour: '2-digit', minute: '2-digit' })
+
+  return (
+    <span className="block">
+      <span className="block">{fecha.format(inicio)}</span>
+      <span className="tabular block text-xs text-tenue-fg">
+        {hora.format(inicio)} – {mismoDia ? hora.format(fin) : `${fecha.format(fin)} ${hora.format(fin)}`}
+      </span>
+    </span>
+  )
+}
