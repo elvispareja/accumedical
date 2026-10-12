@@ -225,3 +225,32 @@ class VisitaFoto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
         ForeignKey("conc_visitas.id", ondelete="RESTRICT"), nullable=False
     )
     ruta: Mapped[str] = mapped_column(String(300), nullable=False)
+
+
+class SyncCentral(Base):
+    """
+    Qué se publicó de cada visita en la API central (accumedical-central).
+
+    Tabla nueva y propia del módulo, en vez de columnas en `conc_visitas`: la
+    sincronización es una preocupación aparte y así no se toca ninguna tabla
+    existente. Una fila por visita: el id de la PERSONA en la central (el
+    paciente) y el id del EVENTO `visita_concurrencia` cuando la visita culmina.
+
+    `intentos` y `ultimo_error` (sin datos personales) dejan ver qué se atascó;
+    la tarea periódica reintenta lo pendiente, y la central no duplica nada
+    porque el evento lleva el id de la visita como `referencia_externa`.
+    """
+
+    __tablename__ = "conc_sync_central"
+
+    visita_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conc_visitas.id", ondelete="RESTRICT"), primary_key=True
+    )
+    persona_central_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    evento_central_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    sincronizada_at: Mapped[dt.datetime | None] = mapped_column(TS)
+    intentos: Mapped[int] = mapped_column(nullable=False, server_default=text("0"))
+    ultimo_error: Mapped[str | None] = mapped_column(String(200))
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        TS, nullable=False, server_default=text("now()"), onupdate=text("now()")
+    )

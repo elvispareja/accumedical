@@ -109,6 +109,17 @@ class Settings(BaseSettings):
     firma_p12_path: str = ""
     firma_p12_password: SecretStr = SecretStr("")
 
+    # ── API central (elvispareja/accumedical-central) ────────────────────────
+    # Concurrencia publica allí sus pacientes (→ personas) y sus visitas
+    # culminadas (→ eventos). Vacío = sin central: la app funciona igual y no
+    # sincroniza nada. Credencial OAuth2 client credentials, creada en la
+    # central con `python -m app.cli crear-credencial concurrencia --scopes app`.
+    central_api_url: str = ""
+    central_client_id: str = ""
+    central_client_secret: SecretStr = SecretStr("")
+    central_timeout_sec: int = Field(default=10, gt=0, le=60)
+    central_intervalo_sec: int = Field(default=120, ge=30)
+
     # ── Bootstrap ────────────────────────────────────────────────────────────
     superadmin_email: str = ""
     superadmin_password: SecretStr = SecretStr("")
@@ -155,6 +166,14 @@ class Settings(BaseSettings):
     @property
     def correo_configurado(self) -> bool:
         return bool(self.smtp_host and self.mail_from)
+
+    @property
+    def central_configurada(self) -> bool:
+        return bool(
+            self.central_api_url
+            and self.central_client_id
+            and self.central_client_secret.get_secret_value()
+        )
 
     @property
     def database_url(self) -> str:

@@ -64,6 +64,11 @@ LOCK_PURGA = 815_243_001
 INTERVALO_NO_AUDITADAS_SEG = 300
 LOCK_NO_AUDITADAS = 815_243_002
 
+# Publicación en la API central (pacientes → personas, visitas culminadas →
+# eventos). Solo corre si CENTRAL_* está configurado; si la central cae, la
+# app sigue y lo pendiente sale en la próxima pasada.
+LOCK_CENTRAL = 815_243_003
+
 
 def _con_candado(clave: int, trabajo: Callable[[Session], None]) -> None:
     """
@@ -134,6 +139,27 @@ def _marcar_no_auditadas() -> None:
     _con_candado(LOCK_NO_AUDITADAS, trabajo)
 
 
+async def _central_periodica() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(_sincronizar_central)
+        except Exception:  # noqa: BLE001 - la tarea nunca debe tumbar la app
+            log.exception("central_sincronizacion_fallo")
+        await asyncio.sleep(settings.central_intervalo_sec)
+
+
+def _sincronizar_central() -> None:
+    from app.core.central import cliente
+    from app.modules.concurrencia import central as concurrencia_central
+
+    def trabajo(db: Session) -> None:
+        hechas, fallidas = concurrencia_central.sincronizar_pendientes(db, cliente())
+        if hechas or fallidas:
+            log.info("central_sincronizacion", sincronizadas=hechas, fallidas=fallidas)
+
+    _con_candado(LOCK_CENTRAL, trabajo)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     log.info("arranque", environment=settings.environment, debug=settings.debug)
@@ -144,10 +170,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     transcripcion.precalentar()
     tarea = asyncio.create_task(_purga_periodica())
     tarea_no_auditadas = asyncio.create_task(_no_auditadas_periodica())
+    tareas = [tarea, tarea_no_auditadas]
+    if settings.central_configurada:
+        tareas.append(asyncio.create_task(_central_periodica()))
+    log.info("central", configurada=settings.central_configurada)
     try:
         yield
     finally:
-        for pendiente in (tarea, tarea_no_auditadas):
+        for pendiente in tareas:
             pendiente.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await pendiente

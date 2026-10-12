@@ -13,7 +13,32 @@ from app.shared.users.models import User
 AYUDA = """Comandos disponibles:
   create-superadmin    Crea (o reactiva) el administrador global desde SUPERADMIN_EMAIL
                        y SUPERADMIN_PASSWORD. Es idempotente.
+  sincronizar-central  Publica en la API central lo pendiente de Concurrencia
+                       (pacientes → personas, visitas culminadas → eventos).
+                       Idempotente: lo ya publicado no se repite.
 """
+
+
+def sincronizar_central() -> int:
+    if not settings.central_configurada:
+        print(
+            "La central no está configurada (CENTRAL_API_URL / CENTRAL_CLIENT_*)", file=sys.stderr
+        )
+        return 2
+    import app.modules  # noqa: F401  (registra los modelos de los módulos)
+    from app.core.central import cliente
+    from app.modules.concurrencia import central
+
+    total_ok = total_mal = 0
+    with SessionLocal() as db:
+        while True:
+            ok, mal = central.sincronizar_pendientes(db, cliente(), limite=100)
+            total_ok += ok
+            total_mal += mal
+            if ok == 0:  # nada nuevo salió bien en esta pasada: lo que queda está atascado
+                break
+    print(f"Sincronizadas: {total_ok} · con error: {total_mal}")
+    return 0 if total_mal == 0 else 1
 
 
 def create_superadmin() -> int:
@@ -72,6 +97,8 @@ def main() -> int:
     comando = sys.argv[1]
     if comando == "create-superadmin":
         return create_superadmin()
+    if comando == "sincronizar-central":
+        return sincronizar_central()
     print(f"Comando desconocido: {comando}\n\n{AYUDA}", file=sys.stderr)
     return 2
 
