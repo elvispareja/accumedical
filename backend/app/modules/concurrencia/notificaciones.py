@@ -4,14 +4,12 @@ import datetime as dt
 import uuid
 from collections.abc import Callable
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from app.core import mail
 from app.core.logging import log
 from app.modules.concurrencia import nucleo, service
 from app.shared import personas
-from app.shared.auth import service as auth_service
 from app.shared.catalogos.models import Module
 from app.shared.notificaciones import service as notificaciones
 from app.shared.users.models import User
@@ -85,26 +83,18 @@ def avisar_en_campana(db: DbSession, visita) -> int:
     # ahí, sin pasar por la lista.
     destinos: list[tuple[User, str]] = [
         (quien, f"/concurrencia/supervision/{visita.id}")
-        for quien in auth_service.coordinadores_de_modulo(db, "concurrencia")
+        for quien in nucleo.coordinadores_de_plataforma(db)
     ]
     destinos += [
         (admin, f"/admin/auditorias/concurrencia/{visita.id}")
-        for admin in db.scalars(
-            select(User).where(
-                User.is_superadmin.is_(True),
-                User.is_active.is_(True),
-                User.deleted_at.is_(None),
-            )
-        )
+        for admin in nucleo.superadmins(db)
     ]
     # Por las MISMAS dos puertas que el correo: la fila del módulo o la
     # coordinación de la compañía. Mirar solo una dejaba sin campana justo a
     # quien responde por el caso dentro de la aseguradora.
     destinos += [
         (quien, f"/concurrencia/{visita.id}/ver")
-        for quien in auth_service.coordinadores_de_aseguradora(
-            db, visita.aseguradora_id, "concurrencia"
-        )
+        for quien in nucleo.coordinadores_de_la_compania(db, visita.aseguradora_id)
     ]
 
     for quien, url in destinos:
@@ -143,7 +133,7 @@ def _destinos_del_aviso(
     """
     destinos: list[tuple[User, str]] = []
 
-    creador = db.get(User, visita.created_by) if visita.created_by else None
+    creador = nucleo.usuario(db, visita.created_by)
     if (
         creador is not None
         and creador.aseguradora_id == visita.aseguradora_id
@@ -154,9 +144,7 @@ def _destinos_del_aviso(
 
     destinos += [
         (quien, f"/concurrencia/{visita.id}/ver")
-        for quien in auth_service.coordinadores_de_aseguradora(
-            db, visita.aseguradora_id, "concurrencia"
-        )
+        for quien in nucleo.coordinadores_de_la_compania(db, visita.aseguradora_id)
     ]
     if incluir_plataforma:
         destinos += [
@@ -276,11 +264,11 @@ def _coordinadores_de_plataforma(db: DbSession) -> list[User]:
     por eso se le copia todo aviso desde el primer momento.
 
     Se pregunta por **las dos puertas** —la fila del módulo y la familia—, la
-    misma función que usa la campana (`auth_service.coordinadores_de_modulo`).
+    misma regla que usa la campana (`nucleo.coordinadores_de_plataforma`).
     Mirar solo `user_module_access`, como se hacía aquí, dejaba fuera al
     coordinador de familia: le llegaba el aviso a la campana pero no el correo.
     """
-    return auth_service.coordinadores_de_modulo(db, "concurrencia")
+    return nucleo.coordinadores_de_plataforma(db)
 
 
 def _supervisores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[User]:
@@ -291,7 +279,7 @@ def _supervisores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> li
     `user_aseguradora_coordinador`, que es por donde entra el coordinador de
     compañía de hoy —y al que este aviso no llegaba—.
     """
-    return auth_service.coordinadores_de_aseguradora(db, aseguradora_id, "concurrencia")
+    return nucleo.coordinadores_de_la_compania(db, aseguradora_id)
 
 
 def _datos_del_caso(fila: tuple) -> list[str]:
@@ -350,7 +338,7 @@ def _firma_del_creador(
     «Supervisor · Accumedical». Sin creador rastreable devuelve None y el
     correo firma la gerencia, como todos los demás.
     """
-    creador = db.get(User, visita.created_by) if visita.created_by else None
+    creador = nucleo.usuario(db, visita.created_by)
     if creador is None:
         return None
     if creador.aseguradora_id is None:
@@ -409,7 +397,7 @@ def _destinatarios_del_caso(db: DbSession, visita) -> tuple[dict[str, str], dict
         # marcado o lo que el operador escribió a mano.
         if anotado.etiqueta:
             etiquetas.setdefault(anotado.email.upper(), f" ({anotado.etiqueta})")
-    creador = db.get(User, visita.created_by) if visita.created_by else None
+    creador = nucleo.usuario(db, visita.created_by)
     for correo, quien in correos_por_defecto(db, visita.aseguradora_id, creador):
         destinatarios.setdefault(correo.upper(), correo)
         etiquetas.setdefault(correo.upper(), f" ({quien})")
@@ -530,7 +518,7 @@ def notificar_derivacion(db: DbSession, visita_id: uuid.UUID) -> None:
     visita, prestador_nombre = fila[0], fila[1]
     if visita.auditor_id is None:
         return
-    auditor = db.get(User, visita.auditor_id)
+    auditor = nucleo.usuario(db, visita.auditor_id)
     if auditor is None or not auditor.is_active or auditor.deleted_at is not None:
         return
 
@@ -580,7 +568,7 @@ def notificar_reprogramacion(
     for quien in _coordinadores_de_plataforma(db):
         coordinadores.add(quien.email.upper())
         destinatarios.setdefault(quien.email.upper(), quien.email)
-    auditor = db.get(User, visita.auditor_id) if visita.auditor_id else None
+    auditor = nucleo.usuario(db, visita.auditor_id)
     if auditor is not None and auditor.is_active and auditor.deleted_at is None:
         destinatarios.setdefault(auditor.email.upper(), auditor.email)
 

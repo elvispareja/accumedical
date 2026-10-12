@@ -25,7 +25,19 @@ La plataforma se está separando (docs del proyecto de infraestructura: `context
 
 - Con `central`, **si la central falla** (sin respuesta, error, o un dato que la réplica aún no llevó) se usa `local` y queda `nucleo_central_respaldo_local` en el log. Hoy pasa, por ejemplo, con compañías dadas de baja (la central responde 404).
 - `python -m app.cli comparar-nucleo` compara las dos fuentes con los datos reales. En el laboratorio: 29 comparaciones, 0 diferencias.
-- **Siguen en SQL directo** (grupo «pantallas»): la bandeja, la supervisión, el mapa, las cifras y los correos unen nombres de prestador, sede y compañía por SQL para ordenar y buscar. Funcionan igual porque las tablas replicadas son idénticas a la central; cuando Concurrencia tenga su propia base pasarán a una copia local de nombres.
+- **Pantallas y usuarios (paso 4d):** con `central`, Concurrencia ya no consulta `aseguradoras`, `prestadores`, `prestador_sedes`, `users` ni sus roles:
+
+| Qué | Cómo, en modo central |
+|---|---|
+| Bandeja, supervisión, bandeja del auditor, panel, detalle del caso | La consulta trae solo `conc_visitas`; `_completar` añade los nombres (prestador, sede, ciudades, compañía, auditor) con 3 llamadas en lote (`/prestadores/lote`, `/aseguradoras/lote`, `/usuarios/lote`). Misma forma de fila: el router no cambió |
+| Búsqueda por nombre de prestador o compañía | Primero se piden a la central los ids que coinciden (`?q=…&todos=true`, también dados de baja) y se filtra `conc_visitas` por esos ids |
+| Mapa de la app (coordenadas) | `/prestadores/lote` (prestador o sede) |
+| Operadores, auditores para derivar | `/api/usuarios?aplicacion=concurrencia&rol=…` |
+| Destinatarios de campana y correos | `/api/aplicaciones/concurrencia/coordinadores`, `/api/aseguradoras/{id}/coordinadores`, `/api/usuarios?superadmin=true`, `/api/usuarios/{id}` (creador, auditor) |
+
+- La **autenticación y los permisos** de cada petición (quién es el usuario, qué puede hacer) siguen en la plataforma: es el login único de `admin.pymes.ec`.
+- Los listados se ordenan con desempate por id (`desde, id`): antes, dos casos con la misma hora podían salir en orden distinto entre consultas (y repetirse o saltarse al paginar).
+- Equivalencia verificada con `/srv/accumedical/scripts/equivalencia-concurrencia.py` (121 comparaciones de pantallas + 60 de destinatarios, todas idénticas, 0 respaldos).
 - Diferencia conocida: el listado de la central excluye la ficha propia de Accumedical (`es_propia`); si algún día se le diera Concurrencia, `aseguradoras_con_concurrencia` en modo `central` no la mostraría.
 
 ## Réplica del núcleo (paso 4b)

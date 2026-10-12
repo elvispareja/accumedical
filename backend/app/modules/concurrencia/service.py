@@ -26,7 +26,7 @@ from app.shared.aseguradoras.models import (
 from app.shared.catalogos.models import Ciudad, Provincia
 from app.shared.contactos.service import validar_documento
 from app.shared.prestadores.models import Prestador, PrestadorSede
-from app.shared.users.models import Role, User, UserModuleAccess
+from app.shared.users.models import User
 
 MAX_PAGE_SIZE = 100
 
@@ -174,6 +174,10 @@ def _select_bandeja() -> Select:
     """
     # Dos ubicaciones distintas en la misma consulta —la del prestador y la de la
     # sede—, así que cada una necesita sus alias o el segundo join pisaría al primero.
+    if nucleo.modo_central():
+        # Sin JOIN al núcleo: los nombres los completa `_completar` desde la central,
+        # con la misma forma de fila (ver nucleo.datos_de_casos).
+        return select(Visita).where(Visita.deleted_at.is_(None))
     ciudad_prestador = aliased(Ciudad)
     provincia_prestador = aliased(Provincia)
     ciudad_sede = aliased(Ciudad)
@@ -213,6 +217,31 @@ def _select_bandeja() -> Select:
     )
 
 
+def _completar(db: DbSession, filas: list[Any]) -> list[tuple[Any, ...]]:
+    """
+    Las filas de la bandeja con la forma de siempre: (visita, prestador, …,
+    auditor, [columnas extra]). En modo local ya vienen así del JOIN; en modo
+    central se completan con los nombres que da la central, en lote.
+    """
+    if not nucleo.modo_central():
+        return [tuple(f) for f in filas]
+    datos = nucleo.datos_de_casos(db, [f[0] for f in filas])
+    return [(f[0], *datos[f[0].id], *tuple(f)[1:]) for f in filas]
+
+
+def _coincide_prestador(db: DbSession, texto: str):  # noqa: ANN202
+    if nucleo.modo_central():
+        return Visita.prestador_id.in_(nucleo.prestadores_que_coinciden(db, texto))
+    return Prestador.nombre.ilike(f"%{texto}%")
+
+
+def _coincide_aseguradora(db: DbSession, texto: str):  # noqa: ANN202
+    if nucleo.modo_central():
+        return Visita.aseguradora_id.in_(nucleo.aseguradoras_que_coinciden(db, texto))
+    patron = f"%{texto}%"
+    return or_(Aseguradora.razon_social.ilike(patron), Aseguradora.nombre_comercial.ilike(patron))
+
+
 def _base_select(aseguradora_id: uuid.UUID) -> Select:
     """
     Toda consulta de la bandeja de compañía arranca acotada por la aseguradora
@@ -245,7 +274,7 @@ def listar(
         patron = f"%{search.strip()}%"
         consulta = consulta.where(
             or_(
-                Prestador.nombre.ilike(patron),
+                _coincide_prestador(db, search.strip()),
                 Visita.codigo_interno.ilike(patron),
                 # Las cuatro partes concatenadas: así «MARIA LOPEZ» entera
                 # también encuentra, no solo cada palabra por separado.
@@ -269,11 +298,11 @@ def listar(
     page_size = min(max(1, page_size), MAX_PAGE_SIZE)
     filas = db.execute(
         consulta.add_columns(_conteo_correos())
-        .order_by(Visita.desde.desc())
+        .order_by(Visita.desde.desc(), Visita.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
-    return [tuple(f) for f in filas], total
+    return _completar(db, filas), total
 
 
 def _conteo_correos():
@@ -304,7 +333,7 @@ def obtener(
     if fila is None:
         # Mismo 404 exista o no: no se confirma la existencia de una visita ajena.
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Visita no encontrada")
-    return tuple(fila)
+    return _completar(db, [fila])[0]
 
 
 def paciente_conocido(
@@ -633,27 +662,13 @@ def pacientes_registrados(
     ], total
 
 
-def operadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[User]:
+def operadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[Any]:
     """
     Los operadores de MI aseguradora, para que el supervisor filtre el historial
     por quien creo cada caso. Tambien los inactivos: sus casos viejos siguen
     existiendo y alguien tiene que poder revisarlos.
     """
-    return list(
-        db.scalars(
-            select(User)
-            .join(UserModuleAccess, UserModuleAccess.user_id == User.id)
-            .join(Role, Role.id == UserModuleAccess.role_id)
-            .where(
-                UserModuleAccess.module_code == "concurrencia",
-                UserModuleAccess.activo.is_(True),
-                Role.code == "operador",
-                User.aseguradora_id == aseguradora_id,
-                User.deleted_at.is_(None),
-            )
-            .order_by(personas.sql_completo(User))
-        )
-    )
+    return nucleo.operadores_de_la_compania(db, aseguradora_id)
 
 
 def coordenadas_de_destinos(
@@ -663,34 +678,7 @@ def coordenadas_de_destinos(
     El punto exacto al que va el auditor —la sede si la hay, la casa matriz si
     no—, para abrir el mapa desde la app. Dos viajes en lote, no uno por caso.
     """
-    ids_prestador = {v.prestador_id for v in visitas if v.sede_id is None}
-    ids_sede = {v.sede_id for v in visitas if v.sede_id is not None}
-
-    de_prestador: dict[uuid.UUID, tuple[float, float]] = {}
-    if ids_prestador:
-        for pid, lat, lng in db.execute(
-            select(Prestador.id, Prestador.latitud, Prestador.longitud).where(
-                Prestador.id.in_(ids_prestador)
-            )
-        ):
-            de_prestador[pid] = (float(lat), float(lng))
-    de_sede: dict[uuid.UUID, tuple[float, float]] = {}
-    if ids_sede:
-        for sid, lat, lng in db.execute(
-            select(PrestadorSede.id, PrestadorSede.latitud, PrestadorSede.longitud).where(
-                PrestadorSede.id.in_(ids_sede)
-            )
-        ):
-            de_sede[sid] = (float(lat), float(lng))
-
-    salida: dict[uuid.UUID, tuple[float, float]] = {}
-    for visita in visitas:
-        punto = de_sede.get(visita.sede_id) if visita.sede_id else de_prestador.get(
-            visita.prestador_id
-        )
-        if punto:
-            salida[visita.id] = punto
-    return salida
+    return nucleo.coordenadas(db, visitas)
 
 
 def marcar_no_auditadas(db: DbSession) -> list[str]:
@@ -924,13 +912,13 @@ def resumen_dashboard(db: DbSession, aseguradora_id: uuid.UUID) -> dict[str, Any
         _base_select(aseguradora_id)
         .add_columns(_conteo_correos())
         .where(Visita.estado == "programada", Visita.hasta >= ahora)
-        .order_by(Visita.desde.asc())
+        .order_by(Visita.desde.asc(), Visita.id.asc())
         .limit(5)
     ).all()
 
     return {
         **cifras_de_visitas(db, aseguradora_id, interno=False),
-        "proximas": [tuple(f) for f in proximas],
+        "proximas": _completar(db, proximas),
     }
 
 
@@ -960,10 +948,9 @@ def listar_supervision(
         patron = f"%{search.strip()}%"
         consulta = consulta.where(
             or_(
-                Prestador.nombre.ilike(patron),
+                _coincide_prestador(db, search.strip()),
                 Visita.codigo_interno.ilike(patron),
-                Aseguradora.razon_social.ilike(patron),
-                Aseguradora.nombre_comercial.ilike(patron),
+                _coincide_aseguradora(db, search.strip()),
             )
         )
     if estado:
@@ -994,11 +981,11 @@ def listar_supervision(
     page_size = min(max(1, page_size), MAX_PAGE_SIZE)
     filas = db.execute(
         consulta.add_columns(_conteo_correos())
-        .order_by(Visita.desde.desc())
+        .order_by(Visita.desde.desc(), Visita.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
-    return [tuple(f) for f in filas], total
+    return _completar(db, filas), total
 
 
 def listar_del_auditor(db: DbSession, user_id: uuid.UUID) -> list[tuple[Any, ...]]:
@@ -1010,9 +997,9 @@ def listar_del_auditor(db: DbSession, user_id: uuid.UUID) -> list[tuple[Any, ...
         _select_bandeja()
         .add_columns(_conteo_correos())
         .where(Visita.auditor_id == user_id)
-        .order_by(Visita.desde.asc())
+        .order_by(Visita.desde.asc(), Visita.id.asc())
     ).all()
-    return [tuple(f) for f in filas]
+    return _completar(db, filas)
 
 
 def fila_supervision(db: DbSession, visita_id: uuid.UUID) -> tuple[Any, ...]:
@@ -1022,7 +1009,7 @@ def fila_supervision(db: DbSession, visita_id: uuid.UUID) -> tuple[Any, ...]:
     ).first()
     if fila is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Visita no encontrada")
-    return tuple(fila)
+    return _completar(db, [fila])[0]
 
 
 def obtener_para_supervision(db: DbSession, visita_id: uuid.UUID) -> Visita:
@@ -1042,28 +1029,7 @@ def auditores_disponibles(db: DbSession) -> list[tuple[Any, ...]]:
     con su ciudad y provincia: la pantalla ofrece primero a los de la misma
     ciudad del destino, luego a los de la provincia y al final al resto.
     """
-    ciudad_auditor = aliased(Ciudad)
-    provincia_auditor = aliased(Provincia)
-    return [
-        tuple(f)
-        for f in db.execute(
-            select(User, ciudad_auditor.nombre, provincia_auditor.nombre)
-            .join(UserModuleAccess, UserModuleAccess.user_id == User.id)
-            .join(Role, Role.id == UserModuleAccess.role_id)
-            .outerjoin(ciudad_auditor, ciudad_auditor.codigo == User.ciudad_codigo)
-            .outerjoin(provincia_auditor, provincia_auditor.codigo == User.provincia_codigo)
-            .where(
-                UserModuleAccess.module_code == "concurrencia",
-                UserModuleAccess.activo.is_(True),
-                Role.code == "auditor",
-                User.aseguradora_id.is_(None),
-                User.is_superadmin.is_(False),
-                User.deleted_at.is_(None),
-                User.is_active.is_(True),
-            )
-            .order_by(User.apellido_paterno, User.apellido_materno, User.nombre_principal)
-        ).all()
-    ]
+    return nucleo.auditores_disponibles(db)
 
 
 def asignar_auditor(

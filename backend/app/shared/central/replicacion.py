@@ -35,7 +35,7 @@ from app.shared.central.models import CentralReplicacion
 ENTIDADES: list[tuple[str, str]] = [
     (
         "aplicaciones",
-        "SELECT code AS codigo, nombre, descripcion, activo AS activa,"
+        "SELECT code AS codigo, nombre, descripcion, activo AS activa, grupo, subgrupo,"
         " created_at, updated_at"
         " FROM modules",
     ),
@@ -112,6 +112,32 @@ ENTIDADES: list[tuple[str, str]] = [
         "SELECT convenio_id, concepto, modo, valor, base,"
         " created_at, updated_at, created_by, updated_by"
         " FROM aseguradora_prestador_fc",
+    ),
+    # Directorio de usuarios. Columnas elegidas UNA A UNA: nunca password_hash,
+    # mfa_secret, intentos de login, bloqueos ni último acceso. La central sabe
+    # quién es cada uno, no cómo entra.
+    (
+        "usuarios",
+        "SELECT id, email::text AS email, nombre_principal, nombre_secundario,"
+        " apellido_paterno, apellido_materno, telefono, provincia_codigo, ciudad_codigo,"
+        " is_superadmin AS es_superadmin, aseguradora_id, is_active AS activo,"
+        " created_at, updated_at, deleted_at"
+        " FROM users",
+    ),
+    (
+        "usuario_aplicaciones",
+        "SELECT a.id, a.user_id AS usuario_id, a.module_code AS aplicacion_codigo,"
+        " r.code AS rol_codigo, r.activo AS rol_activo, a.activo, a.updated_at"
+        " FROM user_module_access a JOIN roles r ON r.id = a.role_id",
+    ),
+    (
+        "usuario_grupos",
+        "SELECT id, user_id AS usuario_id, grupo, activo, updated_at FROM user_grupo_access",
+    ),
+    (
+        "usuario_coordinaciones",
+        "SELECT id, user_id AS usuario_id, aseguradora_id, activo, updated_at"
+        " FROM user_aseguradora_coordinador",
     ),
 ]
 

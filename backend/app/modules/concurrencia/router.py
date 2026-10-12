@@ -68,7 +68,6 @@ from app.modules.concurrencia.schemas import (
 from app.shared import personas
 from app.shared.aseguradoras.logo import MIME_PERMITIDOS
 from app.shared.audit import service as audit
-from app.shared.users.models import User
 
 # La dependencia va a nivel de APIRouter, no por endpoint: cualquier endpoint que
 # se anada aqui nace protegido por el acceso al modulo. El slug es la identidad
@@ -1029,7 +1028,7 @@ def _pdf_del_caso(db: DbSession, visita) -> bytes:
     """
     if not visita.informe:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="El caso aún no tiene informe")
-    auditor = db.get(User, visita.auditor_id) if visita.auditor_id else None
+    auditor = service.nucleo.usuario(db, visita.auditor_id)
     nombre = personas.de_fila(auditor) if auditor else "—"
     return firma.firmar(informe_pdf.generar_pdf(visita.informe, visita.codigo_interno, nombre))
 

@@ -397,3 +397,400 @@ def aseguradora(db: DbSession, aseguradora_id: uuid.UUID) -> Any | None:
         )
 
     return _usar("aseguradora", lambda: db.get(Aseguradora, aseguradora_id), central)
+
+
+# ═══════════════════ Usuarios, bandeja y mapa (paso 4d) ══════════════════════
+#
+# Lo que Concurrencia necesita saber de PERSONAS de la plataforma (operadores,
+# auditores, coordinadores, el creador del caso) y los NOMBRES con que pinta su
+# bandeja. En modo central sale del directorio de la central (sin credenciales:
+# la autenticación sigue en la plataforma).
+
+
+def modo_central() -> bool:
+    """La forma de las consultas de la bandeja depende de esto (sin JOIN al núcleo)."""
+    return settings.concurrencia_nucleo == "central" and settings.central_configurada
+
+
+def _usuario_ns(u: dict[str, Any]) -> Any:
+    """Un usuario de la central con los mismos atributos que una fila de `users`."""
+    return SimpleNamespace(
+        id=uuid.UUID(u["id"]),
+        email=u["email"],
+        nombre_principal=u["nombre_principal"],
+        nombre_secundario=u["nombre_secundario"],
+        apellido_paterno=u["apellido_paterno"],
+        apellido_materno=u["apellido_materno"],
+        telefono=u["telefono"],
+        provincia_codigo=u["provincia_codigo"],
+        ciudad_codigo=u["ciudad_codigo"],
+        is_superadmin=u["es_superadmin"],
+        aseguradora_id=_uuid(u["aseguradora_id"]),
+        is_active=u["activo"],
+        deleted_at=u["deleted_at"],
+    )
+
+
+def _post(ruta: str, cuerpo: Any) -> Any:
+    estado, r = cliente().llamar("POST", ruta, cuerpo)
+    if estado != 200:
+        raise CentralError(estado, f"POST {ruta}")
+    return r
+
+
+def _usuarios(ruta: str) -> list[Any]:
+    return [_usuario_ns(u) for u in _get(ruta)]
+
+
+def usuario(db: DbSession, usuario_id: uuid.UUID | None) -> Any | None:
+    """Una persona de la plataforma por id (también dada de baja), o None."""
+    if usuario_id is None:
+        return None
+    from app.shared.users.models import User
+
+    def central() -> Any | None:
+        estado, r = cliente().llamar("GET", f"/api/usuarios/{usuario_id}")
+        if estado == 404:
+            return None
+        if estado != 200:
+            raise CentralError(estado, "GET /api/usuarios/{id}")
+        return _usuario_ns(r)
+
+    return _usar("usuario", lambda: db.get(User, usuario_id), central)
+
+
+def operadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[Any]:
+    """Operadores de Concurrencia de esa compañía, también los inactivos (sus casos siguen)."""
+    from app.shared.users.models import Role, User, UserModuleAccess
+
+    def local() -> list[Any]:
+        return list(
+            db.scalars(
+                select(User)
+                .join(UserModuleAccess, UserModuleAccess.user_id == User.id)
+                .join(Role, Role.id == UserModuleAccess.role_id)
+                .where(
+                    UserModuleAccess.module_code == MODULO,
+                    UserModuleAccess.activo.is_(True),
+                    Role.code == "operador",
+                    User.aseguradora_id == aseguradora_id,
+                    User.deleted_at.is_(None),
+                )
+                .order_by(personas.sql_completo(User))
+            )
+        )
+
+    def central() -> list[Any]:
+        filas = _usuarios(
+            f"/api/usuarios?aplicacion={MODULO}&rol=operador&aseguradora_id={aseguradora_id}"
+        )
+        return sorted(filas, key=lambda u: (personas.de_fila(u), str(u.id)))
+
+    return _usar("operadores", local, central)
+
+
+def auditores_disponibles(db: DbSession) -> list[tuple[Any, ...]]:
+    """Auditores de Concurrencia de Accumedical, activos, con su ciudad y provincia."""
+    from sqlalchemy.orm import aliased
+
+    from app.shared.users.models import Role, User, UserModuleAccess
+
+    def local() -> list[tuple[Any, ...]]:
+        ciudad = aliased(Ciudad)
+        provincia = aliased(Provincia)
+        return [
+            tuple(f)
+            for f in db.execute(
+                select(User, ciudad.nombre, provincia.nombre)
+                .join(UserModuleAccess, UserModuleAccess.user_id == User.id)
+                .join(Role, Role.id == UserModuleAccess.role_id)
+                .outerjoin(ciudad, ciudad.codigo == User.ciudad_codigo)
+                .outerjoin(provincia, provincia.codigo == User.provincia_codigo)
+                .where(
+                    UserModuleAccess.module_code == MODULO,
+                    UserModuleAccess.activo.is_(True),
+                    Role.code == "auditor",
+                    User.aseguradora_id.is_(None),
+                    User.is_superadmin.is_(False),
+                    User.deleted_at.is_(None),
+                    User.is_active.is_(True),
+                )
+                .order_by(User.apellido_paterno, User.apellido_materno, User.nombre_principal)
+            ).all()
+        ]
+
+    def central() -> list[tuple[Any, ...]]:
+        ciudades = _catalogo("ciudades")
+        provincias = _catalogo("provincias")
+        filas = _usuarios(
+            f"/api/usuarios?aplicacion={MODULO}&rol=auditor&plataforma=true"
+            "&superadmin=false&activo=true"
+        )
+        return [
+            (u, ciudades.get(u.ciudad_codigo or ""), provincias.get(u.provincia_codigo or ""))
+            for u in filas
+        ]
+
+    return _usar("auditores", local, central)
+
+
+def coordinadores_de_plataforma(db: DbSession) -> list[Any]:
+    """Quién coordina Concurrencia en Accumedical (por el módulo o por la familia)."""
+    from app.shared.auth import service as auth_service
+
+    return _usar(
+        "coordinadores_plataforma",
+        lambda: auth_service.coordinadores_de_modulo(db, MODULO),
+        lambda: _usuarios(f"/api/aplicaciones/{MODULO}/coordinadores"),
+    )
+
+
+def coordinadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[Any]:
+    """Quién coordina esa compañía en Concurrencia (por el módulo o por la compañía)."""
+    from app.shared.auth import service as auth_service
+
+    return _usar(
+        "coordinadores_compania",
+        lambda: auth_service.coordinadores_de_aseguradora(db, aseguradora_id, MODULO),
+        lambda: _usuarios(f"/api/aseguradoras/{aseguradora_id}/coordinadores?aplicacion={MODULO}"),
+    )
+
+
+def superadmins(db: DbSession) -> list[Any]:
+    """Administradores globales activos y vivos."""
+    from app.shared.users.models import User
+
+    return _usar(
+        "superadmins",
+        lambda: list(
+            db.scalars(
+                select(User).where(
+                    User.is_superadmin.is_(True),
+                    User.is_active.is_(True),
+                    User.deleted_at.is_(None),
+                )
+            )
+        ),
+        lambda: _usuarios("/api/usuarios?superadmin=true&activo=true"),
+    )
+
+
+# ── La bandeja: nombres de cada caso ────────────────────────────────────────
+def prestadores_que_coinciden(db: DbSession, texto: str) -> list[uuid.UUID]:
+    """Ids de prestadores cuyo nombre contiene el texto (para buscar en la bandeja)."""
+
+    def central() -> list[uuid.UUID]:
+        ids: list[uuid.UUID] = []
+        offset = 0
+        while offset < 1000:
+            pagina = _get(_con_q("/api/prestadores?limit=100&todos=true", texto, offset))
+            ids += [uuid.UUID(p["id"]) for p in pagina["items"]]
+            offset += len(pagina["items"])
+            if not pagina["items"] or offset >= pagina["total"]:
+                break
+        return ids
+
+    return _usar(
+        "buscar_prestadores",
+        lambda: list(db.scalars(select(Prestador.id).where(Prestador.nombre.ilike(f"%{texto}%")))),
+        central,
+    )
+
+
+def aseguradoras_que_coinciden(db: DbSession, texto: str) -> list[uuid.UUID]:
+    """Ids de aseguradoras cuya razón social o nombre comercial contiene el texto."""
+
+    def central() -> list[uuid.UUID]:
+        pagina = _get(_con_q("/api/aseguradoras?limit=100&todas=true", texto, 0))
+        return [uuid.UUID(a["id"]) for a in pagina["items"]]
+
+    return _usar(
+        "buscar_aseguradoras",
+        lambda: list(
+            db.scalars(
+                select(Aseguradora.id).where(
+                    or_(
+                        Aseguradora.razon_social.ilike(f"%{texto}%"),
+                        Aseguradora.nombre_comercial.ilike(f"%{texto}%"),
+                    )
+                )
+            )
+        ),
+        central,
+    )
+
+
+def _con_q(ruta: str, texto: str, offset: int) -> str:
+    from urllib.parse import quote
+
+    return f"{ruta}&offset={offset}&q={quote(texto.strip()[:100])}"
+
+
+def datos_de_casos(db: DbSession, visitas: list[Any]) -> dict[uuid.UUID, tuple[Any, ...]]:
+    """
+    Para cada caso, en el MISMO orden que tenían las columnas de la bandeja:
+    (prestador, dirección, ciudad, provincia, sede, dirección de la sede, su
+    ciudad, su provincia, razón social, nombre comercial, auditor).
+    Tres llamadas en lote, no una por caso.
+    """
+    if not visitas:
+        return {}
+    from app.shared.users.models import User
+
+    def local() -> dict[uuid.UUID, tuple[Any, ...]]:
+        prest = {
+            p.id: p
+            for p in db.scalars(
+                select(Prestador).where(Prestador.id.in_({v.prestador_id for v in visitas}))
+            )
+        }
+        sedes = {
+            s.id: s
+            for s in db.scalars(
+                select(PrestadorSede).where(
+                    PrestadorSede.id.in_({v.sede_id for v in visitas if v.sede_id})
+                )
+            )
+        }
+        asegs = {
+            a.id: a
+            for a in db.scalars(
+                select(Aseguradora).where(Aseguradora.id.in_({v.aseguradora_id for v in visitas}))
+            )
+        }
+        auditores = {
+            u.id: u
+            for u in db.scalars(
+                select(User).where(User.id.in_({v.auditor_id for v in visitas if v.auditor_id}))
+            )
+        }
+        ciudades = dict(db.execute(select(Ciudad.codigo, Ciudad.nombre)).all())
+        provincias = dict(db.execute(select(Provincia.codigo, Provincia.nombre)).all())
+        return _armar(visitas, prest, sedes, asegs, auditores, ciudades, provincias)
+
+    def central() -> dict[uuid.UUID, tuple[Any, ...]]:
+        prest: dict[uuid.UUID, Any] = {}
+        sedes: dict[uuid.UUID, Any] = {}
+        for p in _post(
+            "/api/prestadores/lote", {"ids": sorted({str(v.prestador_id) for v in visitas})}
+        ):
+            prest[uuid.UUID(p["id"])] = SimpleNamespace(
+                **{
+                    k: p[k]
+                    for k in (
+                        "nombre",
+                        "direccion",
+                        "ciudad_codigo",
+                        "provincia_codigo",
+                        "latitud",
+                        "longitud",
+                    )
+                }
+            )
+            for s in p["sedes"]:
+                sedes[uuid.UUID(s["id"])] = SimpleNamespace(
+                    **{
+                        k: s[k]
+                        for k in (
+                            "nombre",
+                            "direccion",
+                            "ciudad_codigo",
+                            "provincia_codigo",
+                            "latitud",
+                            "longitud",
+                        )
+                    }
+                )
+        asegs = {
+            uuid.UUID(a["id"]): SimpleNamespace(
+                razon_social=a["razon_social"], nombre_comercial=a["nombre_comercial"]
+            )
+            for a in _post(
+                "/api/aseguradoras/lote", {"ids": sorted({str(v.aseguradora_id) for v in visitas})}
+            )
+        }
+        ids_auditores = sorted({str(v.auditor_id) for v in visitas if v.auditor_id})
+        auditores = {
+            u.id: u
+            for u in (
+                [_usuario_ns(x) for x in _post("/api/usuarios/lote", {"ids": ids_auditores})]
+                if ids_auditores
+                else []
+            )
+        }
+        return _armar(
+            visitas, prest, sedes, asegs, auditores, _catalogo("ciudades"), _catalogo("provincias")
+        )
+
+    return _usar("datos_de_casos", local, central)
+
+
+def _armar(visitas, prest, sedes, asegs, auditores, ciudades, provincias):  # noqa: ANN001, ANN202
+    salida: dict[uuid.UUID, tuple[Any, ...]] = {}
+    for v in visitas:
+        p = prest.get(v.prestador_id)
+        s = sedes.get(v.sede_id) if v.sede_id else None
+        a = asegs.get(v.aseguradora_id)
+        u = auditores.get(v.auditor_id) if v.auditor_id else None
+        salida[v.id] = (
+            p.nombre if p else None,
+            p.direccion if p else None,
+            ciudades.get(p.ciudad_codigo) if p and p.ciudad_codigo else None,
+            provincias.get(p.provincia_codigo) if p and p.provincia_codigo else None,
+            s.nombre if s else None,
+            s.direccion if s else None,
+            ciudades.get(s.ciudad_codigo) if s and s.ciudad_codigo else None,
+            provincias.get(s.provincia_codigo) if s and s.provincia_codigo else None,
+            a.razon_social if a else None,
+            a.nombre_comercial if a else None,
+            # Sin auditor: cadena vacía, igual que el CONCAT de la consulta SQL original.
+            personas.de_fila(u) if u else "",
+        )
+    return salida
+
+
+def coordenadas(db: DbSession, visitas: list[Any]) -> dict[uuid.UUID, tuple[float, float]]:
+    """El punto al que va el auditor: la sede si la hay, la casa matriz si no."""
+
+    def local() -> dict[uuid.UUID, tuple[float, float]]:
+        prest = dict(
+            (i, (float(a), float(b)))
+            for i, a, b in db.execute(
+                select(Prestador.id, Prestador.latitud, Prestador.longitud).where(
+                    Prestador.id.in_({v.prestador_id for v in visitas if v.sede_id is None})
+                )
+            )
+        )
+        sedes = dict(
+            (i, (float(a), float(b)))
+            for i, a, b in db.execute(
+                select(PrestadorSede.id, PrestadorSede.latitud, PrestadorSede.longitud).where(
+                    PrestadorSede.id.in_({v.sede_id for v in visitas if v.sede_id})
+                )
+            )
+        )
+        return _punto(visitas, prest, sedes)
+
+    def central() -> dict[uuid.UUID, tuple[float, float]]:
+        prest: dict[uuid.UUID, tuple[float, float]] = {}
+        sedes: dict[uuid.UUID, tuple[float, float]] = {}
+        for p in _post(
+            "/api/prestadores/lote", {"ids": sorted({str(v.prestador_id) for v in visitas})}
+        ):
+            prest[uuid.UUID(p["id"])] = (float(p["latitud"]), float(p["longitud"]))
+            for s in p["sedes"]:
+                sedes[uuid.UUID(s["id"])] = (float(s["latitud"]), float(s["longitud"]))
+        return _punto(visitas, prest, sedes)
+
+    if not visitas:
+        return {}
+    return _usar("coordenadas", local, central)
+
+
+def _punto(visitas, prest, sedes):  # noqa: ANN001, ANN202
+    salida: dict[uuid.UUID, tuple[float, float]] = {}
+    for v in visitas:
+        punto = sedes.get(v.sede_id) if v.sede_id else prest.get(v.prestador_id)
+        if punto:
+            salida[v.id] = punto
+    return salida
