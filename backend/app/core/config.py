@@ -124,6 +124,10 @@ class Settings(BaseSettings):
     central_plataforma_client_secret: SecretStr = SecretStr("")
     central_replicacion_intervalo_sec: int = Field(default=60, ge=15)
     central_timeout_sec: int = Field(default=10, gt=0, le=60)
+    # De dónde lee Concurrencia compañías, red, sedes, contactos y SLA:
+    # «local» (tablas del núcleo, el comportamiento de siempre) o «central»
+    # (la API; si falla, cae a local y lo avisa en el log). Ver docs/09.
+    concurrencia_nucleo: Literal["local", "central"] = "local"
     central_intervalo_sec: int = Field(default=120, ge=30)
 
     # ── Bootstrap ────────────────────────────────────────────────────────────

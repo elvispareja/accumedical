@@ -11,7 +11,22 @@ La plataforma se está separando (docs del proyecto de infraestructura: `context
 
 **Lo clínico no sale de Concurrencia:** ni el informe, ni las notas, ni las fotos.
 
-Concurrencia **sigue leyendo** aseguradoras, prestadores, convenios y SLA de su propia base (paso 4c pendiente).
+## Concurrencia lee el núcleo de la central (paso 4c)
+
+`app/modules/concurrencia/nucleo.py` es **el único sitio** de Concurrencia que pregunta por cosas que no son suyas. Dos fuentes con el mismo contrato, elegidas con `CONCURRENCIA_NUCLEO`:
+
+| Operación | `local` | `central` |
+|---|---|---|
+| Compañías con Concurrencia (`aseguradoras_con_concurrencia`) | JOIN `aseguradoras` + `aseguradora_modulos` | `GET /api/aseguradoras?aplicacion=concurrencia&estado=activo` |
+| Red de prestadores con sedes y contactos (`prestadores_de_la_red`) | JOIN convenios, prestadores, sedes, contactos, catálogos | `GET /api/aseguradoras/{id}/convenios` + `GET /api/prestadores/{id}` + catálogos (caché 10 min) |
+| ¿Prestador en la red? / sedes activas (`_validar_destino`) | consultas a `aseguradora_prestador` y `prestador_sedes` | `GET /api/prestadores/{id}/convenios` y `GET /api/prestadores/{id}` |
+| Horas de SLA (`horas_de_sla` → plazo del informe) | `aseguradora_sla` | `GET /api/aseguradoras/{id}/aplicaciones` |
+| Nombres en los avisos de campana | `aseguradoras`, `prestadores` | `GET /api/aseguradoras/{id}`, `GET /api/prestadores/{id}` |
+
+- Con `central`, **si la central falla** (sin respuesta, error, o un dato que la réplica aún no llevó) se usa `local` y queda `nucleo_central_respaldo_local` en el log. Hoy pasa, por ejemplo, con compañías dadas de baja (la central responde 404).
+- `python -m app.cli comparar-nucleo` compara las dos fuentes con los datos reales. En el laboratorio: 29 comparaciones, 0 diferencias.
+- **Siguen en SQL directo** (grupo «pantallas»): la bandeja, la supervisión, el mapa, las cifras y los correos unen nombres de prestador, sede y compañía por SQL para ordenar y buscar. Funcionan igual porque las tablas replicadas son idénticas a la central; cuando Concurrencia tenga su propia base pasarán a una copia local de nombres.
+- Diferencia conocida: el listado de la central excluye la ficha propia de Accumedical (`es_propia`); si algún día se le diera Concurrencia, `aseguradoras_con_concurrencia` en modo `central` no la mostraría.
 
 ## Réplica del núcleo (paso 4b)
 

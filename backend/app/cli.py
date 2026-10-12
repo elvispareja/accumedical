@@ -16,10 +16,80 @@ AYUDA = """Comandos disponibles:
   sincronizar-central  Publica en la API central lo pendiente de Concurrencia
                        (pacientes → personas, visitas culminadas → eventos).
                        Idempotente: lo ya publicado no se repite.
+  comparar-nucleo      Compara, con los datos reales, lo que Concurrencia obtiene de
+                       su base (local) y de la API central: compañías, red, sedes,
+                       SLA y validación de destino. Sale con 1 si hay diferencias.
   replicar-central     Replica el núcleo (aseguradoras, prestadores, convenios, SLA,
                        módulos contratados) en la central. Con --forzar reenvía
                        todo aunque no haya cambiado.
 """
+
+
+def comparar_nucleo() -> int:
+    if not settings.central_configurada:
+        print("La central no está configurada (CENTRAL_*)", file=sys.stderr)
+        return 2
+    import app.modules  # noqa: F401
+    from app.core.central import CentralError
+    from app.modules.concurrencia.nucleo import _Central as Central
+    from app.modules.concurrencia.nucleo import _Local as Local
+    from app.shared.aseguradoras.models import Aseguradora
+    from app.shared.prestadores.models import Prestador
+
+    respaldos = 0
+
+    def central(fn, local):  # noqa: ANN001, ANN202
+        nonlocal respaldos
+        try:
+            return fn()
+        except CentralError:  # p. ej. una compañía dada de baja: igual que en producción
+            respaldos += 1
+            return local()
+
+    def red(filas):  # noqa: ANN001, ANN202
+        return sorted(
+            (
+                str(f["prestador"].id),
+                f["prestador"].nombre,
+                f["tipo_nombre"],
+                f["ciudad_nombre"],
+                tuple(sorted((str(s.id), s.nombre, c, p) for s, c, p in f["sedes"])),
+                tuple(sorted((str(c.id), c.email) for c in f["contactos"])),
+            )
+            for f in filas
+        )
+
+    def compania(xs):  # noqa: ANN001, ANN202
+        return sorted((str(x.id), x.razon_social, x.nombre_comercial) for x in xs)
+
+    casos = diferencias = 0
+    with SessionLocal() as db:
+        asegs = list(db.scalars(select(Aseguradora.id)))
+        prests = list(db.scalars(select(Prestador.id)))
+        pares = [("compañías", compania(Local.aseguradoras(db, None)),
+                  compania(Central.aseguradoras(db, None)))]
+        for a in asegs:
+            pares.append(("red", red(Local.red(db, a, None)),
+                          red(central(lambda a=a: Central.red(db, a, None),
+                                      lambda a=a: Local.red(db, a, None)))))
+            pares.append(("sla", Local.horas_sla(db, a),
+                          central(lambda a=a: Central.horas_sla(db, a),
+                                  lambda a=a: Local.horas_sla(db, a))))
+            for p in prests:
+                pares.append(("en_red", Local.en_red(db, a, p),
+                              central(lambda a=a, p=p: Central.en_red(db, a, p),
+                                      lambda a=a, p=p: Local.en_red(db, a, p))))
+        for p in prests:
+            pares.append(("sedes", sorted(Local.sedes_activas(db, p)),
+                          sorted(central(lambda p=p: Central.sedes_activas(db, p),
+                                         lambda p=p: Local.sedes_activas(db, p)))))
+        for nombre, local, remoto in pares:
+            casos += 1
+            if local != remoto:
+                diferencias += 1
+                print(f"  diferencia en {nombre}")
+    print(f"{casos} comparaciones · {diferencias} diferencias · {respaldos} respaldos a local")
+    return 1 if diferencias else 0
 
 
 def replicar_central(forzar: bool) -> int:
@@ -121,6 +191,8 @@ def main() -> int:
         return create_superadmin()
     if comando == "sincronizar-central":
         return sincronizar_central()
+    if comando == "comparar-nucleo":
+        return comparar_nucleo()
     if comando == "replicar-central":
         return replicar_central(forzar="--forzar" in sys.argv[2:])
     print(f"Comando desconocido: {comando}\n\n{AYUDA}", file=sys.stderr)

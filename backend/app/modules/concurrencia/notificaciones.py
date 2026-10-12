@@ -9,13 +9,11 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.core import mail
 from app.core.logging import log
-from app.modules.concurrencia import service
+from app.modules.concurrencia import nucleo, service
 from app.shared import personas
-from app.shared.aseguradoras.models import Aseguradora
 from app.shared.auth import service as auth_service
 from app.shared.catalogos.models import Module
 from app.shared.notificaciones import service as notificaciones
-from app.shared.prestadores.models import Prestador
 from app.shared.users.models import User
 
 # Ecuador continental no tiene horario de verano: el desfase es fijo, y con un
@@ -71,7 +69,7 @@ def avisar_en_campana(db: DbSession, visita) -> int:
     contando lo que pasó ese día, que es lo que la persona recuerda.
     """
     modulo = db.get(Module, "concurrencia")
-    aseguradora = db.get(Aseguradora, visita.aseguradora_id)
+    aseguradora = nucleo.aseguradora(db, visita.aseguradora_id)
 
     # Cada uno a SU pantalla del caso, que no es la misma para los tres —y por
     # eso la URL se guarda por notificación y no se deduce del módulo—:
@@ -175,12 +173,12 @@ def _escribir_aviso(db: DbSession, visita, destinos: list[tuple[User, str]], est
     personas es a dónde lleva.
     """
     modulo = db.get(Module, "concurrencia")
-    prestador = db.scalar(select(Prestador).where(Prestador.id == visita.prestador_id))
+    prestador_nombre = nucleo.nombre_prestador(db, visita.prestador_id)
     # La compañía la sabe todo el mundo aquí: lo que identifica el aviso es el
     # caso y a dónde va.
     de_que_caso = visita.codigo_interno
-    if prestador is not None:
-        de_que_caso = f"{visita.codigo_interno} · {prestador.nombre}"
+    if prestador_nombre is not None:
+        de_que_caso = f"{visita.codigo_interno} · {prestador_nombre}"
 
     avisados = 0
     ya_avisados: set[uuid.UUID] = set()

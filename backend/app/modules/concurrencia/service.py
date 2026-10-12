@@ -11,6 +11,7 @@ from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import aliased
 
+from app.modules.concurrencia import nucleo
 from app.modules.concurrencia.models import (
     TIPOS_NOTA,
     Visita,
@@ -21,13 +22,10 @@ from app.modules.concurrencia.models import (
 from app.shared import personas
 from app.shared.aseguradoras.models import (
     Aseguradora,
-    AseguradoraModulo,
-    AseguradoraPrestador,
-    AseguradoraSla,
 )
-from app.shared.catalogos.models import Ciudad, Provincia, TipoPrestador
+from app.shared.catalogos.models import Ciudad, Provincia
 from app.shared.contactos.service import validar_documento
-from app.shared.prestadores.models import Prestador, PrestadorContacto, PrestadorSede
+from app.shared.prestadores.models import Prestador, PrestadorSede
 from app.shared.users.models import Role, User, UserModuleAccess
 
 MAX_PAGE_SIZE = 100
@@ -46,26 +44,14 @@ MOTIVOS_SIN_EDICION = {
 
 def aseguradoras_con_concurrencia(
     db: DbSession, aseguradora_id: uuid.UUID | None = None
-) -> list[Aseguradora]:
+) -> list[Any]:
     """
     Las compañías activas con el módulo Concurrencia habilitado: sobre ellas
     puede programar el coordinador de plataforma. Con `aseguradora_id` valida
     una en concreto (lista vacía = no existe, está inactiva o sin el módulo).
+    Fuente: `nucleo` (local o API central, según CONCURRENCIA_NUCLEO).
     """
-    consulta = (
-        select(Aseguradora)
-        .join(AseguradoraModulo, AseguradoraModulo.aseguradora_id == Aseguradora.id)
-        .where(
-            AseguradoraModulo.module_code == "concurrencia",
-            AseguradoraModulo.activo.is_(True),
-            Aseguradora.deleted_at.is_(None),
-            Aseguradora.estado == "activo",
-        )
-        .order_by(Aseguradora.razon_social)
-    )
-    if aseguradora_id is not None:
-        consulta = consulta.where(Aseguradora.id == aseguradora_id)
-    return list(db.scalars(consulta).all())
+    return nucleo.aseguradoras_con_concurrencia(db, aseguradora_id)
 
 
 def prestadores_de_la_red(
@@ -73,95 +59,11 @@ def prestadores_de_la_red(
 ) -> list[dict[str, Any]]:
     """
     Los prestadores con convenio VIVO con esta aseguradora, cada uno con sus
-    sedes. Es la única lista sobre la que se puede programar una visita: no se
-    ofrece —ni se acepta— un prestador que no esté en la red.
+    sedes y contactos. Es la única lista sobre la que se puede programar una
+    visita: no se ofrece —ni se acepta— un prestador que no esté en la red.
+    Fuente: `nucleo` (local o API central).
     """
-    consulta = (
-        select(Prestador, TipoPrestador.nombre, Ciudad.nombre, Provincia.nombre)
-        .select_from(AseguradoraPrestador)
-        .join(Prestador, Prestador.id == AseguradoraPrestador.prestador_id)
-        .join(TipoPrestador, TipoPrestador.codigo == Prestador.tipo_codigo)
-        .outerjoin(Ciudad, Ciudad.codigo == Prestador.ciudad_codigo)
-        .outerjoin(Provincia, Provincia.codigo == Prestador.provincia_codigo)
-        .where(
-            AseguradoraPrestador.aseguradora_id == aseguradora_id,
-            AseguradoraPrestador.deleted_at.is_(None),
-            # Un convenio terminado ya no habilita visitas nuevas.
-            AseguradoraPrestador.estado == "vigente",
-            Prestador.deleted_at.is_(None),
-            Prestador.estado == "activo",
-        )
-    )
-    if search:
-        patron = f"%{search.strip()}%"
-        consulta = consulta.where(
-            or_(Prestador.nombre.ilike(patron), Prestador.ruc.ilike(patron))
-        )
-
-    filas = db.execute(consulta.order_by(Prestador.nombre)).all()
-    if not filas:
-        return []
-
-    ids = [p.id for p, *_ in filas]
-    sedes = _sedes_por_prestador(db, ids)
-    contactos = _contactos_por_prestador(db, ids)
-    return [
-        {
-            "prestador": p,
-            "tipo_nombre": tipo,
-            "ciudad_nombre": ciudad,
-            "provincia_nombre": provincia,
-            "sedes": sedes.get(p.id, []),
-            "contactos": contactos.get(p.id, []),
-        }
-        for p, tipo, ciudad, provincia in filas
-    ]
-
-
-def _sedes_por_prestador(
-    db: DbSession, prestador_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, list[tuple[Any, ...]]]:
-    """Un solo viaje para todas las sedes, no uno por prestador."""
-    filas = db.execute(
-        select(PrestadorSede, Ciudad.nombre, Provincia.nombre)
-        .outerjoin(Ciudad, Ciudad.codigo == PrestadorSede.ciudad_codigo)
-        .outerjoin(Provincia, Provincia.codigo == PrestadorSede.provincia_codigo)
-        .where(
-            PrestadorSede.prestador_id.in_(prestador_ids),
-            PrestadorSede.deleted_at.is_(None),
-            # Una sede inactiva no es sitio al que mandar a nadie.
-            PrestadorSede.estado == "activa",
-        )
-        .order_by(PrestadorSede.nombre)
-    ).all()
-
-    por_prestador: dict[uuid.UUID, list[tuple[Any, ...]]] = {}
-    for sede, ciudad, provincia in filas:
-        por_prestador.setdefault(sede.prestador_id, []).append((sede, ciudad, provincia))
-    return por_prestador
-
-
-def _contactos_por_prestador(
-    db: DbSession, prestador_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, list[PrestadorContacto]]:
-    """
-    Los contactos vivos de cada prestador, para marcar a quién se avisa. Un solo
-    viaje, como las sedes. Por nombre y no por antigüedad: aquí se busca a una
-    persona entre veinte, no se repasa el expediente.
-    """
-    filas = db.scalars(
-        select(PrestadorContacto)
-        .where(
-            PrestadorContacto.prestador_id.in_(prestador_ids),
-            PrestadorContacto.deleted_at.is_(None),
-        )
-        .order_by(personas.sql_completo(PrestadorContacto), PrestadorContacto.id)
-    ).all()
-
-    por_prestador: dict[uuid.UUID, list[PrestadorContacto]] = {}
-    for contacto in filas:
-        por_prestador.setdefault(contacto.prestador_id, []).append(contacto)
-    return por_prestador
+    return nucleo.prestadores_de_la_red(db, aseguradora_id, search)
 
 
 def _validar_destino(
@@ -172,29 +74,13 @@ def _validar_destino(
     suya. No se confía en lo que mande el navegador: si el convenio se terminó
     mientras el formulario estaba abierto, el guardado se rechaza.
     """
-    en_red = db.scalar(
-        select(func.count())
-        .select_from(AseguradoraPrestador)
-        .where(
-            AseguradoraPrestador.aseguradora_id == aseguradora_id,
-            AseguradoraPrestador.prestador_id == prestador_id,
-            AseguradoraPrestador.deleted_at.is_(None),
-            AseguradoraPrestador.estado == "vigente",
-        )
-    )
-    if not en_red:
+    if not nucleo.prestador_en_red(db, aseguradora_id, prestador_id):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Ese prestador no tiene convenio vigente con tu aseguradora",
         )
 
-    suyas = db.scalars(
-        select(PrestadorSede.id).where(
-            PrestadorSede.prestador_id == prestador_id,
-            PrestadorSede.deleted_at.is_(None),
-            PrestadorSede.estado == "activa",
-        )
-    ).all()
+    suyas = nucleo.sedes_activas(db, prestador_id)
 
     if sede_id is None:
         # La casa matriz es un destino más: tener sedes no significa que el
@@ -255,12 +141,7 @@ def horas_de_sla(db: DbSession, aseguradora_id: uuid.UUID) -> Decimal:
     Es obligatorio desde `c3f7b8e1d952`, de modo que faltar solo puede
     significar que a la compañía le falta contratar el módulo o pactarlo.
     """
-    horas = db.scalar(
-        select(AseguradoraSla.horas).where(
-            AseguradoraSla.aseguradora_id == aseguradora_id,
-            AseguradoraSla.module_code == "concurrencia",
-        )
-    )
+    horas = nucleo.horas_sla(db, aseguradora_id)
     if horas is None or horas <= 0:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
