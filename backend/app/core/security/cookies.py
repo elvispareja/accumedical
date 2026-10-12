@@ -6,11 +6,17 @@ from app.core.config import settings
 
 
 def _comunes() -> dict:
-    return {
+    comunes = {
         "secure": bool(settings.cookie_secure),
         "samesite": "strict",
         "path": "/",
     }
+    # Con COOKIE_DOMAIN (p. ej. pymes.ec) la sesión se comparte entre
+    # admin.pymes.ec y el subdominio de cada módulo. Sin él, la cookie es solo
+    # del host que la puso (el comportamiento de siempre).
+    if settings.cookie_domain:
+        comunes["domain"] = settings.cookie_domain
+    return comunes
 
 
 def poner_cookies_sesion(response: Response, token_sesion: str, token_csrf: str) -> None:
@@ -48,5 +54,9 @@ def poner_cookie_csrf(response: Response, token_csrf: str) -> None:
 def borrar_cookies_sesion(response: Response) -> None:
     for nombre in (settings.nombre_cookie_sesion, settings.nombre_cookie_csrf):
         response.delete_cookie(
-            nombre, path="/", samesite="strict", secure=bool(settings.cookie_secure)
+            nombre,
+            path="/",
+            domain=settings.cookie_domain or None,
+            samesite="strict",
+            secure=bool(settings.cookie_secure),
         )

@@ -71,3 +71,18 @@ Mientras el admin de aseguradoras y prestadores viva aquí, **esta base es la fu
 ## Pendiente de este repo (no introducido por este cambio)
 
 `alembic check` ya reportaba diferencias entre modelos y base en `aseguradora_sla`, `user_funcion` y `user_grupo_access` (nombres de CHECK con el prefijo duplicado y defaults de `id`). Conviene una migración que las alinee.
+
+## Subdominios: `admin.pymes.ec` y un dominio por módulo
+
+La misma aplicación se sirve en varios subdominios y reparte sus rutas (`web/src/core/dominios.ts` + `GuardaDeDominio`, que envuelve todas las rutas):
+
+| Ruta | Dominio |
+|---|---|
+| `/login`, `/definir-password`, `/admin/…`, `/coordinacion/…`, `/seleccionar-modulo`… | `VITE_URL_ADMIN` (`https://admin.pymes.ec`) |
+| `/<slug>/…` y la supervisión `/admin/auditorias/<slug>/…` | el de `VITE_URLS_MODULOS[slug]` (`{"concurrencia":"https://concurrencia.pymes.ec"}`) |
+
+- Si se abre una ruta en el dominio que no le toca, el navegador va al correcto (p. ej. **Auditorías → Concurrencia** en el admin lleva a `concurrencia.pymes.ec`).
+- **Sesión compartida:** `COOKIE_DOMAIN=pymes.ec` + `COOKIE_PREFIX=__Secure-` → la cookie (`HttpOnly; Secure; SameSite=strict`) vale para todos los subdominios: se inicia sesión una vez en `admin.pymes.ec`. `ALLOWED_ORIGINS` debe listar todos los dominios.
+- Sin `VITE_URL_ADMIN` (desarrollo local) no hay reparto: todo en el mismo origen, como siempre.
+- Vite (dev) admite **un solo** host extra: `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=".pymes.ec"` (el punto cubre los subdominios).
+- `APP_BASE_URL=https://admin.pymes.ec`: los enlaces de invitación llevan al portal.

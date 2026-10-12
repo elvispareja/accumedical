@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # ── Cookies ──────────────────────────────────────────────────────────────
     cookie_secure: bool | None = None
     cookie_prefix: str = ""
+    # Dominio padre para compartir la sesión entre subdominios (admin.pymes.ec,
+    # concurrencia.pymes.ec…): «pymes.ec». Vacío = cookie solo del host.
+    # Incompatible con el prefijo __Host- (el navegador lo rechaza): usar __Secure-.
+    cookie_domain: str = Field(default="", pattern=r"^([a-z0-9-]+\.)*[a-z0-9-]+\.[a-z]{2,}$|^$")
 
     # ── Sesión (A07) ─────────────────────────────────────────────────────────
     session_idle_ttl_min: int = Field(default=30, gt=0)
@@ -150,6 +154,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _guardas_de_produccion(self) -> Settings:
+        if self.cookie_domain and self.cookie_prefix == "__Host-":
+            raise ValueError(
+                "COOKIE_PREFIX=__Host- no admite COOKIE_DOMAIN: usa __Secure- para compartir "
+                "la sesión entre subdominios"
+            )
         if self.cookie_secure is None:
             self.cookie_secure = self.environment == "production"
         if self.environment == "production":
