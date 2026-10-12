@@ -16,7 +16,29 @@ AYUDA = """Comandos disponibles:
   sincronizar-central  Publica en la API central lo pendiente de Concurrencia
                        (pacientes → personas, visitas culminadas → eventos).
                        Idempotente: lo ya publicado no se repite.
+  replicar-central     Replica el núcleo (aseguradoras, prestadores, convenios, SLA,
+                       módulos contratados) en la central. Con --forzar reenvía
+                       todo aunque no haya cambiado.
 """
+
+
+def replicar_central(forzar: bool) -> int:
+    if not settings.replicacion_central_configurada:
+        print(
+            "La réplica no está configurada (CENTRAL_API_URL / CENTRAL_PLATAFORMA_CLIENT_*)",
+            file=sys.stderr,
+        )
+        return 2
+    from app.core.central import cliente_plataforma
+    from app.shared.central import replicacion
+
+    with SessionLocal() as db:
+        resultado = replicacion.replicar(db, cliente_plataforma(), forzar=forzar)
+    for entidad, r in resultado.items():
+        print(f"  {entidad:<26} {r}")
+    if not resultado:
+        print("Sin cambios: la central ya está al día.")
+    return 1 if any(r.startswith("error") for r in resultado.values()) else 0
 
 
 def sincronizar_central() -> int:
@@ -99,6 +121,8 @@ def main() -> int:
         return create_superadmin()
     if comando == "sincronizar-central":
         return sincronizar_central()
+    if comando == "replicar-central":
+        return replicar_central(forzar="--forzar" in sys.argv[2:])
     print(f"Comando desconocido: {comando}\n\n{AYUDA}", file=sys.stderr)
     return 2
 

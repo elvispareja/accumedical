@@ -1,0 +1,161 @@
+"""
+Replicación del núcleo hacia la API central (paso 4b de la separación).
+
+Mientras el admin de aseguradoras y prestadores viva aquí, ESTA base es la
+fuente y la central su réplica: el admin sigue funcionando igual y la central
+recibe, como mucho un minuto después, lo que cambió.
+
+Cada entidad es una consulta explícita que traduce los nombres de aquí a los de
+la central (`module_code` → `aplicacion_codigo`, `aseguradora_prestador` →
+`convenios`…). Se toma la foto completa, se calcula su huella SHA-256 y solo si
+cambió se envía a POST /api/replicacion/{entidad}. La central aplica un UPSERT
+que solo toca las filas distintas, así que reenviar es inofensivo.
+
+El orden importa (dependencias de claves foráneas): si una entidad falla, la
+pasada se corta y se reintenta entera en la siguiente.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import decimal
+import hashlib
+import json
+import uuid
+from typing import Any
+
+from sqlalchemy import func, text
+from sqlalchemy.orm import Session
+
+from app.core.central import CentralError, ClienteCentral
+from app.shared.central.models import CentralReplicacion
+
+# (entidad en la central, SELECT en esta base con los nombres de la central).
+# Consultas literales y constantes: nada del usuario entra en ellas.
+ENTIDADES: list[tuple[str, str]] = [
+    (
+        "aplicaciones",
+        "SELECT code AS codigo, nombre, descripcion, activo AS activa,"
+        " created_at, updated_at"
+        " FROM modules",
+    ),
+    (
+        "tipos_prestador",
+        "SELECT codigo, nombre, es_persona, activo, created_at, updated_at FROM tipos_prestador",
+    ),
+    (
+        "aseguradoras",
+        "SELECT id, codigo_interno, razon_social, nombre_comercial, ruc, tipo,"
+        " provincia_codigo, ciudad_codigo, direccion_fiscal, latitud, longitud, estado,"
+        " logo_path, es_propia,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM aseguradoras",
+    ),
+    (
+        "aseguradora_contactos",
+        "SELECT id, aseguradora_id, nombre_principal, nombre_secundario, apellido_paterno,"
+        " apellido_materno, email::text AS email, telefono, tipo_documento_codigo,"
+        " numero_documento, cargo,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM aseguradora_contactos",
+    ),
+    (
+        "prestadores",
+        "SELECT id, codigo_interno, tipo_codigo, nombre, ruc, direccion, provincia_codigo,"
+        " ciudad_codigo, estado, latitud, longitud, logo_path,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM prestadores",
+    ),
+    (
+        "prestador_contactos",
+        "SELECT id, prestador_id, nombre_principal, nombre_secundario, apellido_paterno,"
+        " apellido_materno, email::text AS email, telefono, tipo_documento_codigo,"
+        " numero_documento, cargo,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM prestador_contactos",
+    ),
+    (
+        "prestador_sedes",
+        "SELECT id, prestador_id, nombre, provincia_codigo, ciudad_codigo, direccion,"
+        " telefono, email::text AS email, latitud, longitud, estado,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM prestador_sedes",
+    ),
+    (
+        "aseguradora_aplicaciones",
+        "SELECT aseguradora_id, module_code AS aplicacion_codigo, activo, granted_at,"
+        " granted_by, revoked_at, revoked_by, updated_at"
+        " FROM aseguradora_modulos",
+    ),
+    (
+        "aseguradora_sla",
+        "SELECT aseguradora_id, module_code AS aplicacion_codigo, horas, precio,"
+        " created_at, updated_at, created_by, updated_by"
+        " FROM aseguradora_sla",
+    ),
+    (
+        "aseguradora_coberturas",
+        "SELECT aseguradora_id, module_code AS aplicacion_codigo, cobertura_codigo, activo,"
+        " granted_at, granted_by, revoked_at, revoked_by, updated_at"
+        " FROM aseguradora_coberturas",
+    ),
+    (
+        "convenios",
+        "SELECT id, aseguradora_id, prestador_id, codigo_convenio, red_privada, red_publica,"
+        " fecha_inicio, fecha_fin, estado, observaciones, listado_precios_ruta,"
+        " listado_precios_nombre,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM aseguradora_prestador",
+    ),
+    (
+        "convenio_fc",
+        "SELECT convenio_id, concepto, modo, valor, base,"
+        " created_at, updated_at, created_by, updated_by"
+        " FROM aseguradora_prestador_fc",
+    ),
+]
+
+
+def _json(valor: Any) -> Any:
+    if isinstance(valor, dt.datetime | dt.date):
+        return valor.isoformat()
+    if isinstance(valor, uuid.UUID | decimal.Decimal):
+        return str(valor)
+    raise TypeError(type(valor).__name__)
+
+
+def foto(db: Session, consulta: str) -> tuple[list[dict[str, Any]], str]:
+    """Filas de la entidad (orden estable) y la huella SHA-256 de su contenido."""
+    filas = [dict(f) for f in db.execute(text(consulta)).mappings()]
+    cuerpo = json.dumps(filas, default=_json, sort_keys=True, ensure_ascii=False)
+    filas = json.loads(cuerpo)  # ya serializables para el envío
+    filas.sort(key=lambda f: json.dumps(f, sort_keys=True))
+    huella = hashlib.sha256(json.dumps(filas, sort_keys=True).encode()).hexdigest()
+    return filas, huella
+
+
+def replicar(db: Session, c: ClienteCentral, *, forzar: bool = False) -> dict[str, str]:
+    """Una pasada completa. Devuelve {entidad: resultado} para el log."""
+    resultado: dict[str, str] = {}
+    for entidad, consulta in ENTIDADES:
+        marca = db.get(CentralReplicacion, entidad) or CentralReplicacion(entidad=entidad)
+        db.add(marca)
+        filas, huella = foto(db, consulta)
+        if not forzar and marca.huella == huella and marca.ultimo_error is None:
+            continue
+        try:
+            estado, r = c.llamar("POST", f"/api/replicacion/{entidad}", {"filas": filas})
+            if estado != 200:
+                raise CentralError(estado, "replicar")
+        except CentralError as error:
+            # Sin el cuerpo de la respuesta: puede repetir datos de contacto.
+            marca.ultimo_error = f"{error.estado or 'sin respuesta'}: {error.detalle}"[:200]
+            db.commit()
+            resultado[entidad] = f"error {error.estado}"
+            break  # lo que sigue depende de esto: se reintenta todo en la próxima pasada
+        marca.huella = huella
+        marca.enviado_at = func.now()
+        marca.ultimo_error = None
+        db.commit()
+        resultado[entidad] = f"+{r['insertadas']} ~{r['actualizadas']} -{r['borradas']}"
+    return resultado

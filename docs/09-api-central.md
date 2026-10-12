@@ -11,7 +11,27 @@ La plataforma se está separando (docs del proyecto de infraestructura: `context
 
 **Lo clínico no sale de Concurrencia:** ni el informe, ni las notas, ni las fotos.
 
-Concurrencia **sigue leyendo** aseguradoras, prestadores, convenios y SLA de su propia base. Pasar a leerlos de la central exige antes mover convenios, SLA y módulos contratados, y que el admin escriba en la central (siguientes pasos de la separación).
+Concurrencia **sigue leyendo** aseguradoras, prestadores, convenios y SLA de su propia base (paso 4c pendiente).
+
+## Réplica del núcleo (paso 4b)
+
+Mientras el admin de aseguradoras y prestadores viva aquí, **esta base es la fuente** y la central su réplica. El admin no cambió en nada.
+
+| Aquí | En la central |
+|---|---|
+| `modules` | `aplicaciones` |
+| `tipos_prestador` | `tipos_prestador` |
+| `aseguradoras`, `aseguradora_contactos` | igual |
+| `prestadores`, `prestador_contactos`, `prestador_sedes` | igual |
+| `aseguradora_modulos` | `aseguradora_aplicaciones` (`module_code` → `aplicacion_codigo`) |
+| `aseguradora_sla`, `aseguradora_coberturas` | igual (`module_code` → `aplicacion_codigo`) |
+| `aseguradora_prestador`, `aseguradora_prestador_fc` | `convenios`, `convenio_fc` |
+
+- `app/shared/central/replicacion.py`: una consulta literal por entidad (con los nombres de la central), foto completa, huella SHA-256; **solo se envía lo que cambió** (`central_replicacion` guarda la última huella y el último error).
+- Tarea cada `CENTRAL_REPLICACION_INTERVALO_SEC` (60 s), advisory lock `815_243_004`, y comando `python -m app.cli replicar-central [--forzar]`.
+- Si una entidad falla, la pasada se corta (lo que sigue depende de ella) y se reintenta entera en la próxima.
+- **No editar aseguradoras ni prestadores directamente en la central** mientras dure esta etapa: la siguiente réplica los devolvería a lo que diga esta base.
+- Pólizas (`aseguradora_polizas`), logos y listados de precios son **archivos** del volumen de subidas: la central solo recibe su ruta (opaca); los archivos siguen aquí.
 
 ## Piezas
 

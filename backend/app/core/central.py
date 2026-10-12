@@ -33,7 +33,9 @@ class CentralError(Exception):
 
 
 class ClienteCentral:
-    def __init__(self) -> None:
+    def __init__(self, client_id: str, client_secret: str) -> None:
+        self._client_id = client_id
+        self._client_secret = client_secret
         self._base = settings.central_api_url.rstrip("/")
         # Solo http(s): urlopen también abriría file:// u otros esquemas (S310).
         if urllib.parse.urlsplit(self._base).scheme not in ("http", "https"):
@@ -83,8 +85,8 @@ class ClienteCentral:
                     "/api/auth/token",
                     {
                         "grant_type": "client_credentials",
-                        "client_id": settings.central_client_id,
-                        "client_secret": settings.central_client_secret.get_secret_value(),
+                        "client_id": self._client_id,
+                        "client_secret": self._client_secret,
                     },
                 )
                 if estado != 200:
@@ -106,14 +108,31 @@ class ClienteCentral:
         return estado, r
 
 
-_cliente: ClienteCentral | None = None
-_cliente_candado = threading.Lock()
+_clientes: dict[str, ClienteCentral] = {}
+_clientes_candado = threading.Lock()
+
+
+def _unico(nombre: str, client_id: str, client_secret: str) -> ClienteCentral:
+    """Un cliente por credencial y por proceso: así el token se reutiliza."""
+    with _clientes_candado:
+        if nombre not in _clientes:
+            _clientes[nombre] = ClienteCentral(client_id, client_secret)
+        return _clientes[nombre]
 
 
 def cliente() -> ClienteCentral:
-    """Un cliente por proceso: así el token se reutiliza entre peticiones."""
-    global _cliente
-    with _cliente_candado:
-        if _cliente is None:
-            _cliente = ClienteCentral()
-        return _cliente
+    """Credencial de Concurrencia (perfil «app»): personas y eventos."""
+    return _unico(
+        "concurrencia",
+        settings.central_client_id,
+        settings.central_client_secret.get_secret_value(),
+    )
+
+
+def cliente_plataforma() -> ClienteCentral:
+    """Credencial del núcleo (perfil «admin» + replicacion:escribir)."""
+    return _unico(
+        "plataforma",
+        settings.central_plataforma_client_id,
+        settings.central_plataforma_client_secret.get_secret_value(),
+    )

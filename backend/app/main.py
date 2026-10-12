@@ -69,6 +69,10 @@ LOCK_NO_AUDITADAS = 815_243_002
 # app sigue y lo pendiente sale en la próxima pasada.
 LOCK_CENTRAL = 815_243_003
 
+# Réplica del núcleo (aseguradoras, prestadores, convenios, SLA, módulos
+# contratados) hacia la central. Solo si CENTRAL_PLATAFORMA_* está configurado.
+LOCK_REPLICACION = 815_243_004
+
 
 def _con_candado(clave: int, trabajo: Callable[[Session], None]) -> None:
     """
@@ -160,6 +164,27 @@ def _sincronizar_central() -> None:
     _con_candado(LOCK_CENTRAL, trabajo)
 
 
+async def _replicacion_periodica() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(_replicar_central)
+        except Exception:  # noqa: BLE001 - la tarea nunca debe tumbar la app
+            log.exception("central_replicacion_fallo")
+        await asyncio.sleep(settings.central_replicacion_intervalo_sec)
+
+
+def _replicar_central() -> None:
+    from app.core.central import cliente_plataforma
+    from app.shared.central import replicacion
+
+    def trabajo(db: Session) -> None:
+        resultado = replicacion.replicar(db, cliente_plataforma())
+        if resultado:
+            log.info("central_replicacion", **resultado)
+
+    _con_candado(LOCK_REPLICACION, trabajo)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     log.info("arranque", environment=settings.environment, debug=settings.debug)
@@ -171,9 +196,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     tarea = asyncio.create_task(_purga_periodica())
     tarea_no_auditadas = asyncio.create_task(_no_auditadas_periodica())
     tareas = [tarea, tarea_no_auditadas]
+    # La réplica va primero: los eventos de Concurrencia referencian aseguradoras
+    # y prestadores que deben existir ya en la central.
+    if settings.replicacion_central_configurada:
+        tareas.append(asyncio.create_task(_replicacion_periodica()))
     if settings.central_configurada:
         tareas.append(asyncio.create_task(_central_periodica()))
-    log.info("central", configurada=settings.central_configurada)
+    log.info(
+        "central",
+        configurada=settings.central_configurada,
+        replicacion=settings.replicacion_central_configurada,
+    )
     try:
         yield
     finally:

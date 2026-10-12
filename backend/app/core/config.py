@@ -117,6 +117,12 @@ class Settings(BaseSettings):
     central_api_url: str = ""
     central_client_id: str = ""
     central_client_secret: SecretStr = SecretStr("")
+    # Segunda credencial, la del NÚCLEO: replica aseguradoras, prestadores,
+    # convenios, SLA y módulos contratados hacia la central (scope
+    # replicacion:escribir). Vacía = no se replica.
+    central_plataforma_client_id: str = ""
+    central_plataforma_client_secret: SecretStr = SecretStr("")
+    central_replicacion_intervalo_sec: int = Field(default=60, ge=15)
     central_timeout_sec: int = Field(default=10, gt=0, le=60)
     central_intervalo_sec: int = Field(default=120, ge=30)
 
@@ -166,6 +172,14 @@ class Settings(BaseSettings):
     @property
     def correo_configurado(self) -> bool:
         return bool(self.smtp_host and self.mail_from)
+
+    @property
+    def replicacion_central_configurada(self) -> bool:
+        return bool(
+            self.central_api_url
+            and self.central_plataforma_client_id
+            and self.central_plataforma_client_secret.get_secret_value()
+        )
 
     @property
     def central_configurada(self) -> bool:
