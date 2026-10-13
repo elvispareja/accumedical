@@ -116,3 +116,22 @@ Con `RED_PROPIA_EN_CENTRAL=true`, la red de la ficha propia (`aseguradoras.es_pr
 - La réplica deja de enviar la red propia (`_SIN_RED_PROPIA`), y la central la ignora aunque llegue.
 - Las filas viejas de la red propia en `aseguradora_prestador` quedan como historia y no se vuelven a leer.
 - Las redes de las **demás** aseguradoras siguen aquí y se replican como antes.
+
+## Documentos de la aseguradora en el almacén de la central (D2)
+
+Dos tipos de documentos (decisión del negocio):
+- **De la aseguradora** (póliza, tarifario, cobertura y condiciones, SLA, convenio, listados de precios): uno para todas las aplicaciones → **viven en el almacén cifrado de la central**.
+- **Del caso del paciente** (informes, fotos, notas): se quedan en la aplicación dueña del expediente; de Concurrencia solo se compartirá el informe final firmado (D3).
+
+Con `DOCUMENTOS_EN_CENTRAL=true` (`app/shared/central/archivos.py`):
+
+| Dónde | Qué cambia |
+|---|---|
+| Pestañas Pólizas, Cobertura, SLA, Convenios (`aseguradoras/router.py`: subir y ver) | El PDF se sube al almacén de la central (`POST /api/archivos`); `aseguradora_polizas.ruta` guarda `central:<id>`. Al verlo, se trae de la central |
+| Listado de precios de un convenio (subir y ver) | Igual; la Red convenio propia SIEMPRE va a la central (su convenio ya vive allá) |
+| Réplica | `aseguradora_polizas` → `documentos_aseguradora` (con `archivo_id`); `listado_precios_ruta` `central:<id>` → `listado_archivo_id` |
+| Rutas antiguas (relativas al volumen) | Siguen funcionando hasta migrarlas con `python -m app.cli migrar-documentos-central` (sube, verifica la huella y deja la referencia; **no borra** los archivos locales) |
+
+- La central valida de nuevo cada archivo (PDF sin contenido activo, Excel sin macros): es más estricta que la validación de aquí.
+- Sin respaldo local: si la central no responde, subir o ver un documento da 503.
+- Cliente: `ClienteCentral.llamar_binario` (envía el archivo como cuerpo) y `.descargar` (recibe bytes).

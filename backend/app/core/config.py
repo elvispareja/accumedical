@@ -136,6 +136,10 @@ class Settings(BaseSettings):
     # central: la pantalla lee y guarda allá y la réplica deja de enviarla.
     # Requiere CENTRAL_PLATAFORMA_*. Sin respaldo local (ver shared/central/red_propia.py).
     red_propia_en_central: bool = False
+    # Los documentos de la aseguradora (pólizas, cobertura, SLA, convenios) y los
+    # listados de precios se guardan en el almacén cifrado de la central; aquí
+    # queda la referencia `central:<id>`. Requiere CENTRAL_PLATAFORMA_*.
+    documentos_en_central: bool = False
     central_intervalo_sec: int = Field(default=120, ge=30)
 
     # ── Bootstrap ────────────────────────────────────────────────────────────

@@ -103,8 +103,13 @@ ENTIDADES: list[tuple[str, str]] = [
     (
         "convenios",
         "SELECT id, aseguradora_id, prestador_id, codigo_convenio, red_privada, red_publica,"
-        " fecha_inicio, fecha_fin, estado, observaciones, listado_precios_ruta,"
+        " fecha_inicio, fecha_fin, estado, observaciones,"
+        # Listado en el almacén de la central: la referencia se convierte en su id.
+        " CASE WHEN listado_precios_ruta LIKE 'central:%' THEN NULL"
+        " ELSE listado_precios_ruta END AS listado_precios_ruta,"
         " listado_precios_nombre,"
+        " CASE WHEN listado_precios_ruta LIKE 'central:%'"
+        " THEN substring(listado_precios_ruta FROM 9)::uuid END AS listado_archivo_id,"
         " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
         " FROM aseguradora_prestador",
     ),
@@ -113,6 +118,17 @@ ENTIDADES: list[tuple[str, str]] = [
         "SELECT convenio_id, concepto, modo, valor, base,"
         " created_at, updated_at, created_by, updated_by"
         " FROM aseguradora_prestador_fc",
+    ),
+    # Documentos de la aseguradora (pestañas Pólizas, Cobertura, SLA, Convenios).
+    (
+        "documentos_aseguradora",
+        "SELECT id, aseguradora_id,"
+        " CASE categoria WHEN 'polizas' THEN 'poliza' WHEN 'convenios' THEN 'convenio'"
+        " ELSE categoria END AS tipo_codigo,"
+        " NULL::varchar AS aplicacion_codigo, nombre,"
+        " CASE WHEN ruta LIKE 'central:%' THEN substring(ruta FROM 9)::uuid END AS archivo_id,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM aseguradora_polizas",
     ),
     # Directorio de usuarios. Columnas elegidas UNA A UNA: nunca password_hash,
     # mfa_secret, intentos de login, bloqueos ni último acceso. La central sabe

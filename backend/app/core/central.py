@@ -19,6 +19,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from typing import Any
+from urllib.parse import quote
 
 from app.core.config import settings
 
@@ -53,20 +54,30 @@ class ClienteCentral:
         *,
         token: str | None = None,
         usuario: uuid.UUID | None = None,
+        crudo: bytes | None = None,
+        cabeceras: dict[str, str] | None = None,
+        json_respuesta: bool = True,
     ) -> tuple[int, Any]:
-        datos = json.dumps(cuerpo, default=str).encode() if cuerpo is not None else None
+        if crudo is not None:
+            datos, tipo = crudo, "application/octet-stream"
+        else:
+            datos = json.dumps(cuerpo, default=str).encode() if cuerpo is not None else None
+            tipo = "application/json"
         peticion = urllib.request.Request(  # noqa: S310 - esquema validado en __init__
             self._base + ruta, data=datos, method=metodo
         )
-        peticion.add_header("Content-Type", "application/json")
-        peticion.add_header("Accept", "application/json")
+        peticion.add_header("Content-Type", tipo)
+        peticion.add_header("Accept", "application/json" if json_respuesta else "*/*")
         if token:
             peticion.add_header("Authorization", f"Bearer {token}")
         if usuario:
             peticion.add_header("X-Usuario-Id", str(usuario))
+        for nombre, valor in (cabeceras or {}).items():
+            peticion.add_header(nombre, valor)
         try:
             with urllib.request.urlopen(peticion, timeout=settings.central_timeout_sec) as r:  # noqa: S310 - URL de configuración
-                return r.status, json.loads(r.read() or b"null")
+                cuerpo_r = r.read()
+                return r.status, (json.loads(cuerpo_r or b"null") if json_respuesta else cuerpo_r)
         except urllib.error.HTTPError as error:
             crudo = error.read()
             try:
@@ -95,6 +106,45 @@ class ClienteCentral:
                 # Se renueva un minuto antes de que venza.
                 self._vence = time.monotonic() + max(int(r.get("expires_in", 900)) - 60, 30)
             return self._token
+
+    def llamar_binario(
+        self,
+        metodo: str,
+        ruta: str,
+        contenido: bytes,
+        *,
+        nombre: str,
+        usuario: uuid.UUID | None = None,
+    ) -> tuple[int, Any]:
+        """Envía un archivo como cuerpo (p. ej. POST /api/archivos); respuesta JSON."""
+        cab = {"X-Nombre-Archivo": quote(nombre[:160])}
+        estado, r = self._http(
+            metodo,
+            ruta,
+            token=self._token_vigente(),
+            usuario=usuario,
+            crudo=contenido,
+            cabeceras=cab,
+        )
+        if estado == 401:
+            estado, r = self._http(
+                metodo,
+                ruta,
+                token=self._token_vigente(renovar=True),
+                usuario=usuario,
+                crudo=contenido,
+                cabeceras=cab,
+            )
+        return estado, r
+
+    def descargar(self, ruta: str) -> tuple[int, bytes]:
+        """GET de un archivo: devuelve los bytes tal cual."""
+        estado, r = self._http("GET", ruta, token=self._token_vigente(), json_respuesta=False)
+        if estado == 401:
+            estado, r = self._http(
+                "GET", ruta, token=self._token_vigente(renovar=True), json_respuesta=False
+            )
+        return estado, r
 
     def llamar(
         self, metodo: str, ruta: str, cuerpo: Any = None, *, usuario: uuid.UUID | None = None

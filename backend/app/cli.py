@@ -16,6 +16,11 @@ AYUDA = """Comandos disponibles:
   sincronizar-central  Publica en la API central lo pendiente de Concurrencia
                        (pacientes → personas, visitas culminadas → eventos).
                        Idempotente: lo ya publicado no se repite.
+  migrar-documentos-central
+                       Sube al almacén cifrado de la central los documentos de
+                       aseguradora y los listados de precios que aún están en el
+                       volumen local, y deja la referencia `central:<id>`. NO borra
+                       los archivos locales (eso es aparte, cuando se confirme).
   comparar-nucleo      Compara, con los datos reales, lo que Concurrencia obtiene de
                        su base (local) y de la API central: compañías, red, sedes,
                        SLA y validación de destino. Sale con 1 si hay diferencias.
@@ -23,6 +28,70 @@ AYUDA = """Comandos disponibles:
                        módulos contratados) en la central. Con --forzar reenvía
                        todo aunque no haya cambiado.
 """
+
+
+def migrar_documentos_central() -> int:
+    if not settings.replicacion_central_configurada:
+        print("Falta CENTRAL_API_URL / CENTRAL_PLATAFORMA_CLIENT_*", file=sys.stderr)
+        return 2
+    import hashlib
+    from pathlib import Path
+
+    from app.shared.aseguradoras.models import (
+        Aseguradora,
+        AseguradoraPoliza,
+        AseguradoraPrestador,
+    )
+    from app.shared.central import archivos, red_propia
+
+    base = Path(settings.upload_dir)
+    hechos = errores = 0
+
+    def mover(ruta: str, nombre: str) -> str | None:
+        nonlocal hechos, errores
+        archivo = base / ruta
+        if not archivo.is_file():
+            print(f"  ⚠ no existe en el volumen: {ruta}")
+            errores += 1
+            return None
+        contenido = archivo.read_bytes()
+        archivo_id = archivos.subir(contenido, nombre, None)
+        devuelto, meta = archivos.descargar(archivo_id)
+        if hashlib.sha256(devuelto).hexdigest() != hashlib.sha256(contenido).hexdigest():
+            print(f"  ✗ la copia en la central no coincide: {ruta}")
+            errores += 1
+            return None
+        hechos += 1
+        return archivos.referencia(archivo_id)
+
+    with SessionLocal() as db:
+        for poliza in db.scalars(select(AseguradoraPoliza)):
+            if poliza.ruta and not archivos.es_referencia(poliza.ruta):
+                ref = mover(poliza.ruta, poliza.nombre)
+                if ref:
+                    poliza.ruta = ref
+                    db.commit()
+        for convenio in db.scalars(select(AseguradoraPrestador)):
+            ruta = convenio.listado_precios_ruta
+            if ruta and not archivos.es_referencia(ruta):
+                if red_propia.activa() and red_propia.es_propia(db, convenio.aseguradora_id):
+                    continue  # la red propia se migra abajo, desde la central (su dueña)
+                ref = mover(ruta, convenio.listado_precios_nombre or "Listado de precios")
+                if ref:
+                    convenio.listado_precios_ruta = ref
+                    db.commit()
+        if red_propia.activa():
+            propia = db.scalar(select(Aseguradora.id).where(Aseguradora.es_propia.is_(True)))
+            if propia is not None:
+                for convenio in red_propia.convenios_vivos(propia).values():
+                    ruta = convenio.listado_precios_ruta
+                    if ruta and not archivos.es_referencia(ruta):
+                        nombre = convenio.listado_precios_nombre or "Listado de precios"
+                        ref = mover(ruta, nombre)
+                        if ref:
+                            red_propia.guardar_listado(convenio.id, ref, nombre, None)
+    print(f"Migrados al almacén de la central: {hechos} · con problema: {errores}")
+    return 1 if errores else 0
 
 
 def comparar_nucleo() -> int:
@@ -191,6 +260,8 @@ def main() -> int:
         return create_superadmin()
     if comando == "sincronizar-central":
         return sincronizar_central()
+    if comando == "migrar-documentos-central":
+        return migrar_documentos_central()
     if comando == "comparar-nucleo":
         return comparar_nucleo()
     if comando == "replicar-central":

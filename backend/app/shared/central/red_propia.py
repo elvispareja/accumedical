@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session as DbSession
 from app.core.central import CentralError, cliente_plataforma
 from app.core.config import settings
 from app.shared.aseguradoras.models import Aseguradora, AseguradoraPrestador
+from app.shared.central import archivos
 
 
 def activa() -> bool:
@@ -85,7 +86,12 @@ def _convenio_ns(c: dict[str, Any]) -> Any:
         estado=c["estado"],
         observaciones=c["observaciones"],
         listado_precios_nombre=c["listado_precios_nombre"],
-        listado_precios_ruta=c["listado_precios_ruta"],
+        # El archivo vive en el almacén de la central: la ruta es su referencia.
+        listado_precios_ruta=(
+            archivos.referencia(uuid.UUID(c["listado_archivo_id"]))
+            if c.get("listado_archivo_id")
+            else c["listado_precios_ruta"]
+        ),
         deleted_at=None,
     )
 
@@ -154,12 +160,9 @@ def convenio_del_par(aseguradora_id: uuid.UUID, prestador_id: uuid.UUID) -> Any:
 
 
 def guardar_listado(convenio_id: uuid.UUID, ruta: str, nombre: str, autor: uuid.UUID) -> None:
-    _llamar(
-        "PATCH",
-        f"/api/convenios/{convenio_id}/listado",
-        {"ruta": ruta, "nombre": nombre},
-        usuario=autor,
-    )
+    """`ruta` es la referencia `central:<id>` del archivo ya subido al almacén."""
+    cuerpo = {"archivo_id": str(archivos.id_de(ruta)), "nombre": nombre}
+    _llamar("PATCH", f"/api/convenios/{convenio_id}/listado", cuerpo, usuario=autor)
 
 
 def prestadores_en_red(aseguradora_id: uuid.UUID) -> set[uuid.UUID]:

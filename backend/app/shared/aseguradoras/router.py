@@ -58,6 +58,7 @@ from app.shared.audit import service as audit
 from app.shared.auth import invitaciones
 from app.shared.auth import service as auth_service
 from app.shared.catalogos.models import Module
+from app.shared.central import archivos as archivos_central
 from app.shared.central import red_propia
 
 # Las dependencias se crean UNA vez y se reutilizan —en el router y en los
@@ -555,6 +556,10 @@ def ver_listado_precios(
     convenio = service.convenio_del_par(db, aseguradora_id, prestador_id)
     if not convenio.listado_precios_ruta:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="El convenio no tiene listado")
+    if archivos_central.es_referencia(convenio.listado_precios_ruta):
+        return archivos_central.respuesta(
+            convenio.listado_precios_ruta, convenio.listado_precios_nombre or "listado-precios"
+        )
     ruta = Path(settings.upload_dir) / convenio.listado_precios_ruta
     if not ruta.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="El convenio no tiene listado")
@@ -605,12 +610,18 @@ async def subir_listado_precios(
     visible = " ".join(original.split())[:160] or "Listado de precios"
 
     anterior = convenio.listado_precios_nombre
-    destino_rel = (
-        f"aseguradoras/{aseguradora_id}/convenios/{convenio.id}/{uuid.uuid4()}{extension}"
-    )
-    destino = Path(settings.upload_dir) / destino_rel
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    destino.write_bytes(bytes(contenido))
+    if archivos_central.activo() or red_propia.aplica(db, aseguradora_id):
+        # Al almacén cifrado de la central (la Red convenio propia, siempre).
+        destino_rel = archivos_central.referencia(
+            archivos_central.subir(bytes(contenido), visible, ctx.user.id)
+        )
+    else:
+        destino_rel = (
+            f"aseguradoras/{aseguradora_id}/convenios/{convenio.id}/{uuid.uuid4()}{extension}"
+        )
+        destino = Path(settings.upload_dir) / destino_rel
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(bytes(contenido))
     convenio.listado_precios_ruta = destino_rel
     convenio.listado_precios_nombre = visible
     convenio.updated_by = ctx.user.id
@@ -744,11 +755,16 @@ async def subir_poliza(
     )
     db.add(poliza)
     db.flush()
-    destino_rel = f"aseguradoras/{aseguradora.id}/polizas/{poliza.id}.pdf"
-    destino = Path(settings.upload_dir) / destino_rel
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    destino.write_bytes(bytes(contenido))
-    poliza.ruta = destino_rel
+    if archivos_central.activo():
+        # El archivo vive en el almacén cifrado de la central; aquí, la referencia.
+        archivo_id = archivos_central.subir(bytes(contenido), visible, ctx.user.id)
+        poliza.ruta = archivos_central.referencia(archivo_id)
+    else:
+        destino_rel = f"aseguradoras/{aseguradora.id}/polizas/{poliza.id}.pdf"
+        destino = Path(settings.upload_dir) / destino_rel
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(bytes(contenido))
+        poliza.ruta = destino_rel
 
     audit.registrar(
         db,
@@ -772,6 +788,8 @@ def ver_poliza(
 ) -> FileResponse:
     """El PDF, solo tras autorizar (el router exige admin), sin sniffing."""
     poliza = _poliza_de(db, aseguradora_id, poliza_id)
+    if archivos_central.es_referencia(poliza.ruta):
+        return archivos_central.respuesta(poliza.ruta, poliza.nombre)
     ruta = Path(settings.upload_dir) / poliza.ruta
     if not ruta.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
