@@ -4,12 +4,14 @@ import io
 import re
 import unicodedata
 from pathlib import Path
+from typing import NamedTuple
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
+    Flowable,
     HRFlowable,
     Paragraph,
     SimpleDocTemplate,
@@ -51,6 +53,32 @@ SECCIONES = {
     "ANALISIS",
 }
 SUBSECCIONES = {"LABORATORIO", "IMAGEN"}
+
+# El hueco donde va el sello de la firma electrónica (QR + titular), justo
+# debajo del último párrafo: así nunca tapa texto, ocupe lo que ocupe el informe.
+SELLO_ANCHO = 240
+SELLO_ALTO = 62
+
+
+class InformePdf(NamedTuple):
+    contenido: bytes
+    # (x1, y1, x2, y2) en puntos, en la ÚLTIMA página: dónde va el sello.
+    caja_sello: tuple[int, int, int, int]
+
+
+class _HuecoSello(Flowable):
+    """Reserva el sitio del sello y anota dónde quedó en la página."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.caja: tuple[int, int, int, int] | None = None
+
+    def wrap(self, ancho_disponible, alto_disponible):  # noqa: ANN001, ANN201, ARG002
+        return SELLO_ANCHO, SELLO_ALTO
+
+    def draw(self) -> None:
+        x, y = self.canv.absolutePosition(0, 0)
+        self.caja = (round(x), round(y), round(x) + SELLO_ANCHO, round(y) + SELLO_ALTO)
 
 
 def _normalizar(linea: str) -> str:
@@ -235,7 +263,7 @@ def _caja_analisis(lineas: list[str], est: dict) -> Table:
     return caja
 
 
-def generar_pdf(informe: str, codigo_interno: str, auditor: str) -> bytes:
+def generar_pdf(informe: str, codigo_interno: str, auditor: str) -> InformePdf:
     est = _estilos()
     buffer = io.BytesIO()
 
@@ -314,5 +342,7 @@ def generar_pdf(informe: str, codigo_interno: str, auditor: str) -> bytes:
         else:
             flujo += _parrafos(lineas, est["cuerpo"])
 
+    hueco = _HuecoSello()
+    flujo += [Spacer(1, 12), hueco]
     doc.build(flujo, onFirstPage=decorar, onLaterPages=decorar)
-    return buffer.getvalue()
+    return InformePdf(buffer.getvalue(), hueco.caja or (45, 57, 45 + SELLO_ANCHO, 57 + SELLO_ALTO))

@@ -1065,7 +1065,8 @@ def _pdf_del_caso(db: DbSession, visita) -> bytes:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="El caso aún no tiene informe")
     auditor = service.nucleo.usuario(db, visita.auditor_id)
     nombre = personas.de_fila(auditor) if auditor else "—"
-    return firma.firmar(informe_pdf.generar_pdf(visita.informe, visita.codigo_interno, nombre))
+    informe = informe_pdf.generar_pdf(visita.informe, visita.codigo_interno, nombre)
+    return firma.firmar(informe.contenido, caja=informe.caja_sello)
 
 
 def _respuesta_pdf(contenido: bytes, codigo_interno: str) -> Response:

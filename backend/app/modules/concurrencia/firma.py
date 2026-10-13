@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import datetime as dt
 import threading
 from io import BytesIO
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -116,40 +118,111 @@ def titular_actual() -> str | None:
     return str(nombre)[:200] if nombre else "(certificado sin nombre)"
 
 
-def firmar(pdf: bytes) -> bytes:
+# El sello visible, como el de FirmaEC: un QR con los datos de la firma y, al
+# lado, el titular. El QR es solo la «cara»; lo que vale es la firma PAdES, que
+# cualquiera verifica en Adobe o en el validador oficial.
+_RAZON = "Informe de auditoría médica concurrente"
+_ZONA = ZoneInfo("America/Guayaquil")
+_CAJA_POR_DEFECTO = (45, 57, 285, 119)
+
+
+def _contenido_qr(titular: str, momento: dt.datetime) -> str:
+    return (
+        f"FIRMADO POR: {titular}\n"
+        f"RAZON: {_RAZON}\n"
+        "LOCALIZACION: Quito - Ecuador\n"
+        f"FECHA: {momento.isoformat(timespec='seconds')}\n"
+        "VALIDAR CON: https://www.firmadigital.gob.ec"
+    )
+
+
+def _sello(titular: str, momento: dt.datetime, ancho: float, alto: float) -> bytes:
+    """Una página del tamaño del sello: el QR a la izquierda y el titular."""
+    from reportlab.graphics import renderPDF
+    from reportlab.graphics.barcode.qr import QrCodeWidget
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.utils import simpleSplit
+    from reportlab.pdfgen import canvas
+
+    salida = BytesIO()
+    c = canvas.Canvas(salida, pagesize=(ancho, alto))
+    qr = QrCodeWidget(_contenido_qr(titular, momento), barLevel="M", barBorder=1)
+    x1, y1, x2, y2 = qr.getBounds()
+    dibujo = Drawing(alto, alto, transform=[alto / (x2 - x1), 0, 0, alto / (y2 - y1), 0, 0])
+    dibujo.add(qr)
+    renderPDF.draw(dibujo, c, 0, 0)
+
+    x = alto + 6
+    disponible = ancho - x
+    lineas = simpleSplit(titular, "Helvetica-Bold", 9.5, disponible)[:3]
+    alto_texto = 9 + len(lineas) * 11.5
+    y = (alto + alto_texto) / 2 - 7
+    c.setFillColor(HexColor("#5b6470"))
+    c.setFont("Helvetica", 7)
+    c.drawString(x, y, "Firmado electrónicamente por:")
+    c.setFillColor(HexColor("#1a2448"))
+    c.setFont("Helvetica-Bold", 9.5)
+    for linea in lineas:
+        y -= 11.5
+        c.drawString(x, y, linea)
+    c.showPage()
+    c.save()
+    return salida.getvalue()
+
+
+def _estilo_sello(pdf_sello: bytes):  # noqa: ANN202
+    from pyhanko.pdf_utils import content, layout
+    from pyhanko.pdf_utils.reader import PdfFileReader
+    from pyhanko.stamp import StaticStampStyle
+
+    class _PaginaEnMemoria(content.ImportedPdfPage):
+        def render(self) -> bytes:
+            import uuid
+
+            escritor = self._ensure_writer
+            xobj = escritor.import_page_as_xobject(PdfFileReader(BytesIO(pdf_sello)), page_ix=0)
+            nombre = "/Sello" + uuid.uuid4().hex
+            self.resources.xobject[nombre] = xobj
+            x1, y1, x2, y2 = xobj.get_object()["/BBox"]
+            self.box = layout.BoxConstraints(width=abs(x1 - x2), height=abs(y1 - y2))
+            return nombre.encode() + b" Do"
+
+    return StaticStampStyle(background=_PaginaEnMemoria(None), border_width=0)
+
+
+def firmar(pdf: bytes, caja: tuple[int, int, int, int] | None = None) -> bytes:
     """
-    Devuelve el PDF firmado (PAdES) con un sello visible al pie de la última
-    página —junto a la línea del responsable—; sin certificado configurado,
-    el mismo PDF sin tocar.
+    Devuelve el PDF firmado (PAdES) con el sello visible —QR + titular— en la
+    `caja` de la última página (la que reservó el informe bajo su último
+    párrafo); sin certificado configurado, el mismo PDF sin tocar.
     """
     config = _config_actual()
     if config is None:
         return pdf
     ruta, contrasena = config
+    caja = caja or _CAJA_POR_DEFECTO
 
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     from pyhanko.sign import signers
     from pyhanko.sign.fields import SigFieldSpec
-    from pyhanko.stamp import TextStampStyle
 
     firmante = _cargar_firmante(ruta, contrasena)
+    titular = str(firmante.signing_cert.subject.native.get("common_name") or "—")
     try:
+        sello = _sello(
+            titular, dt.datetime.now(_ZONA), caja[2] - caja[0], caja[3] - caja[1]
+        )
         escritor = IncrementalPdfFileWriter(BytesIO(pdf))
         firmador = signers.PdfSigner(
             signature_meta=signers.PdfSignatureMetadata(
                 field_name="FirmaAccumedical",
-                reason="Informe de auditoría médica concurrente",
+                reason=_RAZON,
+                location="Quito - Ecuador",
             ),
             signer=firmante,
-            # Última página, esquina inferior izquierda, POR ENCIMA del pie de
-            # página: el sello visible con firmante y fecha, en español.
-            new_field_spec=SigFieldSpec(
-                sig_field_name="FirmaAccumedical", on_page=-1, box=(36, 40, 306, 88)
-            ),
-            stamp_style=TextStampStyle(
-                stamp_text="Firmado electrónicamente por:\n%(signer)s\nFecha: %(ts)s",
-                border_width=1,
-            ),
+            new_field_spec=SigFieldSpec(sig_field_name="FirmaAccumedical", on_page=-1, box=caja),
+            stamp_style=_estilo_sello(sello),
         )
         salida = firmador.sign_pdf(escritor)
         return salida.getvalue()
