@@ -128,10 +128,21 @@ export async function dictar(visitaId: string, uri: string): Promise<{ texto: st
 }
 
 /**
- * Baja el PDF del informe (con el Bearer en la cabecera) a la caché del
- * teléfono y devuelve su URI local, lista para abrir o compartir.
+ * El PDF del informe para VERLO en la app (nunca compartirlo): se baja con el
+ * Bearer, se lee en base64 y el archivo se BORRA en el acto, para que no quede
+ * copia del dato clínico en el teléfono.
  */
-export async function descargarInformePdf(visitaId: string): Promise<string> {
+export async function leerInformePdf(visitaId: string): Promise<string> {
+  const archivo = new File(await descargarInformePdf(visitaId))
+  try {
+    return await archivo.base64()
+  } finally {
+    archivo.delete()
+  }
+}
+
+/** Baja el PDF (con el Bearer en la cabecera) a la caché y devuelve su URI local. */
+async function descargarInformePdf(visitaId: string): Promise<string> {
   const token = await leerToken()
   const archivo = await File.downloadFileAsync(
     urlDeApi(`/concurrencia/auditor/visitas/${visitaId}/informe.pdf`),

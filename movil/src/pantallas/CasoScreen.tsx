@@ -23,13 +23,12 @@ import {
 import { Image } from 'expo-image'
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
 import * as ImagePicker from 'expo-image-picker'
-import * as Sharing from 'expo-sharing'
 
 import { ErrorDeApi } from '../api/cliente'
 import {
   corregirInforme,
   crearNota,
-  descargarInformePdf,
+  leerInformePdf,
   dictar,
   eliminarFoto,
   eliminarNota,
@@ -47,6 +46,7 @@ import {
 import { leerToken } from '../sesion/almacen'
 import { espaciado, type Paleta } from '../tema'
 import { useTema } from '../tema-contexto'
+import { VisorPdf } from './VisorPdf'
 
 const TIPOS: { valor: TipoNota; etiqueta: string; icono: keyof typeof Ionicons.glyphMap }[] = [
   { valor: 'historial_clinico', etiqueta: 'Historial clínico', icono: 'folder-open-outline' },
@@ -359,6 +359,8 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
   }
 
   const [abriendoPdf, setAbriendoPdf] = useState(false)
+  // El PDF en memoria mientras se ve (nunca en disco ni compartido).
+  const [pdf, setPdf] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [exito, setExito] = useState<string | null>(null)
 
@@ -401,12 +403,8 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
     setAbriendoPdf(true)
     setAviso(null)
     try {
-      const uri = await descargarInformePdf(caso.id)
-      await Sharing.shareAsync(uri, {
-        mimeType: 'application/pdf',
-        dialogTitle: `Informe ${caso.codigo_interno}`,
-        UTI: 'com.adobe.pdf',
-      })
+      // Solo VER, nunca compartir (pedido del usuario): visor dentro de la app.
+      setPdf(await leerInformePdf(caso.id))
     } catch {
       setAviso('No se pudo abrir el PDF. Reintenta.')
     } finally {
@@ -506,6 +504,11 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {cabecera}
+      <VisorPdf
+        base64={pdf}
+        titulo={`Informe ${caso.codigo_interno}`}
+        onCerrar={() => setPdf(null)}
+      />
       <ScrollView contentContainerStyle={estilos.contenido} keyboardShouldPersistTaps="handled">
         <Text style={estilos.seccion}>Dictar una nota</Text>
         <View style={estilos.chips}>
@@ -725,7 +728,7 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
               ) : (
                 <>
                   <Ionicons name="document-attach-outline" size={18} color={colores.azul} />
-                  <Text style={estilos.botonSecundarioTexto}>Ver / compartir el PDF</Text>
+                  <Text style={estilos.botonSecundarioTexto}>Ver el PDF</Text>
                 </>
               )}
             </Pressable>
@@ -750,7 +753,7 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
             {/* El texto completo no se pinta aquí: en pantalla se hace largo;
                 el informe se revisa como va a salir, en su PDF de marca. */}
             <Text style={estilos.pista}>
-              Informe listo. Revísalo con «Ver / compartir el PDF».
+              Informe listo. Revísalo con «Ver el PDF».
             </Text>
 
             {/* Revisado el informe, lo que falte o esté mal se dicta aquí: la
