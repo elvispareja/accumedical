@@ -24,8 +24,8 @@ import {
   urlInformePdf,
   cancelarVisita,
   type PrestadorElegible,
-} from '@/modules/concurrencia/api'
-import { EstadoVisitaBadge, sePuedeEditar } from '@/modules/concurrencia/components/visitas'
+} from '@concurrencia/api'
+import { EstadoVisitaBadge, sePuedeEditar } from '@concurrencia/components/visitas'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'

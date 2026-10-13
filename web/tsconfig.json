@@ -21,7 +21,11 @@
     "noUncheckedIndexedAccess": true,
 
     "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      // Solo `@concurrencia/integracion`: el contrato del módulo con admin.
+      "@concurrencia/*": ["./apps/concurrencia/src/*"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

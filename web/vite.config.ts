@@ -13,7 +13,11 @@ const puertoHmrCliente = process.env.VITE_HMR_CLIENT_PORT
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      // Solo para `@concurrencia/integracion` (el contrato del módulo con admin).
+      '@concurrencia': path.resolve(__dirname, './apps/concurrencia/src'),
+    },
   },
   server: {
     host: true,

@@ -2,7 +2,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { CalendarClock, ChevronRight, RotateCw } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import type { CifrasVisitas } from '@/modules/concurrencia/api'
+import type { CifrasVisitas } from '@concurrencia/api'
 import { Boton } from '@/shared/components/ui/button'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]

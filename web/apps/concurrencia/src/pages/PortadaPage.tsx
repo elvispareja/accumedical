@@ -1,9 +1,9 @@
 import { Apple, Play, Smartphone } from 'lucide-react'
 
 import { useSesion } from '@/core/auth/useSesion'
-import { BandejaPage } from '@/modules/concurrencia/pages/BandejaPage'
-import { DashboardPage } from '@/modules/concurrencia/pages/DashboardPage'
-import { SupervisionPage } from '@/modules/concurrencia/pages/SupervisionPage'
+import { BandejaPage } from '@concurrencia/pages/BandejaPage'
+import { DashboardPage } from '@concurrencia/pages/DashboardPage'
+import { SupervisionPage } from '@concurrencia/pages/SupervisionPage'
 
 /**
  * La portada del módulo depende de quién entra, y lo decide la sesión que

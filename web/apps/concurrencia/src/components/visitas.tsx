@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import type { EstadoVisita } from '@/modules/concurrencia/api'
+import type { EstadoVisita } from '@concurrencia/api'
 
 // Piezas comunes de las dos bandejas —la de compañía y la de supervisión—:
 // mismos estados, misma insignia y misma forma de pintar la ventana horaria.

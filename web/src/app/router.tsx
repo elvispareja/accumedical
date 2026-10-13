@@ -5,6 +5,7 @@ import { PacienteDetallePage } from '@/app/pacientes/PacienteDetallePage'
 import { PacientesPage } from '@/app/pacientes/PacientesPage'
 import { RequireModule } from '@/core/auth/RequireModule'
 import { GuardaDeDominio } from '@/core/GuardaDeDominio'
+import { IrAOtraApp } from '@/core/IrAOtraApp'
 import { RequireSession } from '@/core/auth/RequireSession'
 import { AppShell } from '@/core/layout/AppShell'
 import { ModuloShell } from '@/core/layout/ModuloShell'
@@ -16,7 +17,6 @@ import { LoginPage } from '@/core/pages/LoginPage'
 import { SeleccionarModuloPage } from '@/core/pages/SeleccionarModuloPage'
 import { ModuloPendientePage } from '@/core/pages/ModuloPendientePage'
 import { SinAccesosPage } from '@/core/pages/SinAccesosPage'
-import { rutasConcurrencia } from '@/modules/concurrencia/routes'
 import { AseguradoraFormPage } from '@/shared/aseguradoras/pages/AseguradoraFormPage'
 import { ConfiguracionPage } from '@/shared/configuracion/pages/ConfiguracionPage'
 import { AseguradorasPage } from '@/shared/aseguradoras/pages/AseguradorasPage'
@@ -148,19 +148,10 @@ export const router = createBrowserRouter([
         ),
         errorElement: <ErrorPage />,
       },
-      // Cada módulo con pantallas propias se monta por su slug y compone SUS rutas.
-      {
-        path: '/concurrencia',
-        element: (
-          <RequireSession>
-            <RequireModule slug="concurrencia">
-              <ModuloShell />
-            </RequireModule>
-          </RequireSession>
-        ),
-        errorElement: <ErrorPage />,
-        children: rutasConcurrencia,
-      },
+      // Los módulos con FRONTEND PROPIO (su app, su diseño) no se montan aquí:
+      // `/concurrencia/…` lo sirve `apps/concurrencia` (nginx lo enruta allá).
+      // Si una navegación interna llega a esa ruta, se salta con recarga completa.
+      { path: '/concurrencia/*', element: <IrAOtraApp /> },
       // El resto va al final: las rutas estáticas de arriba ganan al segmento
       // dinámico. Un slug que no existe y uno sin permiso acaban en el mismo sitio,
       // así que la interfaz tampoco delata qué módulos hay.

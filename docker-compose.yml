@@ -95,6 +95,31 @@ services:
       start_period: 40s
     networks: [edge]
 
+  # El frontend PROPIO de Concurrencia (D46): misma imagen y mismo node_modules
+  # que `web`, pero su app (web/apps/concurrencia), su CSS y su servidor. nginx le
+  # entrega todo lo que cuelga de /concurrencia/.
+  web-concurrencia:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    command: ["npm", "run", "dev:concurrencia"]
+    environment:
+      VITE_HMR_CLIENT_PORT: "8080"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5174/concurrencia/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks: [edge]
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -112,6 +137,8 @@ services:
       api:
         condition: service_healthy
       web:
+        condition: service_healthy
+      web-concurrencia:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/api/v1/health"]

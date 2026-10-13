@@ -1,0 +1,9 @@
+/*
+ * El CSS de Concurrencia (D46). Arranca con la base de la plataforma —fuentes,
+ * tokens de color claro/oscuro, componentes— y debajo va lo PROPIO de este
+ * módulo. Cambiar aquí no afecta a admin ni a los demás módulos; si algún día
+ * Concurrencia quiere un diseño completamente distinto, se reemplaza el import.
+ */
+@import '@/index.css';
+
+/* ── Propio de Concurrencia ─────────────────────────────────────────────── */

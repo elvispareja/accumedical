@@ -3,9 +3,9 @@ import { RotateCw, UserRound } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
-import { listarOperadores, obtenerDashboard } from '@/modules/concurrencia/api'
-import { CuadrosDeVisitas } from '@/modules/concurrencia/components/cifras'
-import { BandejaPage, type FiltrosDeEntrada } from '@/modules/concurrencia/pages/BandejaPage'
+import { listarOperadores, obtenerDashboard } from '@concurrencia/api'
+import { CuadrosDeVisitas } from '@concurrencia/components/cifras'
+import { BandejaPage, type FiltrosDeEntrada } from '@concurrencia/pages/BandejaPage'
 import { Boton } from '@/shared/components/ui/button'
 import { Select } from '@/shared/components/ui/select'
 

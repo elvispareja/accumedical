@@ -1,9 +1,9 @@
 import type { RouteObject } from 'react-router-dom'
 
-import { BandejaPage } from '@/modules/concurrencia/pages/BandejaPage'
-import { CasoSupervisionPage } from '@/modules/concurrencia/pages/CasoSupervisionPage'
-import { PortadaPage } from '@/modules/concurrencia/pages/PortadaPage'
-import { VisitaFormPage } from '@/modules/concurrencia/pages/VisitaFormPage'
+import { BandejaPage } from '@concurrencia/pages/BandejaPage'
+import { CasoSupervisionPage } from '@concurrencia/pages/CasoSupervisionPage'
+import { PortadaPage } from '@concurrencia/pages/PortadaPage'
+import { VisitaFormPage } from '@concurrencia/pages/VisitaFormPage'
 
 /**
  * El módulo expone sus rutas y el router raíz solo las compone. Cuelgan del

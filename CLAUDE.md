@@ -58,18 +58,17 @@ backend/
   alembic/
   tests/
 
-web/
-  src/
+web/                     un solo package.json / node_modules para todas las apps
+  src/                   APP ADMIN (admin.pymes.ec) + código COMPARTIDO (`@/…`)
     core/                cliente API, auth, guards de ruta, layout base (AppShell,
-                         Sidebar, Topbar, ModuleSwitcher), tema, tokens,
-                         pantallas de login, selección de módulo y sin accesos
+                         ModuloShell, menús), tema, tokens, GuardaDeDominio,
+                         IrAOtraApp, pantallas de login, selección de módulo
     shared/              componentes, hooks, tipos y catálogos comunes
-    modules/
-      suscripcion/       pages/  components/  hooks/  api/  routes.tsx
-      calificacion/      (misma estructura)
-      concurrencia/      (misma estructura)
-      carta-credito/     (misma estructura)
-    app/                 router raíz que compone las rutas de cada módulo
+    app/                 router y pantallas propias de admin
+  apps/                  cada MÓDULO con frontend propio (docs/10-frontends.md)
+    concurrencia/        su index.html, vite.config, tailwind.config, tsconfig,
+                         src/ (main, router, estilos.css, pages, api…) y
+                         src/integracion.ts = lo ÚNICO que admin puede importar
 
 infra/nginx/             dev.conf · prod.conf · includes/
 docs/                    documentación viva (ver más abajo)

@@ -11,8 +11,8 @@ import {
   urlComprobante,
   urlInformePdfSupervision,
   type VisitaSupervisionDetalle,
-} from '@/modules/concurrencia/api'
-import { EstadoVisitaBadge } from '@/modules/concurrencia/components/visitas'
+} from '@concurrencia/api'
+import { EstadoVisitaBadge } from '@concurrencia/components/visitas'
 import { CamposNombre, desdeApi as nombreDesdeApi } from '@/shared/personas/CamposNombre'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'

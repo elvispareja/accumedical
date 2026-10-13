@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, RotateCw, Search, Users } from 'lucide-react
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
-import { listarPacientes } from '@/modules/concurrencia/api'
+import { listarPacientes } from '@concurrencia/integracion'
 import { useTiposDocumento } from '@/shared/catalogos/hooks'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'

@@ -23,8 +23,8 @@ import {
   EstadoVisitaBadge,
   sePuedeEditar,
   Ventana,
-} from '@/modules/concurrencia/components/visitas'
-import { listarVisitas } from '@/modules/concurrencia/api'
+} from '@concurrencia/components/visitas'
+import { listarVisitas } from '@concurrencia/api'
 import { Boton } from '@/shared/components/ui/button'
 import { MenuAcciones } from '@/shared/components/ui/menu'
 import { Input } from '@/shared/components/ui/input'

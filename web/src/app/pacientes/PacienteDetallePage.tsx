@@ -4,8 +4,11 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { identidadDe } from '@/core/modulos/identidad'
-import { obtenerPaciente } from '@/modules/concurrencia/api'
-import { CasosDeConcurrencia, CuadroDeConcurrencia } from '@/modules/concurrencia/bandeja'
+import {
+  CasosDeConcurrencia,
+  CuadroDeConcurrencia,
+  obtenerPaciente,
+} from '@concurrencia/integracion'
 import { useTiposDocumento } from '@/shared/catalogos/hooks'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'

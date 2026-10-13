@@ -23,16 +23,16 @@ import {
   obtenerDashboardSupervision,
   type AuditorElegible,
   type VisitaSupervision,
-} from '@/modules/concurrencia/api'
+} from '@concurrencia/api'
 import {
   CuadrosDeVisitas,
   type FiltroDeCuadro,
-} from '@/modules/concurrencia/components/cifras'
+} from '@concurrencia/components/cifras'
 import {
   ESTADOS_VISITA,
   EstadoVisitaBadge,
   Ventana,
-} from '@/modules/concurrencia/components/visitas'
+} from '@concurrencia/components/visitas'
 import { Boton } from '@/shared/components/ui/button'
 import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'

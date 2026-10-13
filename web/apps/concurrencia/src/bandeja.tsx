@@ -2,8 +2,8 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { MapPin } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { listarSupervision, urlInformePdfSupervision } from '@/modules/concurrencia/api'
-import { EstadoVisitaBadge, Ventana } from '@/modules/concurrencia/components/visitas'
+import { listarSupervision, urlInformePdfSupervision } from '@concurrencia/api'
+import { EstadoVisitaBadge, Ventana } from '@concurrencia/components/visitas'
 import { CuadroAuditoria } from '@/shared/components/CuadroAuditoria'
 import { TablaBandeja, type CasoDeBandeja } from '@/shared/components/TablaBandeja'
 import type {

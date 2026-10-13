@@ -8,7 +8,8 @@ import type { Config } from 'tailwindcss'
  */
 export default {
   darkMode: 'class',
-  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  // Las vistas que admin toma del contrato de Concurrencia también se pintan aquí.
+  content: ['./index.html', './src/**/*.{ts,tsx}', './apps/concurrencia/src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
