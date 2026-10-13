@@ -22,9 +22,12 @@ function leerCookie(nombre: string): string | undefined {
 
 api.interceptors.request.use((config) => {
   if (METODOS_MUTANTES.has((config.method ?? 'get').toUpperCase())) {
-    // En producción la cookie lleva el prefijo __Host-; en desarrollo no, porque
-    // ese prefijo exige Secure y el entorno local va por http.
-    const csrf = leerCookie('__Host-csrf_token') ?? leerCookie('csrf_token')
+    // El nombre depende de COOKIE_PREFIX: `__Host-` en un solo dominio, `__Secure-`
+    // con la sesión compartida entre subdominios (COOKIE_DOMAIN, D33: `__Host-`
+    // prohíbe Domain) y sin prefijo en desarrollo. Faltar uno aquí deja TODA
+    // escritura con sesión de navegador en 403 (pasó con `__Secure-`).
+    const csrf =
+      leerCookie('__Host-csrf_token') ?? leerCookie('__Secure-csrf_token') ?? leerCookie('csrf_token')
     if (csrf) config.headers['X-CSRF-Token'] = decodeURIComponent(csrf)
   }
   return config
