@@ -4,6 +4,7 @@ import { BandejaPage } from '@concurrencia/pages/BandejaPage'
 import { CasoSupervisionPage } from '@concurrencia/pages/CasoSupervisionPage'
 import { PortadaPage } from '@concurrencia/pages/PortadaPage'
 import { VisitaFormPage } from '@concurrencia/pages/VisitaFormPage'
+import { NotificacionesDelModulo } from '@/core/notificaciones/pages/NotificacionesDelModulo'
 
 /**
  * El módulo expone sus rutas y el router raíz solo las compone. Cuelgan del
@@ -16,6 +17,8 @@ import { VisitaFormPage } from '@concurrencia/pages/VisitaFormPage'
 export const rutasConcurrencia: RouteObject[] = [
   { index: true, element: <PortadaPage /> },
   { path: 'bandeja', element: <BandejaPage /> },
+  // Sus avisos, dentro de la app (D47). Antes que `:id`, que se lo tragaría.
+  { path: 'notificaciones', element: <NotificacionesDelModulo /> },
   { path: 'nueva', element: <VisitaFormPage /> },
   // El alta del coordinador de plataforma: primero la aseguradora, luego el
   // mismo formulario. El backend igual exige rol supervisor de plataforma.

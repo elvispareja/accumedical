@@ -69,7 +69,10 @@ export async function marcarLeida(id: string) {
   return data
 }
 
-export async function marcarTodasLeidas() {
-  const { data } = await api.post<BandejaNotificaciones>('/shared/notificaciones/leidas')
+/** Con `moduleCode`, solo las de ese módulo (la campana dentro de un módulo). */
+export async function marcarTodasLeidas(moduleCode?: string) {
+  const { data } = await api.post<BandejaNotificaciones>('/shared/notificaciones/leidas', null, {
+    params: { module_code: moduleCode || undefined },
+  })
   return data
 }

@@ -160,10 +160,11 @@ def marcar_leida(
 
 @router.post("/leidas", response_model=BandejaOut)
 def marcar_todas(
+    module_code: str | None = Query(default=None, pattern=r"^[a-z][a-z0-9_]{1,29}$"),
     ctx: AuthContext = Depends(get_current_user),
     _: None = Depends(verificar_csrf),
     db: DbSession = Depends(get_db),
 ) -> BandejaOut:
-    service.marcar_todas(db, ctx.user.id)
+    service.marcar_todas(db, ctx.user.id, module_code)
     db.commit()
     return _bandeja(db, ctx.user)

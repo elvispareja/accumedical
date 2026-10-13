@@ -79,7 +79,12 @@ function cuando(iso: string): string {
  * clave de caché: si compartieran clave, abrir la página segunda dejaría a la
  * campana pintando la segunda página. La campana no pide las pastillas.
  */
-export function NotificacionesPage() {
+/**
+ * `moduloFijo` (code): la página dentro de la app de un módulo, p. ej.
+ * `/concurrencia/notificaciones`. Solo los avisos de ese módulo y sin el
+ * selector de módulos: cada app enseña lo suyo (D47).
+ */
+export function NotificacionesPage({ moduloFijo }: { moduloFijo?: string } = {}) {
   const navegar = useNavigate()
   const queryClient = useQueryClient()
   const sinMovimiento = useReducedMotion()
@@ -94,7 +99,7 @@ export function NotificacionesPage() {
       : null
   const [soloSinLeer, setSoloSinLeer] = useState(false)
   // El módulo elegido, por `code` —lo que guarda cada aviso—; `null` es todos.
-  const [modulo, setModulo] = useState<string | null>(null)
+  const [modulo, setModulo] = useState<string | null>(moduloFijo ?? null)
   const [pagina, setPagina] = useState(1)
 
   const consulta = useQuery({
@@ -124,7 +129,10 @@ export function NotificacionesPage() {
   }
 
   const leer = useMutation({ mutationFn: marcarLeida, onSuccess: refrescar })
-  const leerTodas = useMutation({ mutationFn: marcarTodasLeidas, onSuccess: refrescar })
+  const leerTodas = useMutation({
+    mutationFn: () => marcarTodasLeidas(moduloFijo),
+    onSuccess: refrescar,
+  })
 
   const datos = consulta.data
   const items = datos?.items ?? []
@@ -191,7 +199,7 @@ export function NotificacionesPage() {
         {/* Los módulos salen del servidor, TODOS los que pueden avisar a esta
             persona, tengan avisos o no: la fila dice de dónde puede llegarle
             algo, no solo de dónde le ha llegado ya. */}
-        {modulos.length > 0 && (
+        {!moduloFijo && modulos.length > 0 && (
           <div
             role="group"
             aria-label="Filtrar por módulo"
@@ -256,7 +264,7 @@ export function NotificacionesPage() {
               : 'Aquí aparecerá lo que ocurra en tus módulos: casos nuevos y lo que venga después.'}
           </p>
           {/* Vacío por el filtro, no porque no haya nada: la salida, a mano. */}
-          {elegido && (
+          {elegido && !moduloFijo && (
             <Boton
               variante="contorno"
               tamano="sm"

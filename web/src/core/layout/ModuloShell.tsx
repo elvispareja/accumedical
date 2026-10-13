@@ -11,7 +11,7 @@ import { BotonTema } from '@/core/components/BotonTema'
 import { BotonNotificaciones } from '@/core/notificaciones/BotonNotificaciones'
 import { CLAVE_SESION, useSesion } from '@/core/auth/useSesion'
 import { ArmazonLateral } from '@/core/layout/MenuLateral'
-import { NavegacionCoordinador } from '@/core/layout/NavegacionCoordinador'
+import { NavegacionModulo } from '@/core/layout/NavegacionModulo'
 import { identidadDe } from '@/core/modulos/identidad'
 import { cn } from '@/lib/utils'
 import { Boton } from '@/shared/components/ui/button'
@@ -119,7 +119,7 @@ export function ModuloShell() {
 
   const controles = (
     <>
-      <BotonNotificaciones />
+      <BotonNotificaciones modulo={modulo ? { codigo: modulo.codigo, ruta: `/${slug}` } : undefined} />
       <BotonTema />
       <span className="hidden max-w-[16rem] truncate text-sm text-tenue-fg sm:inline">
         {sesion?.user.email}
@@ -155,7 +155,7 @@ export function ModuloShell() {
       // entra desde una aseguradora: el menú es la plataforma, y la compañía se
       // reconoce arriba, en su logo y su nombre junto al módulo.
       <ArmazonLateral
-        nav={<NavegacionCoordinador />}
+        nav={<NavegacionModulo slug={modulo?.slug ?? slug ?? ''} />}
         franja={identidad.punto}
         topbarIzquierda={identidadDelModulo}
         topbarDerecha={controles}

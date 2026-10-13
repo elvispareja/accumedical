@@ -38,7 +38,11 @@ function hace(iso: string): string {
   return new Date(iso).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit' })
 }
 
-export function BotonNotificaciones() {
+/**
+ * `modulo`: la campana dentro de la app de un módulo (D47): solo los avisos de
+ * ese módulo, y «ver todas» lleva a la página de notificaciones del módulo.
+ */
+export function BotonNotificaciones({ modulo }: { modulo?: { codigo: string; ruta: string } } = {}) {
   const navegar = useNavigate()
   // La lista entera vive en el área de quien mira: `/coordinacion` para quien
   // coordina, `/admin` para el resto. La campana es la misma en las dos.
@@ -53,9 +57,10 @@ export function BotonNotificaciones() {
   const conocidas = useRef<Set<string> | null>(null)
 
   const bandeja = useQuery({
-    queryKey: CLAVE,
+    queryKey: modulo ? [...CLAVE, modulo.codigo] : CLAVE,
     // Sin argumentos: TanStack le pasaría su contexto de consulta como filtros.
-    queryFn: () => listarNotificaciones(),
+    queryFn: () =>
+      modulo ? listarNotificaciones({ module_code: modulo.codigo }) : listarNotificaciones(),
     refetchInterval: CADA_MS,
     // Volver a la pestaña es el momento en que más se quiere estar al día.
     refetchOnWindowFocus: true,
@@ -63,13 +68,20 @@ export function BotonNotificaciones() {
     retry: false,
   })
 
+  // La respuesta trae TODOS los avisos: dentro de un módulo se vuelve a pedir
+  // su lista filtrada en vez de pisarla con la general.
+  function actualizar(datos: BandejaNotificaciones) {
+    if (modulo) void queryClient.invalidateQueries({ queryKey: CLAVE })
+    else queryClient.setQueryData(CLAVE, datos)
+  }
+
   const leer = useMutation({
     mutationFn: marcarLeida,
-    onSuccess: (datos: BandejaNotificaciones) => queryClient.setQueryData(CLAVE, datos),
+    onSuccess: (datos: BandejaNotificaciones) => actualizar(datos),
   })
   const leerTodas = useMutation({
-    mutationFn: marcarTodasLeidas,
-    onSuccess: (datos: BandejaNotificaciones) => queryClient.setQueryData(CLAVE, datos),
+    mutationFn: () => marcarTodasLeidas(modulo?.codigo),
+    onSuccess: (datos: BandejaNotificaciones) => actualizar(datos),
   })
 
   // Cerrar al pulsar fuera o con Esc: el panel no atrapa el foco —no es un
@@ -239,7 +251,7 @@ export function BotonNotificaciones() {
             )}
             <div className="border-t border-borde px-4 py-2.5 text-center">
               <Link
-                to={`${area}/notificaciones`}
+                to={modulo ? `${modulo.ruta}/notificaciones` : `${area}/notificaciones`}
                 onClick={() => setAbierto(false)}
                 className="font-display text-sm font-medium text-marca transition-opacity duration-150 hover:opacity-80"
               >

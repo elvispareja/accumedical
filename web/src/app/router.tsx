@@ -9,6 +9,7 @@ import { IrAOtraApp } from '@/core/IrAOtraApp'
 import { RequireSession } from '@/core/auth/RequireSession'
 import { AppShell } from '@/core/layout/AppShell'
 import { ModuloShell } from '@/core/layout/ModuloShell'
+import { NotificacionesDelModulo } from '@/core/notificaciones/pages/NotificacionesDelModulo'
 import { NotificacionesPage } from '@/core/notificaciones/pages/NotificacionesPage'
 import { RedirigirAlModulo } from '@/core/pages/RedirigirAlModulo'
 import { ErrorPage } from '@/core/pages/ErrorPage'
@@ -165,7 +166,10 @@ export const router = createBrowserRouter([
           </RequireSession>
         ),
         errorElement: <ErrorPage />,
-        children: [{ index: true, element: <ModuloPendientePage /> }],
+        children: [
+          { index: true, element: <ModuloPendientePage /> },
+          { path: 'notificaciones', element: <NotificacionesDelModulo /> },
+        ],
       },
       { path: '*', element: <Navigate to="/login" replace /> },
     ],

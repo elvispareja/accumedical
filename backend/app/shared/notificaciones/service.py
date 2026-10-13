@@ -179,10 +179,10 @@ def marcar_leida(db: DbSession, user_id: uuid.UUID, notificacion_id: uuid.UUID) 
     return bool(resultado.rowcount)
 
 
-def marcar_todas(db: DbSession, user_id: uuid.UUID) -> int:
-    resultado = db.execute(
-        update(Notificacion)
-        .where(Notificacion.user_id == user_id, Notificacion.leida_at.is_(None))
-        .values(leida_at=ahora())
-    )
+def marcar_todas(db: DbSession, user_id: uuid.UUID, module_code: str | None = None) -> int:
+    """Todas las suyas sin leer; con `module_code`, solo las de ese módulo (D47)."""
+    filtro = [Notificacion.user_id == user_id, Notificacion.leida_at.is_(None)]
+    if module_code:
+        filtro.append(Notificacion.module_code == module_code)
+    resultado = db.execute(update(Notificacion).where(*filtro).values(leida_at=ahora()))
     return int(resultado.rowcount or 0)
