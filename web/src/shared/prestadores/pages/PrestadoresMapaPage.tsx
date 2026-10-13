@@ -2,16 +2,18 @@ import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { MapaPrestadores } from '@/shared/mapa/MapaPrestadores'
+import { useApp } from '@/core/app/contexto'
 
 /**
  * El catálogo entero de prestadores sobre el mapa del Ecuador. Se llega con el
  * botón «Mapa» del listado, y se vuelve por donde se vino.
  */
 export function PrestadoresMapaPage() {
+  const { raiz } = useApp()
   return (
     <div className="w-full">
       <Link
-        to="/admin/prestadores"
+        to={`${raiz}/prestadores`}
         className="inline-flex items-center gap-1.5 rounded text-sm text-tenue-fg transition-colors duration-150 hover:text-tinta"
       >
         <ArrowLeft className="size-4" aria-hidden="true" />

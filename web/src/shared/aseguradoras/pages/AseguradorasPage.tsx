@@ -24,11 +24,13 @@ import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Select } from '@/shared/components/ui/select'
 import { useToast } from '@/shared/components/ui/toast'
+import { useApp } from '@/core/app/contexto'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const POR_PAGINA = 20
 
 export function AseguradorasPage() {
+  const { raiz, alcance } = useApp()
   const toast = useToast()
   const navegar = useNavigate()
   const queryClient = useQueryClient()
@@ -36,7 +38,8 @@ export function AseguradorasPage() {
   // Quien lleva los convenios entra a este listado solo para llegar a la red de
   // una compañía: ni la crea ni la da de baja.
   const { data: sesion } = useSesion()
-  const soloConvenios = sesion?.user.funcion === 'convenio'
+  // En la app de Convenios (D50) la lista es solo para entrar a la red de cada una.
+  const soloConvenios = alcance === 'convenios' || sesion?.user.funcion === 'convenio'
 
   const [busqueda, setBusqueda] = useState('')
   const [busquedaAplicada, setBusquedaAplicada] = useState('')
@@ -99,12 +102,12 @@ export function AseguradorasPage() {
         <div className="flex flex-wrap items-center gap-2">
           {/* El mapa lo ve todo el que ve el listado, la función Convenio
               incluida: es la misma información, sobre un mapa. */}
-          <Boton variante="contorno" onClick={() => navegar('/admin/aseguradoras/mapa')}>
+          <Boton variante="contorno" onClick={() => navegar(`${raiz}/aseguradoras/mapa`)}>
             <Map aria-hidden="true" />
             Mapa
           </Boton>
           {!soloConvenios && (
-            <Boton onClick={() => navegar('/admin/aseguradoras/nueva')}>
+            <Boton onClick={() => navegar(`${raiz}/aseguradoras/nueva`)}>
               <Plus aria-hidden="true" />
               Nueva aseguradora
             </Boton>
@@ -165,7 +168,7 @@ export function AseguradorasPage() {
         ) : consulta.isError ? (
           <EstadoError onReintentar={() => consulta.refetch()} />
         ) : datos && datos.items.length === 0 ? (
-          <Vacio hayFiltros={hayFiltros} onCrear={() => navegar('/admin/aseguradoras/nueva')} />
+          <Vacio hayFiltros={hayFiltros} onCrear={() => navegar(`${raiz}/aseguradoras/nueva`)} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[46rem] text-sm">
@@ -244,7 +247,7 @@ export function AseguradorasPage() {
                           <Boton
                             variante="fantasma"
                             tamano="icono"
-                            onClick={() => navegar(`/admin/aseguradoras/${fila.id}/editar`)}
+                            onClick={() => navegar(`${raiz}/aseguradoras/${fila.id}/editar`)}
                             aria-label={
                               soloConvenios
                                 ? `Convenios de ${fila.razon_social}`

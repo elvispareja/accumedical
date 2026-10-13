@@ -1,12 +1,13 @@
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion'
 import { AlertCircle, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useQueryClient } from '@tanstack/react-query'
 
 import { iniciarSesion } from '@/core/auth/api'
 import { CLAVE_SESION } from '@/core/auth/useSesion'
+import { volverSeguro } from '@/core/dominios'
 import { BotonTema } from '@/core/components/BotonTema'
 import { Marca } from '@/core/components/Marca'
 import { TrazaAuditoria } from '@/core/components/TrazaAuditoria'
@@ -45,6 +46,9 @@ function mensajeDeError(error: unknown): string {
 }
 
 export function LoginPage() {
+  // Venir desde una app propia: su nombre en el título y volver a ella (D50).
+  const [parametros] = useSearchParams()
+  const volver = volverSeguro(parametros.get('volver'))
   const navegar = useNavigate()
   const queryClient = useQueryClient()
   const sinMovimiento = useReducedMotion()
@@ -79,8 +83,10 @@ export function LoginPage() {
       // siembra la caché y el guard no necesita otra ida y vuelta. Sigue siendo
       // el backend quien manda: cualquier refetch posterior lo confirma.
       queryClient.setQueryData(CLAVE_SESION, sesion)
-      // A dónde entra el usuario lo decide el backend, no esta pantalla.
-      navegar(sesion.redireccion, { replace: true })
+      // Si se vino desde una app (D50), se vuelve a ella; si no, a donde decida
+      // el backend. `volverSeguro` solo admite apps de la plataforma.
+      if (volver) window.location.assign(volver.url)
+      else navegar(sesion.redireccion, { replace: true })
     } catch (e) {
       setError(mensajeDeError(e))
       setEnviando(false)
@@ -163,7 +169,9 @@ export function LoginPage() {
           className="w-full max-w-[23rem]"
         >
           <motion.div variants={elemento} className="mb-8">
-            <h2 className="font-display text-2xl font-semibold tracking-tight">Iniciar sesión</h2>
+            <h2 className="font-display text-2xl font-semibold tracking-tight">
+              {volver?.app ? `Iniciar sesión en ${volver.app}` : 'Iniciar sesión'}
+            </h2>
             <p className="mt-1.5 text-sm text-tenue-fg">
               Accede con tu cuenta institucional para continuar.
             </p>

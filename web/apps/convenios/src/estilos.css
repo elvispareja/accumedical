@@ -1,0 +1,7 @@
+/*
+ * El CSS de Convenios (D50). Arranca con la base de la plataforma y debajo va
+ * lo propio de esta app; cambiar aquí no afecta a admin ni a los módulos.
+ */
+@import '@/index.css';
+
+/* ── Propio de Convenios ────────────────────────────────────────────────── */

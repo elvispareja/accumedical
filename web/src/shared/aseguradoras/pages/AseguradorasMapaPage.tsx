@@ -2,16 +2,18 @@ import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { MapaAseguradoras } from '@/shared/mapa/MapaAseguradoras'
+import { useApp } from '@/core/app/contexto'
 
 /**
  * Las compañías sobre el mapa del Ecuador. Se llega con el botón «Mapa» del
  * listado, y se vuelve por donde se vino.
  */
 export function AseguradorasMapaPage() {
+  const { raiz } = useApp()
   return (
     <div className="w-full">
       <Link
-        to="/admin/aseguradoras"
+        to={`${raiz}/aseguradoras`}
         className="inline-flex items-center gap-1.5 rounded text-sm text-tenue-fg transition-colors duration-150 hover:text-tinta"
       >
         <ArrowLeft className="size-4" aria-hidden="true" />

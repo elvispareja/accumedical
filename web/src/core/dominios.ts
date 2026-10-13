@@ -103,3 +103,39 @@ export function destinoDeModuloEnOtraPestana(ruta: string): string | null {
   if (!origen || origen === ADMIN || origen === window.location.origin) return null
   return urlReal(origen, ruta)
 }
+
+/** Nombre visible de cada app con frontend propio, para el login (D50). */
+const NOMBRES: Record<string, string> = {
+  concurrencia: 'Concurrencia',
+  pacientes: 'Pacientes',
+  convenios: 'Convenios',
+  contabilidad: 'Contabilidad',
+}
+
+/**
+ * La dirección a la que volver tras el login, SOLO si es de una app de la
+ * plataforma: el origen de admin o el de un módulo conocido (VITE_URLS_MODULOS),
+ * o una ruta interna en el mismo origen. Cualquier otra cosa → null. Es la
+ * defensa contra la redirección abierta (`/login?volver=https://malo.com`).
+ */
+export function volverSeguro(valor: string | null): { url: string; app: string | null } | null {
+  if (!valor) return null
+  if (valor.startsWith('/') && !valor.startsWith('//') && !valor.startsWith('/\\')) {
+    return { url: valor, app: null }
+  }
+  let url: URL
+  try {
+    url = new URL(valor)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return null
+  if (ADMIN && url.origin === ADMIN) return { url: url.href, app: null }
+  const slug = Object.entries(MODULOS).find(([, origen]) => origen === url.origin)?.[0]
+  return slug ? { url: url.href, app: NOMBRES[slug] ?? slug } : null
+}
+
+/** El login (siempre el de admin) pidiendo volver a `volver` después. */
+export function urlDelLogin(volver: string): string {
+  return `${ADMIN}/login?volver=${encodeURIComponent(volver)}`
+}

@@ -16,16 +16,7 @@ import { LoginPage } from '@/core/pages/LoginPage'
 import { SeleccionarModuloPage } from '@/core/pages/SeleccionarModuloPage'
 import { ModuloPendientePage } from '@/core/pages/ModuloPendientePage'
 import { SinAccesosPage } from '@/core/pages/SinAccesosPage'
-import { AseguradoraFormPage } from '@/shared/aseguradoras/pages/AseguradoraFormPage'
 import { ConfiguracionPage } from '@/shared/configuracion/pages/ConfiguracionPage'
-import { AseguradorasPage } from '@/shared/aseguradoras/pages/AseguradorasPage'
-import { AseguradorasMapaPage } from '@/shared/aseguradoras/pages/AseguradorasMapaPage'
-import { RedConvenioMapaPage } from '@/shared/aseguradoras/pages/RedConvenioMapaPage'
-import { RedConvenioPage } from '@/shared/aseguradoras/pages/RedConvenioPage'
-import { PrestadorFormPage } from '@/shared/prestadores/pages/PrestadorFormPage'
-import { PrestadoresMapaPage } from '@/shared/prestadores/pages/PrestadoresMapaPage'
-import { PrestadoresPage } from '@/shared/prestadores/pages/PrestadoresPage'
-import { TiposPrestadorPage } from '@/shared/parametros/pages/TiposPrestadorPage'
 import { UsuarioFormPage } from '@/shared/usuarios/pages/UsuarioFormPage'
 import { UsuariosPage } from '@/shared/usuarios/pages/UsuariosPage'
 
@@ -58,20 +49,18 @@ export const router = createBrowserRouter([
           // La bandeja del coordinador vive en SU área; esto es solo la puerta de
           // atrás para un enlace viejo.
           { path: 'bandeja', element: <Navigate to="/coordinacion/bandeja" replace /> },
-          { path: 'aseguradoras', element: <AseguradorasPage /> },
-          // Las mismas compañías, sobre el mapa: una por domicilio.
-          { path: 'aseguradoras/mapa', element: <AseguradorasMapaPage /> },
-          { path: 'aseguradoras/nueva', element: <AseguradoraFormPage /> },
-          { path: 'aseguradoras/:id/editar', element: <AseguradoraFormPage /> },
-          { path: 'prestadores', element: <PrestadoresPage /> },
-          // Los mismos prestadores, sobre el mapa: un punto por sitio donde se
-          // atiende, provincia y ciudad al lado.
-          { path: 'prestadores/mapa', element: <PrestadoresMapaPage /> },
-          { path: 'prestadores/nuevo', element: <PrestadorFormPage /> },
-          { path: 'prestadores/:id/editar', element: <PrestadorFormPage /> },
-          // La red de convenios de Accumedical misma con los prestadores.
-          { path: 'red-convenio', element: <RedConvenioPage /> },
-          { path: 'red-convenio/mapa', element: <RedConvenioMapaPage /> },
+          // Contabilidad y Convenios tienen su PROPIA app (D50): estas direcciones
+          // solo llevan allá (enlaces guardados, avisos viejos).
+          { path: 'aseguradoras', element: <Navigate to="/contabilidad/dashboard" replace /> },
+          { path: 'aseguradoras/mapa', element: <Navigate to="/contabilidad/aseguradoras/mapa" replace /> },
+          { path: 'aseguradoras/nueva', element: <Navigate to="/contabilidad/aseguradoras/nueva" replace /> },
+          { path: 'aseguradoras/:id/editar', element: <RedirigirAlModulo a="/contabilidad/aseguradoras/:id/editar" /> },
+          { path: 'prestadores', element: <Navigate to="/convenios/prestadores" replace /> },
+          { path: 'prestadores/mapa', element: <Navigate to="/convenios/prestadores/mapa" replace /> },
+          { path: 'prestadores/nuevo', element: <Navigate to="/convenios/prestadores/nuevo" replace /> },
+          { path: 'prestadores/:id/editar', element: <RedirigirAlModulo a="/convenios/prestadores/:id/editar" /> },
+          { path: 'red-convenio', element: <Navigate to="/convenios/red-convenio" replace /> },
+          { path: 'red-convenio/mapa', element: <Navigate to="/convenios/red-convenio/mapa" replace /> },
           // Los pacientes viven en su propia app, pacientes.pymes.ec (D49): estas
           // direcciones solo llevan allá, para no romper enlaces guardados.
           { path: 'pacientes', element: <Navigate to="/pacientes/dashboard" replace /> },
@@ -94,8 +83,8 @@ export const router = createBrowserRouter([
           { path: 'auditorias/:slug', element: <RedirigirAlModulo a="/:slug" /> },
           // Los catálogos que mantiene la propia gente. Quien crea prestadores
           // tiene que poder nombrar su tipo.
-          { path: 'parametros', element: <Navigate to="/admin/parametros/tipos-prestador" replace /> },
-          { path: 'parametros/tipos-prestador', element: <TiposPrestadorPage /> },
+          { path: 'parametros', element: <Navigate to="/convenios/parametros/tipos-prestador" replace /> },
+          { path: 'parametros/tipos-prestador', element: <Navigate to="/convenios/parametros/tipos-prestador" replace /> },
           // La lista entera de la campana. Sin rol: cada quien ve la suya.
           { path: 'notificaciones', element: <NotificacionesPage /> },
           { path: 'configuracion', element: <ConfiguracionPage /> },
@@ -150,6 +139,8 @@ export const router = createBrowserRouter([
       // Si una navegación interna llega a esa ruta, se salta con recarga completa.
       { path: '/concurrencia/*', element: <IrAOtraApp /> },
       { path: '/pacientes/*', element: <IrAOtraApp /> },
+      { path: '/convenios/*', element: <IrAOtraApp /> },
+      { path: '/contabilidad/*', element: <IrAOtraApp /> },
       // El resto va al final: las rutas estáticas de arriba ganan al segmento
       // dinámico. Un slug que no existe y uno sin permiso acaban en el mismo sitio,
       // así que la interfaz tampoco delata qué módulos hay.

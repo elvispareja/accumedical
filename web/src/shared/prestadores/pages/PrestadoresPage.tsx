@@ -23,11 +23,13 @@ import { Select } from '@/shared/components/ui/select'
 import { useToast } from '@/shared/components/ui/toast'
 import { eliminarPrestador, urlLogo } from '@/shared/prestadores/api'
 import { usePrestadores } from '@/shared/prestadores/hooks'
+import { useApp } from '@/core/app/contexto'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const POR_PAGINA = 20
 
 export function PrestadoresPage() {
+  const { raiz } = useApp()
   const toast = useToast()
   const navegar = useNavigate()
   const queryClient = useQueryClient()
@@ -87,11 +89,11 @@ export function PrestadoresPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Boton variante="contorno" onClick={() => navegar('/admin/prestadores/mapa')}>
+          <Boton variante="contorno" onClick={() => navegar(`${raiz}/prestadores/mapa`)}>
             <Map aria-hidden="true" />
             Mapa
           </Boton>
-          <Boton onClick={() => navegar('/admin/prestadores/nuevo')}>
+          <Boton onClick={() => navegar(`${raiz}/prestadores/nuevo`)}>
             <Plus aria-hidden="true" />
             Nuevo prestador
           </Boton>
@@ -167,7 +169,7 @@ export function PrestadoresPage() {
         ) : consulta.isError ? (
           <EstadoError onReintentar={() => consulta.refetch()} />
         ) : datos && datos.items.length === 0 ? (
-          <Vacio hayFiltros={hayFiltros} onCrear={() => navegar('/admin/prestadores/nuevo')} />
+          <Vacio hayFiltros={hayFiltros} onCrear={() => navegar(`${raiz}/prestadores/nuevo`)} />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[44rem] table-fixed text-sm">
@@ -245,7 +247,7 @@ export function PrestadoresPage() {
                           <Boton
                             variante="fantasma"
                             tamano="icono"
-                            onClick={() => navegar(`/admin/prestadores/${fila.id}/editar`)}
+                            onClick={() => navegar(`${raiz}/prestadores/${fila.id}/editar`)}
                             aria-label={`Editar ${fila.nombre}`}
                           >
                             <Pencil aria-hidden="true" />

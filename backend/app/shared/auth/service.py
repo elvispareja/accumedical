@@ -525,12 +525,13 @@ def calcular_redireccion(
         # Su área es `/coordinacion`, no `/admin`: coordinar no es administrar
         # la plataforma, y la dirección no debe decir lo contrario.
         return "/coordinacion/bandeja"
-    # Las funciones transversales trabajan en el área de administración, no en
-    # un módulo, así que no pasan por `UserModuleAccess` ni por el selector: su
-    # sitio es el listado de compañías. Convenio entra por él para llegar a la
-    # red de cada una; Contabilidad, porque es la pantalla donde da de alta.
+    # Las funciones transversales no son módulos (no pasan por
+    # `UserModuleAccess` ni por el selector): cada una tiene su app (D50).
     if funcion in FUNCIONES_CON_PANTALLA:
-        return "/admin/aseguradoras"
+        # Cada función tiene su propia app (D50): convenios.pymes.ec o
+        # contabilidad.pymes.ec. Es la dirección lógica; el frontend la lleva a
+        # su subdominio.
+        return "/convenios/dashboard" if funcion == "convenio" else "/contabilidad/dashboard"
     if not modulos:
         return "/sin-accesos"
     if len(modulos) == 1:

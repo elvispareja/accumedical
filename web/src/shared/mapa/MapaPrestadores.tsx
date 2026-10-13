@@ -4,16 +4,17 @@ import { useMemo } from 'react'
 import { MapaDeRed } from '@/shared/mapa/MapaDeRed'
 import type { PuntoDeMapa } from '@/shared/mapa/tipos'
 import { listarPuntosDelMapa, type PuntoMapa } from '@/shared/prestadores/api'
+import { useApp } from '@/core/app/contexto'
 
 /**
  * Traduce un sitio de atención al punto que el mapa entiende. **Un prestador
  * con sedes aporta varios**, así que la clave lleva el nombre de la sede: sin
  * él, dos puntos del mismo hospital compartirían clave y solo se pintaría uno.
  */
-function traducir(punto: PuntoMapa): PuntoDeMapa {
+function traducir(punto: PuntoMapa, raiz: string): PuntoDeMapa {
   return {
     clave: `${punto.prestador_id}-${punto.sede_nombre ?? ''}`,
-    ficha: `/admin/prestadores/${punto.prestador_id}/editar`,
+    ficha: `${raiz}/prestadores/${punto.prestador_id}/editar`,
     titulo: punto.sede_nombre ? `${punto.nombre} · ${punto.sede_nombre}` : punto.nombre,
     subtitulo: [punto.codigo_interno, punto.tipo_nombre, punto.ciudad_nombre]
       .filter(Boolean)
@@ -36,11 +37,12 @@ function traducir(punto: PuntoMapa): PuntoDeMapa {
  * compañía —así lo usa «Red convenio»—; sin él, el catálogo entero.
  */
 export function MapaPrestadores({ aseguradoraId }: { aseguradoraId?: string }) {
+  const { raiz } = useApp()
   const consulta = useQuery({
     queryKey: ['prestadores-mapa', aseguradoraId ?? 'todos'],
     queryFn: () => listarPuntosDelMapa(aseguradoraId),
   })
-  const puntos = useMemo(() => (consulta.data ?? []).map(traducir), [consulta.data])
+  const puntos = useMemo(() => (consulta.data ?? []).map((p) => traducir(p, raiz)), [consulta.data, raiz])
 
   return (
     <MapaDeRed

@@ -45,11 +45,11 @@ import {
 } from '@/shared/prestadores/components/SedesPanel'
 import { ConveniosPanel } from '@/shared/prestadores/components/ConveniosPanel'
 import { usePrestador } from '@/shared/prestadores/hooks'
+import { useApp } from '@/core/app/contexto'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const MAX_LOGO_MB = 5
 const TIPOS_LOGO = ['image/png', 'image/jpeg', 'image/webp']
-const LISTADO = '/admin/prestadores'
 
 const VACIO: PrestadorFormulario = {
   tipo_codigo: '',
@@ -104,6 +104,8 @@ function Bloque({
 }
 
 export function PrestadorFormPage() {
+  const { raiz } = useApp()
+  const LISTADO = `${raiz}/prestadores`
   const { id } = useParams<{ id: string }>()
   const editando = Boolean(id)
   const navegar = useNavigate()
@@ -385,7 +387,7 @@ export function PrestadorFormPage() {
                       <p id="ayuda-tipo" className="text-xs text-tenue-fg">
                         ¿Falta alguno? Se administran en{' '}
                         <Link
-                          to="/admin/parametros/tipos-prestador"
+                          to={`${raiz}/parametros/tipos-prestador`}
                           className="text-marca transition-opacity duration-150 hover:opacity-80"
                         >
                           Parámetros › Tipo de prestador

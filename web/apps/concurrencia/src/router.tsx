@@ -3,6 +3,7 @@ import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom'
 import { rutasConcurrencia } from '@concurrencia/routes'
 import { RequireModule } from '@/core/auth/RequireModule'
 import { RequireSession } from '@/core/auth/RequireSession'
+import { IrAlLogin } from '@/core/IrAlLogin'
 import { IrAOtraApp } from '@/core/IrAOtraApp'
 import { ModuloShell } from '@/core/layout/ModuloShell'
 import { ErrorPage } from '@/core/pages/ErrorPage'
@@ -27,8 +28,8 @@ function QuitarPrefijo() {
   return <Navigate to={`${ruta}${search}${hash}`} replace />
 }
 
-const DE_OTRA_APP = ['/login', '/definir-password', '/admin/*', '/coordinacion/*',
-  '/seleccionar-modulo', '/sin-accesos']
+const DE_OTRA_APP = ['/definir-password', '/admin/*', '/coordinacion/*',
+  '/seleccionar-modulo', '/sin-accesos', '/pacientes/*', '/convenios/*', '/contabilidad/*']
 
 export const router = createBrowserRouter(
   [
@@ -46,6 +47,7 @@ export const router = createBrowserRouter(
     },
     { path: '/concurrencia/*', element: <QuitarPrefijo /> },
     // Estáticas: ganan al `:id` de las visitas, que si no se tragaría `/login`.
+    { path: '/login', element: <IrAlLogin /> },
     ...DE_OTRA_APP.map((path) => ({ path, element: <IrAOtraApp /> })),
     { path: '*', element: <IrAOtraApp /> },
   ],

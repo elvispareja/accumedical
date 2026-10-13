@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 
 import { aseguradoraPropia } from '@/shared/aseguradoras/api'
 import { MapaPrestadores } from '@/shared/mapa/MapaPrestadores'
+import { useApp } from '@/core/app/contexto'
 
 /**
  * La red de Accumedical sobre el mapa: **solo los prestadores con convenio
@@ -11,12 +12,13 @@ import { MapaPrestadores } from '@/shared/mapa/MapaPrestadores'
  * (`es_propia`), la misma que arma la red en la pantalla anterior.
  */
 export function RedConvenioMapaPage() {
+  const { raiz } = useApp()
   const propia = useQuery({ queryKey: ['aseguradora-propia'], queryFn: aseguradoraPropia })
 
   return (
     <div className="w-full">
       <Link
-        to="/admin/red-convenio"
+        to={`${raiz}/red-convenio`}
         className="inline-flex items-center gap-1.5 rounded text-sm text-tenue-fg transition-colors duration-150 hover:text-tinta"
       >
         <ArrowLeft className="size-4" aria-hidden="true" />

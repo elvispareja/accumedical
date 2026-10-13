@@ -4,6 +4,7 @@ import { Armazon, SoloAccumedical } from '@pacientes/Armazon'
 import { FichaPage } from '@pacientes/pages/FichaPage'
 import { ListaPage } from '@pacientes/pages/ListaPage'
 import { RequireSession } from '@/core/auth/RequireSession'
+import { IrAlLogin } from '@/core/IrAlLogin'
 import { IrAOtraApp } from '@/core/IrAOtraApp'
 import { ErrorPage } from '@/core/pages/ErrorPage'
 
@@ -20,8 +21,8 @@ function QuitarPrefijo() {
   return <Navigate to={`${ruta}${search}${hash}`} replace />
 }
 
-const DE_OTRA_APP = ['/login', '/definir-password', '/admin/*', '/coordinacion/*',
-  '/seleccionar-modulo', '/sin-accesos', '/concurrencia/*']
+const DE_OTRA_APP = ['/definir-password', '/admin/*', '/coordinacion/*',
+  '/seleccionar-modulo', '/sin-accesos', '/concurrencia/*', '/convenios/*', '/contabilidad/*']
 
 export const router = createBrowserRouter(
   [
@@ -42,6 +43,7 @@ export const router = createBrowserRouter(
       ],
     },
     { path: '/pacientes/*', element: <QuitarPrefijo /> },
+    { path: '/login', element: <IrAlLogin /> },
     ...DE_OTRA_APP.map((path) => ({ path, element: <IrAOtraApp /> })),
     { path: '*', element: <IrAOtraApp /> },
   ],

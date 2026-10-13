@@ -13,7 +13,13 @@
     "typecheck:concurrencia": "tsc --noEmit -p apps/concurrencia",
     "dev:pacientes": "vite --config apps/pacientes/vite.config.ts",
     "build:pacientes": "tsc --noEmit -p apps/pacientes && vite build --config apps/pacientes/vite.config.ts",
-    "typecheck:pacientes": "tsc --noEmit -p apps/pacientes"
+    "typecheck:pacientes": "tsc --noEmit -p apps/pacientes",
+    "dev:convenios": "vite --config apps/convenios/vite.config.ts",
+    "build:convenios": "tsc --noEmit -p apps/convenios && vite build --config apps/convenios/vite.config.ts",
+    "typecheck:convenios": "tsc --noEmit -p apps/convenios",
+    "dev:contabilidad": "vite --config apps/contabilidad/vite.config.ts",
+    "build:contabilidad": "tsc --noEmit -p apps/contabilidad && vite build --config apps/contabilidad/vite.config.ts",
+    "typecheck:contabilidad": "tsc --noEmit -p apps/contabilidad"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.1.0",

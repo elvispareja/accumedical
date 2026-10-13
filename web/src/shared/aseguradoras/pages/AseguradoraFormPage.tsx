@@ -43,11 +43,11 @@ import { Label } from '@/shared/components/ui/label'
 import { Select } from '@/shared/components/ui/select'
 import { Tabs } from '@/shared/components/ui/tabs'
 import { useToast } from '@/shared/components/ui/toast'
+import { useApp } from '@/core/app/contexto'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const MAX_LOGO_MB = 5
 const TIPOS_LOGO = ['image/png', 'image/jpeg', 'image/webp']
-const LISTADO = '/admin/aseguradoras'
 
 const VACIO: AseguradoraFormulario = {
   razon_social: '',
@@ -154,6 +154,8 @@ function EnConstruccion() {
 }
 
 export function AseguradoraFormPage() {
+  const { raiz } = useApp()
+  const LISTADO = `${raiz}/aseguradoras`
   const { id } = useParams<{ id: string }>()
   const editando = Boolean(id)
   const navegar = useNavigate()
@@ -165,8 +167,10 @@ export function AseguradoraFormPage() {
   // suyo; Contabilidad, todo lo contrario —la gestiona entera— salvo justo esa
   // red, que no es suya.
   const { data: sesion } = useSesion()
-  const soloConvenios = sesion?.user.funcion === 'convenio'
-  const sinConvenios = sesion?.user.funcion === 'contabilidad'
+  // Dentro de su app (D50) la ficha se recorta igual, entre quien entre.
+  const { alcance } = useApp()
+  const soloConvenios = alcance === 'convenios' || sesion?.user.funcion === 'convenio'
+  const sinConvenios = alcance === 'contabilidad' || sesion?.user.funcion === 'contabilidad'
 
   const detalle = useAseguradora(id ?? null, soloConvenios ? 'basico' : 'completo')
   const provincias = useProvincias()

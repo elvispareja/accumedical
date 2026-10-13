@@ -4,15 +4,16 @@ import { useMemo } from 'react'
 import { listarPuntosDeAseguradoras, type PuntoMapaAseguradora } from '@/shared/aseguradoras/api'
 import { MapaDeRed } from '@/shared/mapa/MapaDeRed'
 import type { PuntoDeMapa } from '@/shared/mapa/tipos'
+import { useApp } from '@/core/app/contexto'
 
 /**
  * Traduce una compañía al punto que el mapa entiende. Aquí la clave es su id a
  * secas: una aseguradora tiene UN domicilio, no sedes que desdoblar.
  */
-function traducir(punto: PuntoMapaAseguradora): PuntoDeMapa {
+function traducir(punto: PuntoMapaAseguradora, raiz: string): PuntoDeMapa {
   return {
     clave: punto.id,
-    ficha: `/admin/aseguradoras/${punto.id}/editar`,
+    ficha: `${raiz}/aseguradoras/${punto.id}/editar`,
     // Se lee por su razón social, que es como se lista en toda la plataforma.
     titulo: punto.razon_social,
     subtitulo: [punto.codigo_interno, punto.nombre_comercial, punto.ciudad_nombre]
@@ -33,11 +34,12 @@ function traducir(punto: PuntoMapaAseguradora): PuntoDeMapa {
  * Accumedical queda fuera, igual que en el listado: no es una compañía más.
  */
 export function MapaAseguradoras() {
+  const { raiz } = useApp()
   const consulta = useQuery({
     queryKey: ['aseguradoras-mapa'],
     queryFn: listarPuntosDeAseguradoras,
   })
-  const puntos = useMemo(() => (consulta.data ?? []).map(traducir), [consulta.data])
+  const puntos = useMemo(() => (consulta.data ?? []).map((p) => traducir(p, raiz)), [consulta.data, raiz])
 
   return (
     <MapaDeRed

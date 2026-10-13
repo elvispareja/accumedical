@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { aseguradoraPropia } from '@/shared/aseguradoras/api'
 import { ConveniosPanel } from '@/shared/aseguradoras/components/ConveniosPanel'
 import { Boton } from '@/shared/components/ui/button'
+import { useApp } from '@/core/app/contexto'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 
@@ -17,6 +18,7 @@ const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
  * la ficha interna (`es_propia`), que nunca aparece como aseguradora.
  */
 export function RedConvenioPage() {
+  const { raiz } = useApp()
   const sinMovimiento = useReducedMotion()
   const navegar = useNavigate()
   const propia = useQuery({ queryKey: ['aseguradora-propia'], queryFn: aseguradoraPropia })
@@ -36,7 +38,7 @@ export function RedConvenioPage() {
             listado de precios y los valores FC de cada uno.
           </p>
         </div>
-        <Boton variante="contorno" onClick={() => navegar('/admin/red-convenio/mapa')}>
+        <Boton variante="contorno" onClick={() => navegar(`${raiz}/red-convenio/mapa`)}>
           <Map aria-hidden="true" />
           Mapa
         </Boton>
