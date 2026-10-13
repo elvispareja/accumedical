@@ -50,3 +50,24 @@ Admin muestra vistas agregadas de los módulos en **sus** pantallas: la bandeja 
 5. Si tendrá subdominio: agregarlo a `VITE_URLS_MODULOS` (en todas las apps), y crear la ruta del túnel y el `server_name` en el nginx de infraestructura.
 6. Si admin debe mostrar algo del módulo, exponerlo en `src/integracion.ts` y agregar el alias en `web/vite.config.ts`, `web/tsconfig.json` y `web/tailwind.config.ts`.
 7. Sus pantallas usan los componentes compartidos (`@/shared/components/ui/…`) y su diseño va en su `estilos.css` / `tailwind.config.ts`.
+
+## Cabeceras de seguridad y CSP (nginx de la app)
+
+- `infra/nginx/includes/cabeceras-comunes.conf` se aplica a todo:
+  - `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`;
+  - `Permissions-Policy`, que niega todas las capacidades del navegador porque la web no usa ninguna;
+  - `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`, `X-Permitted-Cross-Domain-Policies`;
+  - `server_tokens off`.
+- `cabeceras-paginas-dev.conf` (páginas en el laboratorio, servidor de desarrollo de Vite): **CSP impuesta**.
+  - `script-src 'self'` más los **hash** de los dos scripts en línea del `index.html`: el del tema y el preámbulo de React Refresh.
+  - `style-src 'unsafe-inline'` solo porque Vite inyecta el CSS en desarrollo.
+  - `frame-ancestors 'none'`.
+- `cabeceras-api.conf` (`/api/`): las comunes más `frame-ancestors 'none'`. Oculta las mismas cabeceras del backend para que no salgan duplicadas.
+- `security-headers.conf`: la de **producción** (build estático, sin `'unsafe-inline'`).
+- **Si cambia el script del tema del `index.html` o la versión de Vite, cambian los hash y las apps quedan en blanco.** Recalcularlos con:
+  ```
+  curl -s https://admin.pymes.ec/ | python3 -c "import re,sys,hashlib,base64;s=sys.stdin.read();[print('sha256-'+base64.b64encode(hashlib.sha256(b.encode()).digest()).decode()) for a,b in re.findall(r'<script([^>]*)>(.*?)</script>',s,re.S) if 'src=' not in a]"
+  ```
+  y verificar en un navegador real con `python3 -I /srv/accumedical/scripts/probar-navegador.py`, fuera del repo, en el servidor.
+- Toda `location` nueva en `dev.conf` que ponga su propio `add_header` debe incluir el archivo de cabeceras que le toca: en nginx, un `add_header` local anula los heredados.
+
