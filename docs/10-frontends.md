@@ -83,3 +83,13 @@ Admin muestra vistas agregadas de los módulos en **sus** pantallas: la bandeja 
   y verificar en un navegador real con `python3 -I /srv/accumedical/scripts/probar-navegador.py`, fuera del repo, en el servidor.
 - Toda `location` nueva en `dev.conf` que ponga su propio `add_header` debe incluir el archivo de cabeceras que le toca: en nginx, un `add_header` local anula los heredados.
 
+## Sesión por app (D53)
+
+- **Usuario normal:** al iniciar sesión recibe `__Host-session` / `__Host-csrf_token`, **sin Domain**. El navegador solo las manda al subdominio donde entró, así que cada app le pide usuario y contraseña.
+- **Administrador global:** `__Secure-session` / `__Secure-csrf_token` con `Domain=pymes.ec`, y pasa entre apps sin volver a iniciar sesión.
+- `core/security/cookies.py` (`leer_token`: manda la de la app; `poner_cookies_sesion(..., plataforma=)`).
+- `get_current_user` **rechaza** una cookie compartida de quien no es administrador, aunque la falsifiquen.
+- Salir borra las dos.
+- El cliente busca `__Host-csrf_token` primero, que es el mismo orden que el servidor.
+- Prueba: `python3 -I /srv/accumedical/scripts/probar-alcances-sesion.py` (en el servidor).
+

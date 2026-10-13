@@ -119,7 +119,7 @@ def login(
     # Rotación de identificador SOLO tras verificar credenciales: si se revocara
     # antes, un POST fallido a /login desde otra pestaña destruiría la sesión válida.
     anterior = None
-    token_previo = request.cookies.get(settings.nombre_cookie_sesion)
+    token_previo, _ = cookies.leer_token(request)
     if token_previo:
         anterior = auth_service.buscar_sesion_valida(db, token_previo)
         if anterior is not None:
@@ -144,7 +144,9 @@ def login(
         # Sin Set-Cookie: dos sobres a la vez sería el peor de los dos mundos.
         salida.token = token
         return salida
-    cookies.poner_cookies_sesion(response, token, csrf)
+    # Solo el administrador recibe la sesión de PLATAFORMA (todas las apps);
+    # los demás, la de ESTA app (D53).
+    cookies.poner_cookies_sesion(response, token, csrf, plataforma=user.is_superadmin)
     return salida
 
 
@@ -213,7 +215,7 @@ def emitir_csrf(request: Request, db: DbSession = Depends(get_db)) -> Response:
     porque el login siempre emite ambas y no hay otro caso legítimo.
     """
     respuesta = Response(status_code=status.HTTP_204_NO_CONTENT)
-    token = request.cookies.get(settings.nombre_cookie_sesion)
+    token, de_plataforma = cookies.leer_token(request)
     if not token:
         return respuesta
     sesion = auth_service.buscar_sesion_valida(db, token)
@@ -221,7 +223,7 @@ def emitir_csrf(request: Request, db: DbSession = Depends(get_db)) -> Response:
         return respuesta
     csrf = auth_service.rotar_csrf(db, sesion)
     db.commit()
-    cookies.poner_cookie_csrf(respuesta, csrf)
+    cookies.poner_cookie_csrf(respuesta, csrf, plataforma=de_plataforma)
     return respuesta
 
 

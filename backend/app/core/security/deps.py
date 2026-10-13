@@ -8,9 +8,8 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from app.core.config import settings
 from app.core.db import get_db
-from app.core.security import tokens
+from app.core.security import cookies, tokens
 from app.shared.audit import service as audit
 from app.shared.auth import service as auth_service
 from app.shared.auth.models import Sesion
@@ -47,7 +46,7 @@ def get_current_user(
     # navegador o, para la app móvil, `Authorization: Bearer` con el token que el
     # login «movil» entregó una única vez. Misma tabla, misma expiración, misma
     # revocación inmediata: no es otro esquema de autenticación, es otro sobre.
-    token = request.cookies.get(settings.nombre_cookie_sesion)
+    token, de_plataforma = cookies.leer_token(request)
     via_bearer = False
     if not token:
         cabecera = request.headers.get("authorization", "")
@@ -67,6 +66,11 @@ def get_current_user(
     if user is None or not user.is_active or user.deleted_at is not None:
         auth_service.revocar_sesion(db, sesion, "user_deactivated")
         db.commit()
+        raise NO_AUTENTICADO
+
+    # La cookie de PLATAFORMA (todas las apps) es solo del administrador global
+    # (D53). La de cualquier otro se ignora: cada app le pide su propio login.
+    if de_plataforma and not user.is_superadmin:
         raise NO_AUTENTICADO
 
     auth_service.tocar_actividad(db, sesion)
