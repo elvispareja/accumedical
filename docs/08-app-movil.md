@@ -106,6 +106,13 @@ npx expo start       # imprime un QR
 - **Emulador Android**: funciona sin tocar nada (la app usa `10.0.2.2`, que es
   el localhost de la máquina visto desde el emulador).
 - **Simulador iOS**: funciona sin tocar nada (`localhost`).
+- **Desde el servidor de laboratorio, a un teléfono en cualquier red** (sin USB ni Wi-Fi compartido):
+  - `app.config.js` toma `ACCUMEDICAL_API_URL` (p. ej. `https://concurrencia.pymes.ec`) y deja `app.json` intacto.
+  - Se corre Expo en un contenedor con túnel:
+    `docker run -d --name expo-movil -v <copia de movil, dueño 100000>:/app -w /app -e ACCUMEDICAL_API_URL=https://concurrencia.pymes.ec node:22-slim sh -c "npm ci && npm i -g @expo/ngrok@^4.1.0 && npx expo start --tunnel"`.
+    La copia es porque con userns-remap el contenedor no puede escribir en el repo.
+  - La dirección `exp://…exp.direct` sale del manifiesto (`hostUri`) y se pega en Expo Go → «Enter URL manually».
+  - Al terminar: `docker rm -f expo-movil`. Mientras corre, el código de la app es accesible por esa dirección; no contiene secretos.
 - **Producción**: `apiUrl` apuntará al dominio real con HTTPS, y el binario se
   construye con EAS Build cuando toque distribuir.
 
