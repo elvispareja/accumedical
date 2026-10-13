@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     login_rate_limit_ip: str = "5/minute"
     password_min_length: int = Field(default=12, ge=12)
 
+    # ── Apps fuera de la plataforma (Calificación de Riesgo…) ─────────────────
+    # «app=token,app2=token2»: con su token, cada app verifica las credenciales
+    # de sus usuarios en /api/v1/interno/credenciales. Vacío = nadie.
+    apps_internas_tokens: SecretStr = SecretStr("")
+
     # ── Subidas (A08) ────────────────────────────────────────────────────────
     upload_dir: str = "/srv/uploads"
     upload_max_size_mb: int = Field(default=5, gt=0)

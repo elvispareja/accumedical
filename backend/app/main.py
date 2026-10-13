@@ -33,6 +33,7 @@ from app.shared.aseguradoras.router import router as aseguradoras_router
 from app.shared.aseguradoras.router import router_convenios as aseguradoras_convenios_router
 from app.shared.aseguradoras.router import router_listado as aseguradoras_listado_router
 from app.shared.auth import service as auth_service
+from app.shared.auth.interno import router as interno_router
 from app.shared.auth.router import router as auth_router
 from app.shared.catalogos.parametros import router as parametros_router
 from app.shared.catalogos.router import router as catalogos_router
@@ -59,6 +60,10 @@ PUBLIC_PATHS = {
     # El informe entregado que otra app pidió a la central (D3): el enlace de un
     # solo uso que emitió la central ES la credencial, y se canjea allí.
     "/api/v1/concurrencia/compartido/informes/{entrega_id}",
+    # Apps fuera de la plataforma (Calificación de Riesgo) verifican aquí las
+    # credenciales de sus usuarios: el token de la app ES la credencial, y nginx
+    # cierra la ruta al público (solo red interna).
+    "/api/v1/interno/credenciales",
 }
 
 INTERVALO_PURGA_SEG = 3600
@@ -331,6 +336,7 @@ def health() -> dict:
 
 api.include_router(salud)
 api.include_router(auth_router)
+api.include_router(interno_router)
 api.include_router(catalogos_router)
 api.include_router(parametros_router)
 api.include_router(notificaciones_router)
