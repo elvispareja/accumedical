@@ -167,7 +167,9 @@ export const router = createBrowserRouter([
         ),
         errorElement: <ErrorPage />,
         children: [
-          { index: true, element: <ModuloPendientePage /> },
+          // Misma forma que los módulos con app propia: la portada en /<slug>/dashboard.
+          { index: true, element: <Navigate to="dashboard" replace /> },
+          { path: 'dashboard', element: <ModuloPendientePage /> },
           { path: 'notificaciones', element: <NotificacionesDelModulo /> },
         ],
       },

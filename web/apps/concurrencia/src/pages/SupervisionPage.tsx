@@ -13,7 +13,7 @@ import {
   UserCheck,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { cn } from '@/lib/utils'
 import {
@@ -29,7 +29,6 @@ import {
   type FiltroDeCuadro,
 } from '@concurrencia/components/cifras'
 import {
-  ESTADOS_VISITA,
   EstadoVisitaBadge,
   Ventana,
 } from '@concurrencia/components/visitas'
@@ -37,7 +36,6 @@ import { Boton } from '@/shared/components/ui/button'
 import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
 import { Modal } from '@/shared/components/ui/modal'
-import { Select } from '@/shared/components/ui/select'
 import { useToast } from '@/shared/components/ui/toast'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
@@ -65,7 +63,6 @@ export function SupervisionPage() {
   const toast = useToast()
   const queryClient = useQueryClient()
   const sinMovimiento = useReducedMotion()
-  const ubicacion = useLocation()
   const navegar = useNavigate()
 
   const [busqueda, setBusqueda] = useState('')
@@ -179,9 +176,8 @@ export function SupervisionPage() {
             auditores — y las que programes tú, si el pedido te llega por correo.
           </p>
         </div>
-        {/* El destino se arma sobre la ruta actual, no en absoluto. */}
         <Link
-          to={`${ubicacion.pathname.replace(/\/$/, '')}/programar`}
+          to="/concurrencia/programar"
           className="inline-flex h-10 items-center gap-2 rounded bg-marca px-4 text-sm font-medium text-marca-fg transition-opacity duration-150 hover:opacity-90"
         >
           <Plus className="size-4" aria-hidden="true" />
@@ -207,8 +203,9 @@ export function SupervisionPage() {
         alFiltrar={aplicarFiltro}
       />
 
-      {/* ── Filtros ── */}
-      <div className="mt-6 grid items-center gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_12rem_10.5rem_10.5rem_auto]">
+      {/* ── Filtros ── El estado se elige pulsando un cuadro de arriba: sin
+          selector propio (pedido del usuario), así no hay dos controles para lo mismo. */}
+      <div className="mt-6 grid items-center gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_10.5rem_10.5rem_auto]">
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
@@ -223,21 +220,6 @@ export function SupervisionPage() {
             className="pl-9"
           />
         </div>
-        <Select
-          value={estado}
-          onChange={(e) => {
-            setEstado(e.target.value)
-            setPagina(1)
-          }}
-          aria-label="Filtrar por estado"
-        >
-          <option value="">Todos los estados</option>
-          {ESTADOS_VISITA.map((e) => (
-            <option key={e.valor} value={e.valor}>
-              {e.etiqueta}
-            </option>
-          ))}
-        </Select>
         <Input
           type="date"
           value={desde}

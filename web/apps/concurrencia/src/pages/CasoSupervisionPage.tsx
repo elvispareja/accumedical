@@ -43,7 +43,7 @@ export function CasoSupervisionPage() {
 
   // A dónde se vuelve: el panel del módulo, también para el administrador global,
   // que entra como coordinador de plataforma (D45).
-  const listado = '/concurrencia'
+  const listado = '/concurrencia/dashboard'
 
   const detalle = useQuery({
     queryKey: ['supervision-visita', id],

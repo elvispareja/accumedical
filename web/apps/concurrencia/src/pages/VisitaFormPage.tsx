@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowLeft, Building, CircleSlash, FileText, MapPin, Plus, Search, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { cn } from '@/lib/utils'
 import { useSesion } from '@/core/auth/useSesion'
@@ -235,14 +235,13 @@ export function VisitaFormPage({
   const { id } = useParams<{ id: string }>()
   const editando = Boolean(id)
   const navegar = useNavigate()
-  const ubicacion = useLocation()
   const queryClient = useQueryClient()
   const toast = useToast()
   const { data: sesion } = useSesion()
 
   // A dónde se vuelve: la bandeja de compañía, o la pantalla de supervisión
-  // desde la que se llegó (/concurrencia).
-  const volverA = supervision ? ubicacion.pathname.replace(/\/programar$/, '') : BANDEJA
+  // (/concurrencia/dashboard).
+  const volverA = supervision ? '/concurrencia/dashboard' : BANDEJA
   const [aseguradoraId, setAseguradoraId] = useState('')
   const aseguradoras = useQuery({
     queryKey: ['concurrencia', 'supervision-aseguradoras'],

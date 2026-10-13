@@ -1,4 +1,4 @@
-import type { RouteObject } from 'react-router-dom'
+import { Navigate, type RouteObject } from 'react-router-dom'
 
 import { BandejaPage } from '@concurrencia/pages/BandejaPage'
 import { CasoSupervisionPage } from '@concurrencia/pages/CasoSupervisionPage'
@@ -15,7 +15,9 @@ import { NotificacionesDelModulo } from '@/core/notificaciones/pages/Notificacio
  * desde su panel.
  */
 export const rutasConcurrencia: RouteObject[] = [
-  { index: true, element: <PortadaPage /> },
+  // La portada vive en /concurrencia/dashboard (pedido del usuario); la raíz lleva allí.
+  { index: true, element: <Navigate to="dashboard" replace /> },
+  { path: 'dashboard', element: <PortadaPage /> },
   { path: 'bandeja', element: <BandejaPage /> },
   // Sus avisos, dentro de la app (D47). Antes que `:id`, que se lo tragaría.
   { path: 'notificaciones', element: <NotificacionesDelModulo /> },
