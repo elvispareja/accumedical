@@ -174,7 +174,8 @@ _SIN_RED_PROPIA = {
 # entidades ya no se envían (la central, además, las ignoraría).
 _REDES = ("convenios", "convenio_fc")
 _FICHAS = ("aseguradoras", "aseguradora_contactos", "prestadores", "prestador_contactos",
-           "prestador_sedes")
+           "prestador_sedes", "aseguradora_aplicaciones", "aseguradora_sla",
+           "aseguradora_coberturas")
 
 
 def _json(valor: Any) -> Any:

@@ -149,6 +149,11 @@ Con `FICHAS_EN_CENTRAL=true` (en el `.env` **y** en el compose de `api-central`)
    - Las filas que solo existen aquí se informan; no se borran.
 4. Los eventos se registran al importar el módulo, cosa que hacen `app.main` y `app.cli`. Un proceso nuevo que escriba fichas debe importarlo también.
 
+**Paso 5c:** el mismo mecanismo cubre lo contratado por cada aseguradora: `aseguradora_modulos` (en la central, `aseguradora_aplicaciones`), `aseguradora_sla` y `aseguradora_coberturas`.
+- Son tablas de llave compuesta: al tocar cualquier fila se publican todas las de esa aseguradora.
+- La reparación renombra `aplicacion_codigo` → `module_code`.
+- Concurrencia lee el SLA de la central; su respaldo local es ahora el espejo, que solo cambia después de que la central acepta.
+
 Pruebas: `scripts/probar-fichas-central.py`. Los archivos de logo siguen en el volumen local; la central guarda la ruta.
 
 ## Documentos de la aseguradora en el almacén de la central (D2)

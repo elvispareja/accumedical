@@ -1,12 +1,13 @@
 """
-Fichas de aseguradoras y prestadores (con contactos y sedes): la central es la
-DUEÑA y esta base guarda un ESPEJO (paso 5b, `FICHAS_EN_CENTRAL`).
+Fichas de aseguradoras y prestadores (con contactos y sedes) y lo contratado
+por cada aseguradora (módulos, SLA, coberturas): la central es la DUEÑA y esta
+base guarda un ESPEJO (pasos 5b y 5c, `FICHAS_EN_CENTRAL`).
 
 Por qué un espejo y no borrar las tablas: los usuarios, los casos de
 Concurrencia, las pólizas, el SLA… tienen llaves foráneas a estas filas y las
 leen en cientos de consultas. Se quedan, pero ya no mandan:
 
-1. CENTRAL PRIMERO. Cualquier cambio a esas cinco tablas, venga de la pantalla
+1. CENTRAL PRIMERO. Cualquier cambio a esas tablas, venga de la pantalla
    que venga, se publica en la central (`PUT /api/fichas/{entidad}`) justo antes
    de confirmar la transacción local (evento `before_commit` de la sesión). Si
    la central no responde o lo rechaza, la transacción local NO se confirma:
@@ -36,26 +37,55 @@ from sqlalchemy.orm import Session
 from app.core.central import CentralError, ClienteCentral, cliente_plataforma
 from app.core.config import settings
 from app.core.logging import log
-from app.shared.aseguradoras.models import Aseguradora, AseguradoraContacto
+from app.shared.aseguradoras.models import (
+    Aseguradora,
+    AseguradoraCobertura,
+    AseguradoraContacto,
+    AseguradoraModulo,
+    AseguradoraSla,
+)
 from app.shared.central import replicacion
 from app.shared.prestadores.models import Prestador, PrestadorContacto, PrestadorSede
 
-# Orden de dependencias: la ficha antes que sus contactos y sedes.
-ORDEN = ("aseguradoras", "aseguradora_contactos", "prestadores", "prestador_contactos",
-         "prestador_sedes")
+
+class _Ficha:
+    """Cómo se publica y se repara cada tabla."""
+
+    def __init__(self, tabla: str, filtro: str, llave: tuple[str, ...],
+                 renombres: dict[str, str] | None = None) -> None:
+        self.tabla = tabla  # tabla local
+        self.filtro = filtro  # columna por la que se eligen las filas a publicar
+        self.llave = llave  # llave primaria, con los nombres de la CENTRAL
+        self.renombres = renombres or {}  # nombre en la central → columna local
+
+
+_APP = {"aplicacion_codigo": "module_code"}
+# Orden de dependencias: la ficha antes que sus contactos, sedes y lo contratado.
+FICHAS: dict[str, _Ficha] = {
+    "aseguradoras": _Ficha("aseguradoras", "id", ("id",)),
+    "aseguradora_contactos": _Ficha("aseguradora_contactos", "id", ("id",)),
+    "prestadores": _Ficha("prestadores", "id", ("id",)),
+    "prestador_contactos": _Ficha("prestador_contactos", "id", ("id",)),
+    "prestador_sedes": _Ficha("prestador_sedes", "id", ("id",)),
+    # Paso 5c: lo contratado. Sin `id`: se publica TODO lo de esa aseguradora.
+    "aseguradora_aplicaciones": _Ficha(
+        "aseguradora_modulos", "aseguradora_id", ("aseguradora_id", "aplicacion_codigo"), _APP),
+    "aseguradora_sla": _Ficha(
+        "aseguradora_sla", "aseguradora_id", ("aseguradora_id", "aplicacion_codigo"), _APP),
+    "aseguradora_coberturas": _Ficha(
+        "aseguradora_coberturas", "aseguradora_id",
+        ("aseguradora_id", "aplicacion_codigo", "cobertura_codigo"), _APP),
+}
+ORDEN = tuple(FICHAS)
 _POR_MODELO = {
     Aseguradora: "aseguradoras",
     AseguradoraContacto: "aseguradora_contactos",
     Prestador: "prestadores",
     PrestadorContacto: "prestador_contactos",
     PrestadorSede: "prestador_sedes",
-}
-_TABLA = {  # tabla local de cada entidad (los nombres de la central coinciden)
-    "aseguradoras": "aseguradoras",
-    "aseguradora_contactos": "aseguradora_contactos",
-    "prestadores": "prestadores",
-    "prestador_contactos": "prestador_contactos",
-    "prestador_sedes": "prestador_sedes",
+    AseguradoraModulo: "aseguradora_aplicaciones",
+    AseguradoraSla: "aseguradora_sla",
+    AseguradoraCobertura: "aseguradora_coberturas",
 }
 _CONSULTA = {nombre: consulta for nombre, consulta in replicacion.ENTIDADES if nombre in ORDEN}
 _TOCADAS = "fichas_tocadas"
@@ -77,7 +107,8 @@ def _anotar(sesion: Session, _contexto: Any) -> None:
     for obj in chain(sesion.new, sesion.dirty, sesion.deleted):
         nombre = _POR_MODELO.get(type(obj))
         if nombre is not None and (obj not in sesion.dirty or sesion.is_modified(obj)):
-            sesion.info.setdefault(_TOCADAS, set()).add((nombre, obj.id))
+            valor = getattr(obj, FICHAS[nombre].filtro)
+            sesion.info.setdefault(_TOCADAS, set()).add((nombre, valor))
 
 
 @event.listens_for(Session, "before_commit")
@@ -100,7 +131,7 @@ def _filas(sesion: Session, entidad: str, ids: list[uuid.UUID] | None) -> list[d
     consulta = _CONSULTA[entidad]
     parametros: dict[str, Any] = {}
     if ids is not None:
-        consulta += " WHERE id = ANY(:ids)"
+        consulta += f" WHERE {FICHAS[entidad].filtro} = ANY(:ids)"
         parametros["ids"] = ids
     filas = [dict(f) for f in sesion.execute(text(consulta), parametros).mappings()]
     return json.loads(json.dumps(filas, default=replicacion._json))  # noqa: SLF001
@@ -150,8 +181,9 @@ def verificar(sesion: Session, c: ClienteCentral, *, reparar: bool = False) -> d
         estado, remotas = c.llamar("GET", f"/api/fichas/{entidad}")
         if estado != 200:
             raise CentralError(estado, f"GET /api/fichas/{entidad}")
-        locales = {f["id"]: f for f in _filas(sesion, entidad, None)}
-        centrales = {f["id"]: f for f in remotas}
+        llave = FICHAS[entidad].llave
+        locales = {tuple(f[c] for c in llave): f for f in _filas(sesion, entidad, None)}
+        centrales = {tuple(f[c] for c in llave): f for f in remotas}
         distintas = [
             i for i in centrales if i in locales and _canon(locales[i]) != _canon(centrales[i])
         ]
@@ -172,12 +204,14 @@ def verificar(sesion: Session, c: ClienteCentral, *, reparar: bool = False) -> d
 
 def _traer(sesion: Session, entidad: str, filas: list[dict[str, Any]]) -> None:
     """UPSERT local de filas de la central, SIN volver a publicarlas."""
-    columnas = list(filas[0])
-    asignar = ", ".join(f"{col} = EXCLUDED.{col}" for col in columnas if col != "id")
+    ficha = FICHAS[entidad]
+    local = {c: ficha.renombres.get(c, c) for c in filas[0]}  # central → columna local
+    llave = [ficha.renombres.get(c, c) for c in ficha.llave]
+    asignar = ", ".join(f"{col} = EXCLUDED.{col}" for col in local.values() if col not in llave)
     sql = text(
-        f"INSERT INTO {_TABLA[entidad]} ({', '.join(columnas)}) "  # noqa: S608 - nombres fijos
-        f"VALUES ({', '.join(':' + col for col in columnas)}) "
-        f"ON CONFLICT (id) DO UPDATE SET {asignar}"
+        f"INSERT INTO {ficha.tabla} ({', '.join(local.values())}) "  # noqa: S608 - nombres fijos
+        f"VALUES ({', '.join(':' + c for c in local)}) "
+        f"ON CONFLICT ({', '.join(llave)}) DO UPDATE SET {asignar}"
     )
     sesion.info[SIN_PUBLICAR] = True
     try:

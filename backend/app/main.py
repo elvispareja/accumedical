@@ -204,10 +204,13 @@ async def _fichas_periodica() -> None:
 
 
 def _verificar_fichas() -> None:
-    from app.core.central import cliente_plataforma
+    from app.core.central import CentralError, cliente_plataforma
 
     def trabajo(db: Session) -> None:
-        fichas_central.verificar(db, cliente_plataforma(), reparar=True)
+        try:
+            fichas_central.verificar(db, cliente_plataforma(), reparar=True)
+        except CentralError as error:  # central reiniciando o caída: se reintenta luego
+            log.warning("central_fichas_sin_respuesta", estado=error.estado)
 
     _con_candado(LOCK_FICHAS, trabajo)
 
