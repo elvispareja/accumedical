@@ -19,14 +19,17 @@ from fastapi import (
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session as DbSession
 
+from app.core.central import CentralError
 from app.core.config import settings
 from app.core.db import get_db
+from app.core.logging import log
 from app.core.security.deps import (
     AuthContext,
     require_module_access,
     require_permission,
     verificar_csrf,
 )
+from app.modules.concurrencia import central as central_conc
 from app.modules.concurrencia import (
     firma,
     informes,
@@ -391,6 +394,34 @@ def listar_correos_por_defecto(
     ]
 
 
+def _paciente_conocido(
+    db: DbSession, ctx: AuthContext, aseguradora_id: uuid.UUID, tipo: str, numero: str
+) -> PacienteConocido:
+    """
+    El paciente se busca PRIMERO en la central, que es el registro de pacientes
+    de toda la plataforma (D49): si existe, su identidad autocompleta el
+    formulario, venga de la app y la compañía que venga. La central solo
+    devuelve nombres —nada de su historia— y audita quién buscó qué documento.
+
+    Si la central no lo tiene (o no responde), se mira lo que ESTA compañía ya
+    escribió en sus casos: un paciente aún no publicado, o la central caída.
+    """
+    if settings.central_configurada:
+        try:
+            identidad = central_conc.persona_en_central(tipo, numero, ctx.user.id)
+        except CentralError as error:
+            log.warning("paciente_central_sin_respuesta", estado=error.estado)
+        else:
+            if identidad is not None:
+                return PacienteConocido(encontrado=True, origen="central", **identidad)
+    visita = service.paciente_conocido(db, aseguradora_id, tipo, numero)
+    if visita is None:
+        return PacienteConocido(encontrado=False)
+    return PacienteConocido(
+        encontrado=True, origen="local", **personas.partes_de(visita, "paciente_")
+    )
+
+
 @router.get("/pacientes/buscar", response_model=PacienteConocido)
 def buscar_paciente(
     tipo: str = Query(min_length=1, max_length=10),
@@ -403,12 +434,7 @@ def buscar_paciente(
     y apellidos en el formulario. El ownership es el de siempre: solo se
     responde con lo que esta compañía ya escribió en sus propios casos.
     """
-    visita = service.paciente_conocido(db, _aseguradora_de(ctx), tipo, numero)
-    if visita is None:
-        return PacienteConocido(encontrado=False)
-    return PacienteConocido(
-        encontrado=True, **personas.partes_de(visita, "paciente_")
-    )
+    return _paciente_conocido(db, ctx, _aseguradora_de(ctx), tipo, numero)
 
 
 @router.get("/visitas", response_model=PaginaVisitas)
@@ -523,6 +549,8 @@ def crear_visita(
     # en cambio, sale después de responder: es irreversible y lento.
     notificaciones.avisar_en_campana(db, visita)
     db.commit()
+    # El paciente queda en la central (registro de pacientes, D49) en el momento.
+    background.add_task(central_conc.publicar_ya, visita.id)
 
     # DESPUÉS de responder, y solo en el alta: el aviso con los datos exactos va
     # a cada correo de la visita —marcados y tecleados por igual— y al supervisor
@@ -1308,12 +1336,7 @@ def buscar_paciente_supervision(
 ) -> PacienteConocido:
     """Lo mismo para el alta del coordinador, acotado a la aseguradora elegida."""
     _solo_supervision(ctx)
-    visita = service.paciente_conocido(db, aseguradora_id, tipo, numero)
-    if visita is None:
-        return PacienteConocido(encontrado=False)
-    return PacienteConocido(
-        encontrado=True, **personas.partes_de(visita, "paciente_")
-    )
+    return _paciente_conocido(db, ctx, aseguradora_id, tipo, numero)
 
 
 @router.post(
@@ -1377,6 +1400,7 @@ def crear_visita_supervision(
         },
     )
     db.commit()
+    background.add_task(central_conc.publicar_ya, visita.id)  # paciente a la central (D49)
 
     # El mismo aviso del alta de compañía, en tarea de fondo tras responder.
     background.add_task(notificaciones.en_fondo, notificaciones.notificar_creacion, visita.id)

@@ -220,3 +220,44 @@ def sincronizar_pendientes(db: Session, c: ClienteCentral, limite: int = 50) -> 
             if entrega.ultimo_error and entrega.ultimo_error.startswith("sin respuesta"):
                 break
     return hechas, fallidas
+
+
+# ── Paciente: la central es el registro de pacientes (D49) ──────────────────
+def persona_en_central(tipo: str, numero: str, usuario: uuid.UUID | None) -> dict[str, Any] | None:
+    """
+    La IDENTIDAD de la persona en la central (nombres y apellidos), o None si no
+    está. Nada más: ni de qué aseguradora vino ni qué casos tiene. La central
+    audita la búsqueda (quién buscó qué documento). Lanza CentralError si no
+    responde, para que quien llama decida el respaldo.
+    """
+    from urllib.parse import quote
+
+    from app.core.central import cliente
+    from app.shared import personas
+
+    ruta = f"/api/personas/{quote(tipo, safe='')}/{quote(numero.strip().upper(), safe='')}"
+    estado, r = cliente().llamar("GET", ruta, usuario=usuario)
+    if estado == 200:
+        return {campo: r.get(campo) for campo in personas.PARTES}
+    if estado == 404:
+        return None
+    raise CentralError(estado, "buscar persona")
+
+
+def publicar_ya(visita_id: uuid.UUID) -> None:
+    """
+    Al registrar un caso, el paciente se crea (o se vincula) en la central EN
+    ESE MOMENTO, sin esperar la pasada periódica. Corre después de responder;
+    si la central no responde, lo pendiente sale en la próxima pasada.
+    """
+    from app.core.central import cliente
+    from app.core.db import SessionLocal
+
+    try:
+        with SessionLocal() as db:
+            visita = db.get(Visita, visita_id)
+            if visita is not None:
+                sincronizar_visita(db, cliente(), visita)
+    except Exception:  # noqa: BLE001 - nunca romper nada después de responder
+        log.exception("central_publicar_ya_fallo", visita=str(visita_id))
+

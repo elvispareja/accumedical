@@ -148,9 +148,13 @@ class PaginaPacientes(BaseModel):
 
 
 class PacienteConocido(BaseModel):
-    """Si el documento ya pasó por un caso de ESA aseguradora, sus nombres."""
+    """
+    Los nombres del paciente si ya existe: en la central (registro de pacientes
+    de la plataforma, D49) o, si no, en un caso de ESA aseguradora.
+    """
 
     encontrado: bool
+    origen: Literal["central", "local"] | None = None
     nombre_principal: str | None = None
     nombre_secundario: str | None = None
     apellido_paterno: str | None = None
