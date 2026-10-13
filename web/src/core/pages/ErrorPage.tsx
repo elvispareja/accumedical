@@ -46,8 +46,8 @@ export function ErrorPage() {
             <RotateCw aria-hidden="true" />
             Recargar
           </Boton>
-          <Boton variante="contorno" onClick={() => navegar('/admin')}>
-            Ir al inicio
+          <Boton variante="contorno" onClick={() => navegar('/admin/aseguradoras')}>
+            Ir a Aseguradoras
           </Boton>
         </div>
       </div>

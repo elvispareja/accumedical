@@ -3,10 +3,12 @@ import {
   Bell,
   Briefcase,
   Building2,
+  SlidersHorizontal,
   ClipboardCheck,
   Handshake,
   LogOut,
   Settings,
+  Stethoscope,
   Users,
 } from 'lucide-react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -34,12 +36,14 @@ import { Boton } from '@/shared/components/ui/button'
  * lista fija en el cliente.
  */
 const ENTRADAS: EntradaLateral[] = [
-  // Cada una es su PROPIA app (D49, D50) y se abre en pestaña nueva, como las
-  // auditorías: admin enlaza, no copia sus pantallas.
-  //   Contabilidad: alta y ficha de aseguradoras.
-  //   Convenios: la red de cada aseguradora, prestadores, Red convenio y tipos.
-  { a: '/contabilidad/dashboard', etiqueta: 'Contabilidad', icono: Building2 },
-  { a: '/convenios/dashboard', etiqueta: 'Convenios', icono: Handshake },
+  { a: '/admin/aseguradoras', etiqueta: 'Aseguradoras', icono: Building2 },
+  { a: '/admin/prestadores', etiqueta: 'Prestadores', icono: Stethoscope },
+  // La red de convenios de Accumedical misma con los prestadores.
+  { a: '/admin/red-convenio', etiqueta: 'Red convenio', icono: Handshake },
+  // Con quién trabaja Accumedical. La sección está por construir; la entrada
+  // existe para reservarle su sitio, y su pantalla lo dice en vez de llevar a
+  // un error. Es del administrador.
+  // Su propia app (D49): se abre en pestaña nueva en pacientes.pymes.ec.
   { a: '/pacientes/dashboard', etiqueta: 'Pacientes Accumedical', icono: Briefcase },
 ]
 
@@ -52,21 +56,20 @@ const FAMILIAS = [
   [null, ''],
 ] as const
 
+// El grupo «Parámetros»: los catálogos que la propia gente mantiene, para no
+// necesitar una migración por cada valor nuevo. Lo lleva quien crea prestadores.
+const PARAMETROS: EntradaLateral[] = [
+  { a: '/admin/parametros/tipos-prestador', etiqueta: 'Tipo de prestador', icono: Stethoscope },
+]
 
 /**
- * Lo que ve cada función transversal. El servidor impone lo mismo en cada
- * request: esto solo evita enseñar puertas que estarían cerradas.
- *
- *   convenio     → la red de Accumedical, los prestadores con los que se pacta,
- *                  y las aseguradoras solo para entrar a su pestaña Convenios.
- *   contabilidad → únicamente aseguradoras: las da de alta y gestiona su ficha
- *                  entera menos los convenios.
+ * La app de cada función transversal (D50): Convenio → convenios.pymes.ec,
+ * Contabilidad → contabilidad.pymes.ec. Allí ven SOLO lo suyo; el servidor
+ * impone lo mismo en cada request con `require_funcion`.
  */
-const ENTRADAS_POR_FUNCION: Record<string, Set<string>> = {
-  // Desde D50 cada función tiene su app (el login la lleva allí); si entra a
-  // admin, solo ve el enlace a la suya.
-  convenio: new Set(['/convenios/dashboard']),
-  contabilidad: new Set(['/contabilidad/dashboard']),
+const APP_DE_FUNCION: Record<string, EntradaLateral> = {
+  convenio: { a: '/convenios/dashboard', etiqueta: 'Convenios', icono: Handshake },
+  contabilidad: { a: '/contabilidad/dashboard', etiqueta: 'Contabilidad', icono: Building2 },
 }
 
 /**
@@ -118,6 +121,21 @@ function GrupoAuditorias({ modulos }: { modulos: ModuloCatalogo[] }) {
   )
 }
 
+/** El grupo «Parámetros» del administrador (la función Convenio lo tiene en su app, D50). */
+function GrupoParametros() {
+  const ubicacion = useLocation()
+  return (
+    <GrupoMenu
+      etiqueta="Parámetros"
+      icono={SlidersHorizontal}
+      dentro={ubicacion.pathname.startsWith('/admin/parametros')}
+    >
+      {PARAMETROS.map((entrada) => (
+        <EntradaMenu key={entrada.a} {...entrada} anidada />
+      ))}
+    </GrupoMenu>
+  )
+}
 
 /**
  * El menú del armazón, que **no es «el del administrador»**: este armazón lo
@@ -144,13 +162,14 @@ function Navegacion() {
   // cualquier otra sesión sería un 403 seguro, así que va bajo bandera.
   const { data: catalogo } = useModulos(sesion?.user.es_admin_global ?? false)
 
-  const suyas = funcion ? ENTRADAS_POR_FUNCION[funcion] : undefined
-  if (suyas) {
+  // Las funciones transversales tienen SU app (D50) y el login las lleva allí.
+  // Si entran a admin, solo ven el enlace a la suya (pestaña nueva). El
+  // administrador, en cambio, conserva aquí todas las pantallas completas.
+  const app = funcion ? APP_DE_FUNCION[funcion] : undefined
+  if (app) {
     return (
       <nav aria-label="Navegación principal" className="flex flex-col gap-0.5">
-        {ENTRADAS.filter((e) => suyas.has(e.a)).map((entrada) => (
-          <EntradaMenu key={entrada.a} {...entrada} />
-        ))}
+        <EntradaMenu {...app} />
       </nav>
     )
   }
@@ -179,6 +198,7 @@ function Navegacion() {
           que se despliega en nada se lee como algo roto. */}
       {catalogo && catalogo.length > 0 && <GrupoAuditorias modulos={catalogo} />}
 
+      <GrupoParametros />
 
       <EntradaMenu a="/admin/usuarios" etiqueta="Usuarios" icono={Users} />
       <EntradaMenu a="/admin/notificaciones" etiqueta="Notificaciones" icono={Bell} />

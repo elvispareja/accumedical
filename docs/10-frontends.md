@@ -27,7 +27,8 @@ Las apps **Convenios** (`web/apps/convenios`, 5176) y **Contabilidad** (`web/app
   - `alcance`: recorta la ficha como la función (Convenios: solo la red; Contabilidad: todo menos la red), también para el administrador.
 - Puerta: `SoloFuncion` (función o administrador global). Armazón: `ArmazonApp` (compartido con Pacientes).
 - **Login propio:** `/login` en cualquier app propia → `IrAlLogin` → `admin.pymes.ec/login?volver=<url>`. El login muestra «Iniciar sesión en <App>» y vuelve allí. `dominios.volverSeguro` solo admite el origen de admin o el de una app conocida, para evitar la redirección abierta.
-- El login lleva a cada función a su app (`calcular_redireccion` → `/convenios/dashboard` o `/contabilidad/dashboard`). Las rutas de admin `/admin/aseguradoras…`, `/admin/prestadores…`, `/admin/red-convenio…` y `/admin/parametros…` redirigen a su app.
+- El login lleva a cada función a su app (`calcular_redireccion` → `/convenios/dashboard` o `/contabilidad/dashboard`).
+- **El administrador conserva en admin todas las pantallas completas** (aseguradoras con todas sus pestañas, prestadores, Red convenio, parámetros): las limitaciones son solo de las apps de función. Si alguien con función entra a admin, solo ve el enlace a su app.
 
 La app **Pacientes** (`web/apps/pacientes`, D49) sigue la misma forma: `web-pacientes` (5175), `PACIENTES_BASE`, `npm run dev:pacientes` / `build:pacientes` / `typecheck:pacientes`, raíz de `pacientes.pymes.ec`. No es un módulo de `modules`: su puerta es «solo personal de Accumedical» y su armazón es propio (`Armazon.tsx`).
 
