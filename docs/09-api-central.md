@@ -132,6 +132,25 @@ Con `REDES_EN_CENTRAL=true` (en el `.env` **y** en el compose de `api-central`),
 - `aseguradora_prestador` y `aseguradora_prestador_fc` quedan como historia: no se leen ni se escriben.
 - Pruebas: `scripts/equivalencia-redes.py` (cada pantalla leída local vs central, en memoria) y `scripts/probar-redes-central.py` (escrituras reales, que se deshacen al final).
 
+## Fichas de aseguradoras y prestadores: la central es la dueña (paso 5b)
+
+Con `FICHAS_EN_CENTRAL=true` (en el `.env` **y** en el compose de `api-central`), la central es la dueña de `aseguradoras`, `aseguradora_contactos`, `prestadores`, `prestador_contactos` y `prestador_sedes`. Estas tablas **se quedan aquí como espejo**: usuarios, casos de Concurrencia, pólizas, SLA… tienen llaves foráneas a ellas y las leen en muchas consultas, que no cambian.
+
+`app/shared/central/fichas.py`:
+
+1. **Central primero.** Un evento `after_flush` anota qué filas de esas tablas se escribieron, y en `before_commit` se publican en la central (`PUT /api/fichas/{entidad}`) con las mismas consultas de la réplica, leídas dentro de la transacción.
+   - Si la central no responde → **503**.
+   - Si la rechaza → **409/422**, con su motivo.
+   - En los dos casos **no se confirma nada aquí**.
+   - Cubre todas las pantallas sin tocarlas: ficha, contactos, sedes, logo, alta y baja.
+2. La réplica periódica ya no envía esas tablas.
+3. **Verificación del espejo** cada `CENTRAL_FICHAS_VERIFICAR_SEC` (300 s; lock `815_243_005`) y con `python -m app.cli verificar-fichas [--reparar]`.
+   - Compara fila a fila y trae de la central lo que difiera: **gana la central**.
+   - Las filas que solo existen aquí se informan; no se borran.
+4. Los eventos se registran al importar el módulo, cosa que hacen `app.main` y `app.cli`. Un proceso nuevo que escriba fichas debe importarlo también.
+
+Pruebas: `scripts/probar-fichas-central.py`. Los archivos de logo siguen en el volumen local; la central guarda la ruta.
+
 ## Documentos de la aseguradora en el almacén de la central (D2)
 
 Dos tipos de documentos (decisión del negocio):

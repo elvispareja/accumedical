@@ -173,6 +173,8 @@ _SIN_RED_PROPIA = {
 # Con REDES_EN_CENTRAL (paso 5a) la central es dueña de TODAS las redes: estas
 # entidades ya no se envían (la central, además, las ignoraría).
 _REDES = ("convenios", "convenio_fc")
+_FICHAS = ("aseguradoras", "aseguradora_contactos", "prestadores", "prestador_contactos",
+           "prestador_sedes")
 
 
 def _json(valor: Any) -> Any:
@@ -199,6 +201,8 @@ def replicar(db: Session, c: ClienteCentral, *, forzar: bool = False) -> dict[st
     for entidad, consulta in ENTIDADES:
         if settings.redes_en_central and entidad in _REDES:
             continue
+        if settings.fichas_en_central and entidad in _FICHAS:
+            continue  # paso 5b: se publican al guardar (fichas.py), no por réplica
         marca = db.get(CentralReplicacion, entidad) or CentralReplicacion(entidad=entidad)
         db.add(marca)
         if settings.red_propia_en_central:

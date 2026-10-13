@@ -36,6 +36,7 @@ from app.shared.auth import service as auth_service
 from app.shared.auth.router import router as auth_router
 from app.shared.catalogos.parametros import router as parametros_router
 from app.shared.catalogos.router import router as catalogos_router
+from app.shared.central import fichas as fichas_central
 from app.shared.configuracion.router import router as configuracion_router
 from app.shared.notificaciones.router import router as notificaciones_router
 from app.shared.prestadores.router import router as prestadores_router
@@ -76,6 +77,10 @@ LOCK_CENTRAL = 815_243_003
 # Réplica del núcleo (aseguradoras, prestadores, convenios, SLA, módulos
 # contratados) hacia la central. Solo si CENTRAL_PLATAFORMA_* está configurado.
 LOCK_REPLICACION = 815_243_004
+
+# Paso 5b: el espejo local de las fichas (aseguradoras, prestadores, contactos,
+# sedes) se compara con la central —su dueña— y se repara si difiere.
+LOCK_FICHAS = 815_243_005
 
 
 def _con_candado(clave: int, trabajo: Callable[[Session], None]) -> None:
@@ -189,6 +194,24 @@ def _replicar_central() -> None:
     _con_candado(LOCK_REPLICACION, trabajo)
 
 
+async def _fichas_periodica() -> None:
+    while True:
+        await asyncio.sleep(settings.central_fichas_verificar_sec)
+        try:
+            await asyncio.to_thread(_verificar_fichas)
+        except Exception:  # noqa: BLE001 - la tarea nunca debe tumbar la app
+            log.exception("central_fichas_fallo")
+
+
+def _verificar_fichas() -> None:
+    from app.core.central import cliente_plataforma
+
+    def trabajo(db: Session) -> None:
+        fichas_central.verificar(db, cliente_plataforma(), reparar=True)
+
+    _con_candado(LOCK_FICHAS, trabajo)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     log.info("arranque", environment=settings.environment, debug=settings.debug)
@@ -206,6 +229,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         tareas.append(asyncio.create_task(_replicacion_periodica()))
     if settings.central_configurada:
         tareas.append(asyncio.create_task(_central_periodica()))
+    if fichas_central.activo():
+        tareas.append(asyncio.create_task(_fichas_periodica()))
     log.info(
         "central",
         configurada=settings.central_configurada,

@@ -141,6 +141,12 @@ class Settings(BaseSettings):
     # prestador y Concurrencia leen y escriben allá; la réplica deja de enviar
     # convenios. Sin respaldo local. Requiere el mismo interruptor en la central.
     redes_en_central: bool = False
+    # Paso 5b: las fichas de aseguradoras y prestadores (con contactos y sedes)
+    # son de la central; aquí queda un ESPEJO que se escribe solo si la central
+    # aceptó antes el cambio (shared/central/fichas.py). Mismo interruptor en la central.
+    fichas_en_central: bool = False
+    # Cada cuánto se compara (y repara) el espejo de las fichas con la central.
+    central_fichas_verificar_sec: int = Field(default=300, ge=60)
     # Los documentos de la aseguradora (pólizas, cobertura, SLA, convenios) y los
     # listados de precios se guardan en el almacén cifrado de la central; aquí
     # queda la referencia `central:<id>`. Requiere CENTRAL_PLATAFORMA_*.

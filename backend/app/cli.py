@@ -8,6 +8,9 @@ import app.shared  # noqa: F401  (registra los modelos)
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.security import passwords
+
+# Registra los eventos «central primero» de las fichas (paso 5b): el CLI también confirma.
+from app.shared.central import fichas as fichas_central
 from app.shared.users.models import User
 
 AYUDA = """Comandos disponibles:
@@ -24,6 +27,9 @@ AYUDA = """Comandos disponibles:
   comparar-nucleo      Compara, con los datos reales, lo que Concurrencia obtiene de
                        su base (local) y de la API central: compañías, red, sedes,
                        SLA y validación de destino. Sale con 1 si hay diferencias.
+  verificar-fichas     Compara el espejo local de aseguradoras, prestadores, contactos
+                       y sedes con la central (su dueña, paso 5b). Con --reparar
+                       trae la versión de la central donde difiera.
   replicar-central     Replica el núcleo (aseguradoras, prestadores, convenios, SLA,
                        módulos contratados) en la central. Con --forzar reenvía
                        todo aunque no haya cambiado.
@@ -162,6 +168,20 @@ def comparar_nucleo() -> int:
     return 1 if diferencias else 0
 
 
+def verificar_fichas(reparar: bool) -> int:
+    if not settings.replicacion_central_configurada:
+        print("Falta CENTRAL_API_URL / CENTRAL_PLATAFORMA_CLIENT_*", file=sys.stderr)
+        return 2
+    from app.core.central import cliente_plataforma
+
+    with SessionLocal() as db:
+        resultado = fichas_central.verificar(db, cliente_plataforma(), reparar=reparar)
+    for entidad, r in resultado.items():
+        print(f"  {entidad:<24} {r}")
+    limpio = all(" 0 distintas · 0 faltan aquí · 0 solo aquí" in r for r in resultado.values())
+    return 0 if limpio or reparar else 1
+
+
 def replicar_central(forzar: bool) -> int:
     if not settings.replicacion_central_configurada:
         print(
@@ -265,6 +285,8 @@ def main() -> int:
         return migrar_documentos_central()
     if comando == "comparar-nucleo":
         return comparar_nucleo()
+    if comando == "verificar-fichas":
+        return verificar_fichas(reparar="--reparar" in sys.argv[2:])
     if comando == "replicar-central":
         return replicar_central(forzar="--forzar" in sys.argv[2:])
     print(f"Comando desconocido: {comando}\n\n{AYUDA}", file=sys.stderr)
