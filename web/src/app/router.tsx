@@ -45,7 +45,8 @@ export const router = createBrowserRouter([
         // volcado de pila crudo de React Router.
         errorElement: <ErrorPage />,
         children: [
-          { index: true, element: <Navigate to="/admin/aseguradoras" replace /> },
+          // La portada de admin desde D50: lo que queda en admin (aseguradoras se fue a Contabilidad).
+          { index: true, element: <Navigate to="/admin/usuarios" replace /> },
           // La bandeja del coordinador vive en SU área; esto es solo la puerta de
           // atrás para un enlace viejo.
           { path: 'bandeja', element: <Navigate to="/coordinacion/bandeja" replace /> },
