@@ -132,6 +132,10 @@ class Settings(BaseSettings):
     # «local» (tablas del núcleo, el comportamiento de siempre) o «central»
     # (la API; si falla, cae a local y lo avisa en el log). Ver docs/09.
     concurrencia_nucleo: Literal["local", "central"] = "local"
+    # La «Red convenio» de Accumedical (red de la ficha propia) vive en la API
+    # central: la pantalla lee y guarda allá y la réplica deja de enviarla.
+    # Requiere CENTRAL_PLATAFORMA_*. Sin respaldo local (ver shared/central/red_propia.py).
+    red_propia_en_central: bool = False
     central_intervalo_sec: int = Field(default=120, ge=30)
 
     # ── Bootstrap ────────────────────────────────────────────────────────────

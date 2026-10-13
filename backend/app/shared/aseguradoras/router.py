@@ -58,6 +58,7 @@ from app.shared.audit import service as audit
 from app.shared.auth import invitaciones
 from app.shared.auth import service as auth_service
 from app.shared.catalogos.models import Module
+from app.shared.central import red_propia
 
 # Las dependencias se crean UNA vez y se reutilizan —en el router y en los
 # endpoints que necesitan el `AuthContext`—: FastAPI cachea por identidad, así
@@ -613,6 +614,9 @@ async def subir_listado_precios(
     convenio.listado_precios_ruta = destino_rel
     convenio.listado_precios_nombre = visible
     convenio.updated_by = ctx.user.id
+    if red_propia.aplica(db, aseguradora_id):
+        # Red propia: el archivo queda aquí, su ficha (ruta y nombre) en la central.
+        red_propia.guardar_listado(convenio.id, destino_rel, visible, ctx.user.id)
 
     audit.registrar(
         db,

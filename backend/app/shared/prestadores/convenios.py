@@ -16,6 +16,7 @@ from app.shared.aseguradoras.models import (
     ConvenioFC,
 )
 from app.shared.catalogos.models import Ciudad
+from app.shared.central import red_propia
 
 # La relación aseguradora ↔ prestador NO es una M2M simple: es el convenio bajo el
 # que el prestador pertenece a la red de esa aseguradora, y lleva vigencia, código
@@ -25,6 +26,19 @@ from app.shared.catalogos.models import Ciudad
 
 def listar(db: DbSession, prestador_id: uuid.UUID) -> list[tuple[Any, ...]]:
     """Cada convenio junto con los datos de su aseguradora, que es lo que se pinta."""
+    if red_propia.activa():
+        # La red propia vive en la central: su convenio se pide allá y las filas
+        # viejas de aquí no se muestran.
+        locales = [
+            f for f in _listar_local(db, prestador_id)
+            if not red_propia.es_propia(db, f[0].aseguradora_id)
+        ]
+        filas = locales + red_propia.convenios_del_prestador(db, prestador_id)
+        return sorted(filas, key=lambda f: (f[1], str(f[0].id)))
+    return _listar_local(db, prestador_id)
+
+
+def _listar_local(db: DbSession, prestador_id: uuid.UUID) -> list[tuple[Any, ...]]:
     filas = db.execute(
         select(
             AseguradoraPrestador,
@@ -170,6 +184,9 @@ def obtener_convenio(
     El convenio, comprobando que sea de ESE prestador. Sin esa comprobación, el
     identificador de un convenio ajeno abriría los valores de otra compañía.
     """
+    propio = red_propia.obtener_convenio(db, prestador_id, convenio_id)
+    if propio is not None:
+        return propio
     fila = db.execute(
         select(AseguradoraPrestador, Aseguradora.razon_social)
         .join(Aseguradora, Aseguradora.id == AseguradoraPrestador.aseguradora_id)
@@ -227,6 +244,8 @@ def valor_derivado(base: Decimal | None, porcentaje: Decimal | None) -> Decimal 
 
 
 def fc_de(db: DbSession, convenio_id: uuid.UUID) -> list[ConvenioFC]:
+    if red_propia.es_convenio_propio(db, convenio_id):
+        return red_propia.fc_de(convenio_id)
     """Lo pactado, en el orden de la pantalla. Lista vacía = nada pactado aún."""
     filas = {
         fila.concepto: fila
@@ -328,6 +347,11 @@ def fijar_fc(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"«{nombre}» no es un porcentaje: no lleva concepto base",
             )
+
+    if red_propia.es_convenio_propio(db, convenio_id):
+        # Red propia: validado aquí con los mensajes de siempre, guardado en la central.
+        red_propia.fijar_fc(convenio_id, pedidos, autor)
+        return red_propia.fc_de(convenio_id)
 
     vivos = {
         fila.concepto: fila

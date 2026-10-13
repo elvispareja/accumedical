@@ -28,6 +28,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.core.central import CentralError, ClienteCentral
+from app.core.config import settings
 from app.shared.central.models import CentralReplicacion
 
 # (entidad en la central, SELECT en esta base con los nombres de la central).
@@ -142,6 +143,17 @@ ENTIDADES: list[tuple[str, str]] = [
 ]
 
 
+# Con RED_PROPIA_EN_CENTRAL la red de la ficha propia vive en la central: no se
+# replica (y la central, además, la ignora si llegara). Filtros literales.
+_SIN_RED_PROPIA = {
+    "convenios": " WHERE aseguradora_id NOT IN (SELECT id FROM aseguradoras WHERE es_propia)",
+    "convenio_fc": (
+        " WHERE convenio_id NOT IN (SELECT ap.id FROM aseguradora_prestador ap"
+        " JOIN aseguradoras a ON a.id = ap.aseguradora_id WHERE a.es_propia)"
+    ),
+}
+
+
 def _json(valor: Any) -> Any:
     if isinstance(valor, dt.datetime | dt.date):
         return valor.isoformat()
@@ -166,6 +178,8 @@ def replicar(db: Session, c: ClienteCentral, *, forzar: bool = False) -> dict[st
     for entidad, consulta in ENTIDADES:
         marca = db.get(CentralReplicacion, entidad) or CentralReplicacion(entidad=entidad)
         db.add(marca)
+        if settings.red_propia_en_central:
+            consulta += _SIN_RED_PROPIA.get(entidad, "")
         filas, huella = foto(db, consulta)
         if not forzar and marca.huella == huella and marca.ultimo_error is None:
             continue

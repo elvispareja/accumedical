@@ -16,6 +16,7 @@ from app.shared.aseguradoras.models import (
     AseguradoraSla,
 )
 from app.shared.catalogos.models import Ciudad, Module, Provincia, TipoPrestador
+from app.shared.central import red_propia
 from app.shared.contactos import service as contactos
 from app.shared.geo import prohibir_vaciar
 from app.shared.prestadores.models import Prestador
@@ -607,7 +608,10 @@ def convenios_de_aseguradora(db: DbSession, aseguradora_id: uuid.UUID) -> list[d
     TODOS los prestadores vivos, marcando cuáles tienen convenio vivo con esta
     aseguradora: la pestaña Convenios es elegir y marcar. El detalle del
     convenio (FC, vigencias, código contractual) se captura después.
+    La red propia de Accumedical se lee de la API central (`central.red_propia`).
     """
+    if red_propia.aplica(db, aseguradora_id):
+        return red_propia.convenios_de_aseguradora(aseguradora_id)
     vivos = {
         convenio.prestador_id: convenio
         for convenio in db.scalars(
@@ -771,6 +775,8 @@ def convenio_del_par(
     por el par —y no por un id suelto— impide abrir el convenio de otra
     compañía con un identificador ajeno.
     """
+    if red_propia.aplica(db, aseguradora_id):
+        return red_propia.convenio_del_par(aseguradora_id, prestador_id)
     convenio = db.scalar(
         select(AseguradoraPrestador).where(
             AseguradoraPrestador.aseguradora_id == aseguradora_id,
@@ -796,7 +802,10 @@ def fijar_convenios(
 
     Cada marcado trae además la red que cubre —privada, pública o las dos—, que
     se guarda en el alta y se puede corregir después desde la misma lista.
+    La red propia de Accumedical se guarda en la API central (`central.red_propia`).
     """
+    if red_propia.aplica(db, aseguradora_id):
+        return red_propia.fijar(aseguradora_id, seleccion, autor)
     redes = {
         fila["prestador_id"]: (bool(fila["red_privada"]), bool(fila["red_publica"]))
         for fila in seleccion

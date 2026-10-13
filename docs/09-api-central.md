@@ -98,3 +98,21 @@ La misma aplicación se sirve en varios subdominios y reparte sus rutas (`web/sr
 - Sin `VITE_URL_ADMIN` (desarrollo local) no hay reparto: todo en el mismo origen, como siempre.
 - Vite (dev) admite **un solo** host extra: `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=".pymes.ec"` (el punto cubre los subdominios).
 - `APP_BASE_URL=https://admin.pymes.ec`: los enlaces de invitación llevan al portal.
+
+## La Red convenio de Accumedical vive en la central (paso 4e)
+
+Con `RED_PROPIA_EN_CENTRAL=true`, la red de la ficha propia (`aseguradoras.es_propia`) **es de la central**: ya no es réplica.
+
+| Operación | Dónde se resuelve (`app/shared/central/red_propia.py`) |
+|---|---|
+| Lista de prestadores con casillas (`aseguradoras/service.convenios_de_aseguradora`) | central: prestadores + convenios vivos (`?estado=todos`) |
+| Guardar la selección (`fijar_convenios`) | `PUT /api/aseguradoras/{id}/red` |
+| Convenio del par / listado de precios | convenios de la central; el **archivo** sigue en el volumen de subidas y su ruta/nombre se guardan con `PATCH /api/convenios/{id}/listado` |
+| Valores FC (`prestadores/convenios.fc_de`, `fijar_fc`, `obtener_convenio`) | `GET /api/convenios/{id}` y `PUT /api/convenios/{id}/fc` (las reglas y mensajes se validan antes, aquí) |
+| Mapa de la red (`prestadores/service.puntos_del_mapa`) | prestadores en la red según la central |
+| Convenios en la ficha del prestador (`convenios.listar`) | los de la red propia, de la central; los demás, locales |
+
+- **Sin respaldo local**: si la central no responde → 503 «la Red convenio no está disponible». Escribir aquí mientras tanto crearía dos versiones de la red.
+- La réplica deja de enviar la red propia (`_SIN_RED_PROPIA`), y la central la ignora aunque llegue.
+- Las filas viejas de la red propia en `aseguradora_prestador` quedan como historia y no se vuelven a leer.
+- Las redes de las **demás** aseguradoras siguen aquí y se replican como antes.
