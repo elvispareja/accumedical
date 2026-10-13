@@ -49,3 +49,16 @@ export function destinoEnOtroDominio(ruta: string, resto = ''): string | null {
   if (!origen || origen === window.location.origin) return null
   return `${origen}${ruta}${resto}`
 }
+
+/**
+ * Si esta ruta es de un MÓDULO servido en otro subdominio, su URL completa; si
+ * no, null. Es lo que el menú de admin abre en una PESTAÑA NUEVA (p. ej. las
+ * auditorías de Concurrencia desde admin.pymes.ec): admin queda abierto donde
+ * estaba. El sentido contrario (de un módulo hacia admin) sigue en la misma
+ * pestaña, como siempre.
+ */
+export function destinoDeModuloEnOtraPestana(ruta: string): string | null {
+  const origen = origenDe(ruta)
+  if (!origen || origen === ADMIN || origen === window.location.origin) return null
+  return `${origen}${ruta}`
+}

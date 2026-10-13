@@ -1,9 +1,10 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { ChevronDown, ChevronsLeft, Menu, X, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronsLeft, ExternalLink, Menu, X, type LucideIcon } from 'lucide-react'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 
 import { Marca } from '@/core/components/Marca'
+import { destinoDeModuloEnOtraPestana } from '@/core/dominios'
 import { useMenuLateral } from '@/core/layout/preferenciaMenu'
 import { cn } from '@/lib/utils'
 import { Boton } from '@/shared/components/ui/button'
@@ -41,6 +42,37 @@ export function EntradaMenu({
   fin = false,
 }: EntradaLateral & { anidada?: boolean; fin?: boolean }) {
   const { compacto, alNavegar } = useContextoMenu()
+  // Un módulo en otro subdominio (p. ej. Concurrencia desde admin) se abre en una
+  // pestaña nueva: es otra aplicación, y admin queda donde estaba. La sesión
+  // viaja con la cookie del dominio padre, así que se llega ya dentro.
+  const externo = destinoDeModuloEnOtraPestana(a)
+  if (externo) {
+    return (
+      <a
+        href={externo}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={alNavegar}
+        title={`${etiqueta} (se abre en una pestaña nueva)`}
+        aria-label={`${etiqueta}, se abre en una pestaña nueva`}
+        className={cn(
+          'group relative flex items-center gap-3 overflow-hidden whitespace-nowrap rounded py-2.5',
+          'font-display text-sm font-medium transition-colors duration-150 ease-natural',
+          compacto ? 'justify-center px-2' : 'px-3',
+          anidada && !compacto && 'ml-4',
+          'text-tenue-fg hover:bg-tenue hover:text-tinta',
+        )}
+      >
+        <Icono className="size-4 shrink-0" aria-hidden="true" />
+        {!compacto && (
+          <>
+            <span className="truncate">{etiqueta}</span>
+            <ExternalLink className="ml-auto size-3.5 shrink-0 opacity-60" aria-hidden="true" />
+          </>
+        )}
+      </a>
+    )
+  }
   return (
     <NavLink
       to={a}
