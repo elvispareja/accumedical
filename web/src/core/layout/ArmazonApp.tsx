@@ -7,6 +7,7 @@ import { cerrarSesion } from '@/core/auth/api'
 import { useSesion } from '@/core/auth/useSesion'
 import { BotonTema } from '@/core/components/BotonTema'
 import { ArmazonLateral, EntradaMenu } from '@/core/layout/MenuLateral'
+import { SinAccesoApp } from '@/core/pages/SinAccesoApp'
 import { Boton } from '@/shared/components/ui/button'
 
 export interface EntradaApp {
@@ -98,18 +99,6 @@ export function SoloFuncion({
 }) {
   const { data: sesion } = useSesion()
   if (!sesion) return null
-  if (!sesion.user.es_admin_global && sesion.user.funcion !== funcion) {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-fondo px-6 text-center">
-        <div className="max-w-sm">
-          <h1 className="font-display text-lg font-semibold">Sin acceso a {nombre}</h1>
-          <p className="mt-2 text-sm text-tenue-fg">
-            Esta aplicación es de quien lleva la función de {nombre.toLowerCase()} en Accumedical.
-            Si la necesitas, pídesela al administrador.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  if (!sesion.user.es_admin_global && sesion.user.funcion !== funcion) return <SinAccesoApp app={nombre} />
   return <>{children}</>
 }

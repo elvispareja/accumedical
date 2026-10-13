@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Navigate, useLocation, useParams } from 'react-router-dom'
 
 import { useSesion } from '@/core/auth/useSesion'
+import { SinAccesoApp } from '@/core/pages/SinAccesoApp'
 
 /**
  * Comprueba que el módulo de la RUTA esté entre los del usuario.
@@ -11,8 +12,9 @@ import { useSesion } from '@/core/auth/useSesion'
  * `user_module_access` y sin cachear, de modo que revocar un acceso surte efecto
  * al instante aunque esta pantalla siga abierta.
  *
- * Un slug desconocido y uno sin permiso llevan al mismo sitio a propósito: así
- * la interfaz tampoco delata qué módulos existen.
+ * Sin el módulo, la app no se abre: aviso «No tienes acceso» (D52). Con un
+ * subdominio por app, el nombre de la app ya está a la vista; ocultarlo no
+ * protegía nada.
  */
 export function RequireModule({ children, slug: fijo }: { children: ReactNode; slug?: string }) {
   // La ruta de un módulo con pantallas propias es estática (`/concurrencia`),
@@ -35,10 +37,9 @@ export function RequireModule({ children, slug: fijo }: { children: ReactNode; s
   }
 
   if (!sesion) return <Navigate to="/login" replace />
-  if (sesion.modulos.length === 0) return <Navigate to="/sin-accesos" replace />
-  if (!sesion.modulos.some((m) => m.slug === slug)) {
-    return <Navigate to="/seleccionar-modulo" replace />
-  }
+  // Cada app es independiente (D52): sin el módulo, no se entra. Ni selector de
+  // módulos ni otra puerta: un aviso claro y nada más.
+  if (!sesion.modulos.some((m) => m.slug === slug)) return <SinAccesoApp />
 
   return <>{children}</>
 }

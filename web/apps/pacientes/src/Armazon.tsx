@@ -7,6 +7,7 @@ import { cerrarSesion } from '@/core/auth/api'
 import { useSesion } from '@/core/auth/useSesion'
 import { BotonTema } from '@/core/components/BotonTema'
 import { ArmazonLateral, EntradaMenu } from '@/core/layout/MenuLateral'
+import { SinAccesoApp } from '@/core/pages/SinAccesoApp'
 import { Boton } from '@/shared/components/ui/button'
 
 /** El armazón de la app Pacientes: su menú (solo lo suyo, D47) y la barra de arriba. */
@@ -65,18 +66,7 @@ export function Armazon() {
 export function SoloAccumedical({ children }: { children: ReactNode }) {
   const { data: sesion } = useSesion()
   if (!sesion) return null
-  if (sesion.aseguradora) {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-fondo px-6 text-center">
-        <div className="max-w-sm">
-          <h1 className="font-display text-lg font-semibold">Solo para el personal de Accumedical</h1>
-          <p className="mt-2 text-sm text-tenue-fg">
-            El registro de pacientes reúne a las personas de todas las compañías, así que no
-            está disponible para usuarios de aseguradoras.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  // Las aseguradoras no entran: el registro reúne a las personas de todas.
+  if (sesion.aseguradora) return <SinAccesoApp app="Pacientes" />
   return <>{children}</>
 }
