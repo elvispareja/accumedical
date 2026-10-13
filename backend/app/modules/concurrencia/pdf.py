@@ -100,8 +100,9 @@ def _en_secciones(texto: str) -> list[tuple[str, list[str]]]:
         if clave.startswith("INFORME DE VISITA"):
             continue
         if clave.startswith("RESPONSABLE DE AUDITORIA"):
-            # La firma —que el sistema añade al final— va en el pie de cada
-            # página con el nombre real: de aquí en adelante no hay contenido.
+            # La línea de responsable que añade el sistema no sale en el PDF:
+            # lo firma la firma electrónica (sello QR). De aquí en adelante no
+            # hay contenido.
             break
         if actual is None:
             if linea.strip():
@@ -263,7 +264,7 @@ def _caja_analisis(lineas: list[str], est: dict) -> Table:
     return caja
 
 
-def generar_pdf(informe: str, codigo_interno: str, auditor: str) -> InformePdf:
+def generar_pdf(informe: str, codigo_interno: str) -> InformePdf:
     est = _estilos()
     buffer = io.BytesIO()
 
@@ -291,16 +292,12 @@ def generar_pdf(informe: str, codigo_interno: str, auditor: str) -> InformePdf:
             ancho - 16 * mm, alto - 17 * mm, f"Auditoría médica concurrente · {codigo_interno}"
         )
 
-        # El pie: la firma real y la página.
+        # El pie: solo la página (la firma es el sello QR del final).
         canvas.setStrokeColor(LINEA)
         canvas.setLineWidth(0.6)
         canvas.line(16 * mm, 14 * mm, ancho - 16 * mm, 14 * mm)
         canvas.setFillColor(TENUE)
         canvas.setFont("Helvetica", 7.6)
-        canvas.drawString(
-            16 * mm, 9.5 * mm,
-            f"Responsable de Auditoría Concurrente: {auditor} / Médico Auditor",
-        )
         canvas.drawRightString(ancho - 16 * mm, 9.5 * mm, f"Accumedical · Página {doc.page}")
         canvas.restoreState()
 

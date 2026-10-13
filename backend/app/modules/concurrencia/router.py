@@ -1056,16 +1056,14 @@ def corregir_informe(
 
 def _pdf_del_caso(db: DbSession, visita) -> bytes:
     """
-    El informe vigente como PDF, con la firma del auditor real y —si el
-    certificado de la empresa está configurado— la firma electrónica PAdES.
+    El informe vigente como PDF con —si el certificado de la empresa está
+    configurado— la firma electrónica PAdES y su sello QR.
     Todos los PDF del informe salen por aquí, así que todos salen firmados.
     Sin informe, 404.
     """
     if not visita.informe:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="El caso aún no tiene informe")
-    auditor = service.nucleo.usuario(db, visita.auditor_id)
-    nombre = personas.de_fila(auditor) if auditor else "—"
-    informe = informe_pdf.generar_pdf(visita.informe, visita.codigo_interno, nombre)
+    informe = informe_pdf.generar_pdf(visita.informe, visita.codigo_interno)
     return firma.firmar(informe.contenido, caja=informe.caja_sello)
 
 
