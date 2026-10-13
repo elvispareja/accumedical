@@ -175,7 +175,8 @@ _SIN_RED_PROPIA = {
 _REDES = ("convenios", "convenio_fc")
 _FICHAS = ("aseguradoras", "aseguradora_contactos", "prestadores", "prestador_contactos",
            "prestador_sedes", "aseguradora_aplicaciones", "aseguradora_sla",
-           "aseguradora_coberturas")
+           "aseguradora_coberturas", "usuarios", "usuario_aplicaciones", "usuario_grupos",
+           "usuario_coordinaciones")
 
 
 def _json(valor: Any) -> Any:

@@ -31,7 +31,7 @@ from itertools import chain
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import event, text
+from sqlalchemy import event, inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.central import CentralError, ClienteCentral, cliente_plataforma
@@ -46,17 +46,33 @@ from app.shared.aseguradoras.models import (
 )
 from app.shared.central import replicacion
 from app.shared.prestadores.models import Prestador, PrestadorContacto, PrestadorSede
+from app.shared.users.models import (
+    User,
+    UserAseguradoraCoordinador,
+    UserGrupoAccess,
+    UserModuleAccess,
+)
 
 
 class _Ficha:
     """Cómo se publica y se repara cada tabla."""
 
     def __init__(self, tabla: str, filtro: str, llave: tuple[str, ...],
-                 renombres: dict[str, str] | None = None) -> None:
+                 renombres: dict[str, str] | None = None, *,
+                 perfil: frozenset[str] | None = None, ignorar: tuple[str, ...] = (),
+                 solo_actualizar: bool = False, actualizar_sql: str | None = None) -> None:
         self.tabla = tabla  # tabla local
         self.filtro = filtro  # columna por la que se eligen las filas a publicar
         self.llave = llave  # llave primaria, con los nombres de la CENTRAL
         self.renombres = renombres or {}  # nombre en la central → columna local
+        # Solo estos atributos (del modelo local) obligan a publicar una fila MODIFICADA;
+        # None = cualquiera. Así un login (último acceso, intentos) no pasa por la central.
+        self.perfil = perfil
+        self.ignorar = ignorar  # columnas (de la central) que no cuentan al comparar
+        # Reparar solo actualiza filas existentes: la central no guarda todo lo que
+        # una fila local necesita (contraseña, quién otorgó un acceso…).
+        self.solo_actualizar = solo_actualizar
+        self.actualizar_sql = actualizar_sql  # UPDATE a medida (p. ej. traducir el rol)
 
 
 _APP = {"aplicacion_codigo": "module_code"}
@@ -76,6 +92,38 @@ FICHAS: dict[str, _Ficha] = {
         "aseguradora_coberturas", "aseguradora_id",
         ("aseguradora_id", "aplicacion_codigo", "cobertura_codigo"), _APP),
 }
+# Paso 5d: el directorio de usuarios y sus accesos. NUNCA credenciales: las
+# consultas de la réplica no leen contraseña, MFA ni bloqueos, y un login (que
+# toca último acceso, intentos, `updated_at`) no se publica: entrar a la
+# plataforma no depende de la central.
+_PERFIL_USUARIO = frozenset({
+    "email", "nombre_principal", "nombre_secundario", "apellido_paterno", "apellido_materno",
+    "telefono", "provincia_codigo", "ciudad_codigo", "is_superadmin", "aseguradora_id",
+    "is_active", "deleted_at",
+})
+_USUARIO = {"usuario_id": "user_id"}
+FICHAS.update({
+    "usuarios": _Ficha(
+        "users", "id", ("id",), {"es_superadmin": "is_superadmin", "activo": "is_active"},
+        perfil=_PERFIL_USUARIO, ignorar=("updated_at",), solo_actualizar=True),
+    "usuario_aplicaciones": _Ficha(
+        "user_module_access", "user_id", ("id",), {**_USUARIO, **_APP},
+        ignorar=("rol_activo",), solo_actualizar=True,
+        # La central guarda el CÓDIGO del rol; aquí es el id de `roles` de ese módulo.
+        actualizar_sql=(
+            "UPDATE user_module_access SET user_id = CAST(:usuario_id AS uuid),"
+            " module_code = CAST(:aplicacion_codigo AS varchar),"
+            " role_id = COALESCE((SELECT r.id FROM roles r"
+            " WHERE r.module_code = CAST(:aplicacion_codigo AS varchar)"
+            " AND r.code = CAST(:rol_codigo AS varchar)), role_id),"
+            " activo = CAST(:activo AS boolean), updated_at = CAST(:updated_at AS timestamptz)"
+            " WHERE id = CAST(:id AS uuid)"
+        )),
+    "usuario_grupos": _Ficha("user_grupo_access", "user_id", ("id",), _USUARIO,
+                             solo_actualizar=True),
+    "usuario_coordinaciones": _Ficha("user_aseguradora_coordinador", "user_id", ("id",),
+                                     _USUARIO, solo_actualizar=True),
+})
 ORDEN = tuple(FICHAS)
 _POR_MODELO = {
     Aseguradora: "aseguradoras",
@@ -86,6 +134,10 @@ _POR_MODELO = {
     AseguradoraModulo: "aseguradora_aplicaciones",
     AseguradoraSla: "aseguradora_sla",
     AseguradoraCobertura: "aseguradora_coberturas",
+    User: "usuarios",
+    UserModuleAccess: "usuario_aplicaciones",
+    UserGrupoAccess: "usuario_grupos",
+    UserAseguradoraCoordinador: "usuario_coordinaciones",
 }
 _CONSULTA = {nombre: consulta for nombre, consulta in replicacion.ENTIDADES if nombre in ORDEN}
 _TOCADAS = "fichas_tocadas"
@@ -106,9 +158,20 @@ def _anotar(sesion: Session, _contexto: Any) -> None:
         return
     for obj in chain(sesion.new, sesion.dirty, sesion.deleted):
         nombre = _POR_MODELO.get(type(obj))
-        if nombre is not None and (obj not in sesion.dirty or sesion.is_modified(obj)):
-            valor = getattr(obj, FICHAS[nombre].filtro)
-            sesion.info.setdefault(_TOCADAS, set()).add((nombre, valor))
+        if nombre is None:
+            continue
+        if obj in sesion.dirty and obj not in sesion.new:
+            perfil = FICHAS[nombre].perfil
+            estado = inspect(obj)
+            cambio = (
+                sesion.is_modified(obj)
+                if perfil is None
+                else any(estado.attrs[a].history.has_changes() for a in perfil)
+            )
+            if not cambio:
+                continue
+        valor = getattr(obj, FICHAS[nombre].filtro)
+        sesion.info.setdefault(_TOCADAS, set()).add((nombre, valor))
 
 
 @event.listens_for(Session, "before_commit")
@@ -165,8 +228,9 @@ def publicar(sesion: Session, c: ClienteCentral, tocadas: set[tuple[str, uuid.UU
 
 
 # ── 3. Verificar (y reparar) el espejo ───────────────────────────────────────
-def _canon(fila: dict[str, Any]) -> str:
-    return json.dumps(fila, sort_keys=True, ensure_ascii=False)
+def _canon(fila: dict[str, Any], ignorar: tuple[str, ...] = ()) -> str:
+    return json.dumps({k: v for k, v in fila.items() if k not in ignorar},
+                      sort_keys=True, ensure_ascii=False)
 
 
 def verificar(sesion: Session, c: ClienteCentral, *, reparar: bool = False) -> dict[str, str]:
@@ -184,17 +248,20 @@ def verificar(sesion: Session, c: ClienteCentral, *, reparar: bool = False) -> d
         llave = FICHAS[entidad].llave
         locales = {tuple(f[c] for c in llave): f for f in _filas(sesion, entidad, None)}
         centrales = {tuple(f[c] for c in llave): f for f in remotas}
+        ignorar = FICHAS[entidad].ignorar
         distintas = [
-            i for i in centrales if i in locales and _canon(locales[i]) != _canon(centrales[i])
+            i for i in centrales
+            if i in locales and _canon(locales[i], ignorar) != _canon(centrales[i], ignorar)
         ]
         faltan = [i for i in centrales if i not in locales]
         sobran = [i for i in locales if i not in centrales]
-        if reparar and (distintas or faltan):
-            _traer(sesion, entidad, [centrales[i] for i in distintas + faltan])
+        traer = distintas if FICHAS[entidad].solo_actualizar else distintas + faltan
+        if reparar and traer:
+            _traer(sesion, entidad, [centrales[i] for i in traer])
         resultado[entidad] = (
             f"{len(centrales)} en la central · {len(distintas)} distintas · "
             f"{len(faltan)} faltan aquí · {len(sobran)} solo aquí"
-            + (" · reparado" if reparar and (distintas or faltan) else "")
+            + (" · reparado" if reparar and traer else "")
         )
         if distintas or faltan or sobran:
             log.warning("fichas_espejo_diferente", entidad=entidad, distintas=len(distintas),
@@ -205,14 +272,23 @@ def verificar(sesion: Session, c: ClienteCentral, *, reparar: bool = False) -> d
 def _traer(sesion: Session, entidad: str, filas: list[dict[str, Any]]) -> None:
     """UPSERT local de filas de la central, SIN volver a publicarlas."""
     ficha = FICHAS[entidad]
-    local = {c: ficha.renombres.get(c, c) for c in filas[0]}  # central → columna local
+    local = {  # columna de la central → columna local (sin las que solo informan)
+        c: ficha.renombres.get(c, c) for c in filas[0] if c not in ficha.ignorar
+    }
     llave = [ficha.renombres.get(c, c) for c in ficha.llave]
-    asignar = ", ".join(f"{col} = EXCLUDED.{col}" for col in local.values() if col not in llave)
-    sql = text(
-        f"INSERT INTO {ficha.tabla} ({', '.join(local.values())}) "  # noqa: S608 - nombres fijos
-        f"VALUES ({', '.join(':' + c for c in local)}) "
-        f"ON CONFLICT ({', '.join(llave)}) DO UPDATE SET {asignar}"
-    )
+    if ficha.actualizar_sql:
+        sql = text(ficha.actualizar_sql)
+    elif ficha.solo_actualizar:
+        asignar = ", ".join(f"{local[c]} = :{c}" for c in local if local[c] not in llave)
+        donde = " AND ".join(f"{ficha.renombres.get(c, c)} = :{c}" for c in ficha.llave)
+        sql = text(f"UPDATE {ficha.tabla} SET {asignar} WHERE {donde}")  # noqa: S608
+    else:
+        asignar = ", ".join(f"{col} = EXCLUDED.{col}" for col in local.values() if col not in llave)
+        sql = text(
+            f"INSERT INTO {ficha.tabla} ({', '.join(local.values())}) "  # noqa: S608 - nombres fijos
+            f"VALUES ({', '.join(':' + c for c in local)}) "
+            f"ON CONFLICT ({', '.join(llave)}) DO UPDATE SET {asignar}"
+        )
     sesion.info[SIN_PUBLICAR] = True
     try:
         for fila in filas:

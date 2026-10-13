@@ -154,6 +154,14 @@ Con `FICHAS_EN_CENTRAL=true` (en el `.env` **y** en el compose de `api-central`)
 - La reparación renombra `aplicacion_codigo` → `module_code`.
 - Concurrencia lee el SLA de la central; su respaldo local es ahora el espejo, que solo cambia después de que la central acepta.
 
+**Paso 5d:** el mismo mecanismo cubre el **directorio de usuarios y sus accesos**: `users`, `user_module_access`, `user_grupo_access` y `user_aseguradora_coordinador`.
+- **El registro y el inicio de sesión siguen en `admin.pymes.ec`.** Las contraseñas, el MFA y los bloqueos nunca salen de aquí: las consultas no los leen y la central no tiene columnas para ellos.
+- **Un login no pasa por la central.** Solo se publica un usuario modificado si cambió su **perfil** (`_PERFIL_USUARIO`: nombre, correo, teléfono, ubicación, superadmin, aseguradora, activo, baja); su `updated_at` no cuenta al comparar.
+  - Con la central caída se puede entrar, pero no editar perfiles ni accesos (503 con el motivo).
+- La reparación de estas tablas **solo actualiza** filas existentes: la central no guarda contraseña ni quién otorgó un acceso.
+  - El rol de un acceso se traduce de código (central) a id de `roles` (aquí).
+- Quedan locales, porque la central aún no las tiene: `user_funcion` y `user_cobertura_access`.
+
 Pruebas: `scripts/probar-fichas-central.py`. Los archivos de logo siguen en el volumen local; la central guarda la ruta.
 
 ## Documentos de la aseguradora en el almacén de la central (D2)
