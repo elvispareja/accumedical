@@ -1,5 +1,7 @@
 import { useLocation } from 'react-router-dom'
 
+import { destinoEnOtroDominio } from '@/core/dominios'
+
 const CLAVE = 'accumedical:salto-entre-apps'
 
 /**
@@ -17,6 +19,13 @@ const CLAVE = 'accumedical:salto-entre-apps'
  */
 export function IrAOtraApp() {
   const { pathname, search, hash } = useLocation()
+  // Con subdominios, la otra app está en otro origen (p. ej. desde
+  // concurrencia.pymes.ec, `/admin/…` es de admin.pymes.ec).
+  const otroDominio = destinoEnOtroDominio(pathname, `${search}${hash}`)
+  if (otroDominio) {
+    window.location.replace(otroDominio)
+    return null
+  }
   const destino = `${pathname}${search}${hash}`
   let repetido = false
   try {

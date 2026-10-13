@@ -57,7 +57,7 @@ function mensajeDeError(error: unknown, porDefecto: string): string {
  * estado, **rango de fechas** y solo los que están sin asignar.
  *
  * La misma pantalla sirve al coordinador de plataforma y al administrador
- * global, que entra al módulo como él (D45), en `/concurrencia`.
+ * global, que entra al módulo como él (D45).
  */
 export function SupervisionPage() {
   const toast = useToast()
@@ -78,7 +78,7 @@ export function SupervisionPage() {
 
   // El caso se abre siempre en el módulo: el administrador global entra como
   // coordinador de plataforma (D45), con la misma ruta que él.
-  const rutaDelCaso = (id: string) => `/concurrencia/supervision/${id}`
+  const rutaDelCaso = (id: string) => `/supervision/${id}`
 
   // Una notificación vieja llega como `?caso=<id>`: se redirige a la página del
   // caso. Las nuevas ya apuntan ahí directamente; esto es solo la puerta de
@@ -177,7 +177,7 @@ export function SupervisionPage() {
           </p>
         </div>
         <Link
-          to="/concurrencia/programar"
+          to="/programar"
           className="inline-flex h-10 items-center gap-2 rounded bg-marca px-4 text-sm font-medium text-marca-fg transition-opacity duration-150 hover:opacity-90"
         >
           <Plus className="size-4" aria-hidden="true" />

@@ -55,7 +55,7 @@ function formatoLargo(fecha: Date): string {
     minute: '2-digit',
   }).format(fecha)
 }
-const BANDEJA = '/concurrencia'
+const BANDEJA = '/dashboard'
 
 /**
  * La casa matriz no es una sede: en la base es `sede_id` nulo. Aquí necesita un
@@ -241,7 +241,7 @@ export function VisitaFormPage({
 
   // A dónde se vuelve: la bandeja de compañía, o la pantalla de supervisión
   // (/concurrencia/dashboard).
-  const volverA = supervision ? '/concurrencia/dashboard' : BANDEJA
+  const volverA = supervision ? '/dashboard' : BANDEJA
   const [aseguradoraId, setAseguradoraId] = useState('')
   const aseguradoras = useQuery({
     queryKey: ['concurrencia', 'supervision-aseguradoras'],

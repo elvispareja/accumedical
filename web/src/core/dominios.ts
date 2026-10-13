@@ -4,8 +4,8 @@
  *   VITE_URL_ADMIN      p. ej. https://admin.pymes.ec — login, administración,
  *                       coordinación y todo lo que no sea de un módulo.
  *   VITE_URLS_MODULOS   JSON slug → URL, p. ej. {"concurrencia":"https://concurrencia.pymes.ec"}.
- *                       De ese dominio son las rutas `/<slug>/…` y la
- *                       supervisión del admin `/admin/auditorias/<slug>/…`.
+ *                       De ese dominio son las rutas lógicas `/<slug>/…`; en su
+ *                       subdominio el prefijo `/<slug>` se quita (lo dice el subdominio).
  *
  * Sin VITE_URL_ADMIN (desarrollo local) no hay reparto: todo vive en el mismo
  * origen, como siempre. La sesión se comparte entre subdominios porque el
@@ -34,20 +34,36 @@ function esDe(ruta: string, prefijo: string): boolean {
   return ruta === prefijo || ruta.startsWith(`${prefijo}/`)
 }
 
+/** El slug del módulo con subdominio propio al que pertenece esta ruta lógica. */
+function moduloDe(ruta: string): string | null {
+  return Object.keys(MODULOS).find((slug) => esDe(ruta, `/${slug}`)) ?? null
+}
+
 /** El origen (https://…) que debe servir esta ruta, o null si es indiferente. */
 export function origenDe(ruta: string): string | null {
   if (!ADMIN) return null
-  for (const [slug, url] of Object.entries(MODULOS)) {
-    if (esDe(ruta, `/${slug}`) || esDe(ruta, `/admin/auditorias/${slug}`)) return url
-  }
-  return ADMIN
+  const slug = moduloDe(ruta)
+  return slug ? (MODULOS[slug] ?? ADMIN) : ADMIN
+}
+
+/**
+ * La dirección REAL de una ruta lógica. En toda la plataforma (avisos guardados,
+ * menús, la redirección del login) un caso se nombra `/concurrencia/…`; en su
+ * subdominio ese prefijo sobra, porque el subdominio ya lo dice (pedido del
+ * usuario): `/concurrencia/supervision/7` → `https://concurrencia.pymes.ec/supervision/7`.
+ */
+function urlReal(origen: string, ruta: string, resto = ''): string {
+  const slug = moduloDe(ruta)
+  const enSuSubdominio = slug && MODULOS[slug] === origen
+  const camino = enSuSubdominio ? ruta.slice(slug.length + 1) || '/' : ruta
+  return `${origen}${camino}${resto}`
 }
 
 /** La URL completa a la que hay que ir si esta ruta no es de este dominio; si no, null. */
 export function destinoEnOtroDominio(ruta: string, resto = ''): string | null {
   const origen = origenDe(ruta)
   if (!origen || origen === window.location.origin) return null
-  return `${origen}${ruta}${resto}`
+  return urlReal(origen, ruta, resto)
 }
 
 /**
@@ -60,5 +76,5 @@ export function destinoEnOtroDominio(ruta: string, resto = ''): string | null {
 export function destinoDeModuloEnOtraPestana(ruta: string): string | null {
   const origen = origenDe(ruta)
   if (!origen || origen === ADMIN || origen === window.location.origin) return null
-  return `${origen}${ruta}`
+  return urlReal(origen, ruta)
 }

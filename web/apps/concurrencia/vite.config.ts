@@ -6,8 +6,8 @@ import { defineConfig } from 'vite'
 
 /**
  * La app de CONCURRENCIA, con su propio frontend (D46): su build, su CSS y su
- * contenedor. Se sirve bajo `/concurrencia/` —las mismas direcciones de
- * siempre— y nginx de la app enruta ese prefijo aquí; el resto es de admin.
+ * contenedor. En su subdominio se sirve en la raíz (nginx de la app le da todo
+ * `concurrencia.*`); en local, bajo `/concurrencia/`. El resto es de admin.
  *
  *   `@/…`             código COMPARTIDO de la plataforma (web/src: sesión,
  *                     cliente de la API, armazón, componentes base).
@@ -22,7 +22,9 @@ const puertoHmrCliente = process.env.VITE_HMR_CLIENT_PORT
 
 export default defineConfig({
   root: __dirname,
-  base: '/concurrencia/',
+  // En su subdominio la app vive en la RAÍZ (`CONCURRENCIA_BASE=/`, D48):
+  // concurrencia.pymes.ec/dashboard. En local, sin subdominios, bajo /concurrencia/.
+  base: process.env.CONCURRENCIA_BASE ?? '/concurrencia/',
   // El favicon y los fondos comunes salen del mismo sitio que en admin.
   publicDir: path.join(raiz, 'public'),
   cacheDir: path.join(raiz, 'node_modules/.vite-concurrencia'),

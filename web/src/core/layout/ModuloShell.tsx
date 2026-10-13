@@ -30,10 +30,14 @@ function porAbecedario(modulos: ModuloDelUsuario[]): ModuloDelUsuario[] {
  * `modules/<slug>/routes.tsx`; los que todavía no tienen pantallas cuelgan del
  * marcador de posición `ModuloPendiente`.
  */
-export function ModuloShell() {
+export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; raiz?: string } = {}) {
+  // Un módulo con APP PROPIA (D46) pasa su slug y su raíz: allí las rutas son
+  // relativas a la app (`/dashboard`, sin `/<slug>`), así que la dirección no
+  // dice de qué módulo es. Los que viven dentro de admin lo sacan de la ruta.
   const { slug: parametro } = useParams<{ slug: string }>()
   const { pathname } = useLocation()
-  const slug = parametro ?? pathname.split('/')[1]
+  const slug = fijo ?? parametro ?? pathname.split('/')[1]
+  const raiz = raizFija ?? `/${slug ?? ''}`
   const { data: sesion } = useSesion()
   const navegar = useNavigate()
   const queryClient = useQueryClient()
@@ -50,7 +54,7 @@ export function ModuloShell() {
     mutationFn: cambiarModulo,
     onSuccess: (sesionNueva, destino) => {
       queryClient.setQueryData(CLAVE_SESION, sesionNueva)
-      if (destino !== slug) navegar(`/${destino}`)
+      if (destino !== slug) navegar(`/${destino}/dashboard`)
     },
     onError: () => toast.error('No pudimos cambiar de módulo'),
   })
@@ -119,7 +123,7 @@ export function ModuloShell() {
 
   const controles = (
     <>
-      <BotonNotificaciones modulo={modulo ? { codigo: modulo.codigo, ruta: `/${slug}` } : undefined} />
+      <BotonNotificaciones modulo={modulo ? { codigo: modulo.codigo, ruta: raiz } : undefined} />
       <BotonTema />
       <span className="hidden max-w-[16rem] truncate text-sm text-tenue-fg sm:inline">
         {sesion?.user.email}
@@ -155,7 +159,7 @@ export function ModuloShell() {
       // entra desde una aseguradora: el menú es la plataforma, y la compañía se
       // reconoce arriba, en su logo y su nombre junto al módulo.
       <ArmazonLateral
-        nav={<NavegacionModulo slug={modulo?.slug ?? slug ?? ''} />}
+        nav={<NavegacionModulo raiz={raiz} />}
         franja={identidad.punto}
         topbarIzquierda={identidadDelModulo}
         topbarDerecha={controles}

@@ -130,7 +130,7 @@ export function BandejaPage({
             </p>
           </div>
           {!soloMira && (
-            <Boton onClick={() => navegar('/concurrencia/nueva')}>
+            <Boton onClick={() => navegar('/nueva')}>
               <Plus aria-hidden="true" />
               Nueva visita
             </Boton>
@@ -209,7 +209,7 @@ export function BandejaPage({
           <Vacio
             hayFiltros={hayFiltros}
             deOperador={Boolean(creadoPor)}
-            onCrear={soloMira ? undefined : () => navegar('/concurrencia/nueva')}
+            onCrear={soloMira ? undefined : () => navegar('/nueva')}
           />
         ) : (
           <div className="overflow-x-auto">
@@ -315,7 +315,7 @@ export function BandejaPage({
                               {
                                 etiqueta: 'Ver',
                                 icono: Eye,
-                                onSelect: () => navegar(`/concurrencia/${fila.id}/ver`),
+                                onSelect: () => navegar(`/${fila.id}/ver`),
                               },
                               ...(soloMira || !sePuedeEditar(fila.estado)
                                 ? []
@@ -323,7 +323,7 @@ export function BandejaPage({
                                     {
                                       etiqueta: 'Editar',
                                       icono: Pencil,
-                                      onSelect: () => navegar(`/concurrencia/${fila.id}`),
+                                      onSelect: () => navegar(`/${fila.id}`),
                                     },
                                   ]),
                             ]}

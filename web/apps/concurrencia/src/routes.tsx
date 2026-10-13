@@ -20,7 +20,7 @@ export const rutasConcurrencia: RouteObject[] = [
   { path: 'dashboard', element: <PortadaPage /> },
   { path: 'bandeja', element: <BandejaPage /> },
   // Sus avisos, dentro de la app (D47). Antes que `:id`, que se lo tragaría.
-  { path: 'notificaciones', element: <NotificacionesDelModulo /> },
+  { path: 'notificaciones', element: <NotificacionesDelModulo slug="concurrencia" /> },
   { path: 'nueva', element: <VisitaFormPage /> },
   // El alta del coordinador de plataforma: primero la aseguradora, luego el
   // mismo formulario. El backend igual exige rol supervisor de plataforma.
