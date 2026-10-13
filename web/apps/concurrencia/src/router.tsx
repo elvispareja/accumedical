@@ -3,10 +3,10 @@ import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom'
 import { rutasConcurrencia } from '@concurrencia/routes'
 import { RequireModule } from '@/core/auth/RequireModule'
 import { RequireSession } from '@/core/auth/RequireSession'
-import { IrAlLogin } from '@/core/IrAlLogin'
 import { IrAOtraApp } from '@/core/IrAOtraApp'
 import { ModuloShell } from '@/core/layout/ModuloShell'
 import { ErrorPage } from '@/core/pages/ErrorPage'
+import { LoginPage } from '@/core/pages/LoginPage'
 
 /**
  * Las rutas de la app de Concurrencia, en la RAÍZ de la app (D48): en su
@@ -47,7 +47,8 @@ export const router = createBrowserRouter(
     },
     { path: '/concurrencia/*', element: <QuitarPrefijo /> },
     // Estáticas: ganan al `:id` de las visitas, que si no se tragaría `/login`.
-    { path: '/login', element: <IrAlLogin /> },
+    // Su propio login (D51): concurrencia.pymes.ec/login.
+    { path: '/login', element: <LoginPage app="Concurrencia" />, errorElement: <ErrorPage /> },
     ...DE_OTRA_APP.map((path) => ({ path, element: <IrAOtraApp /> })),
     { path: '*', element: <IrAOtraApp /> },
   ],

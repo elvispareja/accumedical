@@ -3,10 +3,10 @@ import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom'
 
 import { ProveedorApp } from '@/core/app/contexto'
 import { RequireSession } from '@/core/auth/RequireSession'
-import { IrAlLogin } from '@/core/IrAlLogin'
 import { IrAOtraApp } from '@/core/IrAOtraApp'
 import { ArmazonApp, SoloFuncion } from '@/core/layout/ArmazonApp'
 import { ErrorPage } from '@/core/pages/ErrorPage'
+import { LoginPage } from '@/core/pages/LoginPage'
 import { AseguradoraFormPage } from '@/shared/aseguradoras/pages/AseguradoraFormPage'
 import { AseguradorasPage } from '@/shared/aseguradoras/pages/AseguradorasPage'
 import { RedConvenioMapaPage } from '@/shared/aseguradoras/pages/RedConvenioMapaPage'
@@ -74,7 +74,8 @@ export const router = createBrowserRouter(
       ],
     },
     { path: '/convenios/*', element: <QuitarPrefijo /> },
-    { path: '/login', element: <IrAlLogin /> },
+    // Su propio login (D51): convenios.pymes.ec/login.
+    { path: '/login', element: <LoginPage app="Convenios" />, errorElement: <ErrorPage /> },
     ...DE_OTRA_APP.map((path) => ({ path, element: <IrAOtraApp /> })),
     { path: '*', element: <IrAOtraApp /> },
   ],

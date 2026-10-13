@@ -26,7 +26,10 @@ Las apps **Convenios** (`web/apps/convenios`, 5176) y **Contabilidad** (`web/app
   - `raiz: ''`: sus enlaces no llevan `/admin`;
   - `alcance`: recorta la ficha como la función (Convenios: solo la red; Contabilidad: todo menos la red), también para el administrador.
 - Puerta: `SoloFuncion` (función o administrador global). Armazón: `ArmazonApp` (compartido con Pacientes).
-- **Login propio:** `/login` en cualquier app propia → `IrAlLogin` → `admin.pymes.ec/login?volver=<url>`. El login muestra «Iniciar sesión en <App>» y vuelve allí. `dominios.volverSeguro` solo admite el origen de admin o el de una app conocida, para evitar la redirección abierta.
+- **Cada app tiene su propio login, en su propia dirección** (D51): `concurrencia.pymes.ec/login`, `pacientes.pymes.ec/login`, `convenios.pymes.ec/login`, `contabilidad.pymes.ec/login`, `admin.pymes.ec/login`.
+  - Es la misma `LoginPage` con `app="<Nombre>"`: el mismo `POST /api/v1/auth/login` (con su límite por IP en nginx) y la misma sesión compartida en `*.pymes.ec`.
+  - Al entrar se queda en la app, en la página pedida o en su `/dashboard`.
+  - `admin.pymes.ec/login?volver=` sigue admitido para enlaces viejos, validado con `dominios.volverSeguro` (solo apps de la plataforma).
 - El login lleva a cada función a su app (`calcular_redireccion` → `/convenios/dashboard` o `/contabilidad/dashboard`).
 - **El administrador conserva en admin todas las pantallas completas** (aseguradoras con todas sus pestañas, prestadores, Red convenio, parámetros): las limitaciones son solo de las apps de función. Si alguien con función entra a admin, solo ve el enlace a su app.
 

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion, type Variants } from 'framer-motion'
 import { AlertCircle, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -45,10 +45,20 @@ function mensajeDeError(error: unknown): string {
   return 'Algo salió mal al iniciar sesión. Inténtalo de nuevo.'
 }
 
-export function LoginPage() {
-  // Venir desde una app propia: su nombre en el título y volver a ella (D50).
+/**
+ * El login, UNO para toda la plataforma (misma API, misma sesión compartida en
+ * *.pymes.ec), montado en CADA app en su propio `/login` (D51):
+ * concurrencia.pymes.ec/login, pacientes.pymes.ec/login… Con `app`, dice su
+ * nombre y al entrar se queda en esa app (la página que se pedía o su
+ * /dashboard). Sin `app` (admin.pymes.ec/login), entra a donde diga el backend.
+ */
+export function LoginPage({ app }: { app?: string } = {}) {
+  // Enlaces viejos de admin con ?volver= (D50): solo apps de la plataforma.
   const [parametros] = useSearchParams()
-  const volver = volverSeguro(parametros.get('volver'))
+  const volver = app ? null : volverSeguro(parametros.get('volver'))
+  const titulo = app ?? volver?.app ?? null
+  const { state } = useLocation()
+  const desde = (state as { desde?: string } | null)?.desde
   const navegar = useNavigate()
   const queryClient = useQueryClient()
   const sinMovimiento = useReducedMotion()
@@ -85,7 +95,8 @@ export function LoginPage() {
       queryClient.setQueryData(CLAVE_SESION, sesion)
       // Si se vino desde una app (D50), se vuelve a ella; si no, a donde decida
       // el backend. `volverSeguro` solo admite apps de la plataforma.
-      if (volver) window.location.assign(volver.url)
+      if (app) navegar(desde && desde !== '/login' ? desde : '/dashboard', { replace: true })
+      else if (volver) window.location.assign(volver.url)
       else navegar(sesion.redireccion, { replace: true })
     } catch (e) {
       setError(mensajeDeError(e))
@@ -170,7 +181,7 @@ export function LoginPage() {
         >
           <motion.div variants={elemento} className="mb-8">
             <h2 className="font-display text-2xl font-semibold tracking-tight">
-              {volver?.app ? `Iniciar sesión en ${volver.app}` : 'Iniciar sesión'}
+              {titulo ? `Iniciar sesión en ${titulo}` : 'Iniciar sesión'}
             </h2>
             <p className="mt-1.5 text-sm text-tenue-fg">
               Accede con tu cuenta institucional para continuar.

@@ -134,8 +134,3 @@ export function volverSeguro(valor: string | null): { url: string; app: string |
   const slug = Object.entries(MODULOS).find(([, origen]) => origen === url.origin)?.[0]
   return slug ? { url: url.href, app: NOMBRES[slug] ?? slug } : null
 }
-
-/** El login (siempre el de admin) pidiendo volver a `volver` después. */
-export function urlDelLogin(volver: string): string {
-  return `${ADMIN}/login?volver=${encodeURIComponent(volver)}`
-}

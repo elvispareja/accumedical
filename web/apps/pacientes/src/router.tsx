@@ -4,9 +4,9 @@ import { Armazon, SoloAccumedical } from '@pacientes/Armazon'
 import { FichaPage } from '@pacientes/pages/FichaPage'
 import { ListaPage } from '@pacientes/pages/ListaPage'
 import { RequireSession } from '@/core/auth/RequireSession'
-import { IrAlLogin } from '@/core/IrAlLogin'
 import { IrAOtraApp } from '@/core/IrAOtraApp'
 import { ErrorPage } from '@/core/pages/ErrorPage'
+import { LoginPage } from '@/core/pages/LoginPage'
 
 /**
  * La app Pacientes en la RAÍZ de su subdominio (pacientes.pymes.ec/dashboard,
@@ -43,7 +43,8 @@ export const router = createBrowserRouter(
       ],
     },
     { path: '/pacientes/*', element: <QuitarPrefijo /> },
-    { path: '/login', element: <IrAlLogin /> },
+    // Su propio login (D51): pacientes.pymes.ec/login.
+    { path: '/login', element: <LoginPage app="Pacientes" />, errorElement: <ErrorPage /> },
     ...DE_OTRA_APP.map((path) => ({ path, element: <IrAOtraApp /> })),
     { path: '*', element: <IrAOtraApp /> },
   ],

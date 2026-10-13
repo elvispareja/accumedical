@@ -3,10 +3,10 @@ import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom'
 
 import { ProveedorApp } from '@/core/app/contexto'
 import { RequireSession } from '@/core/auth/RequireSession'
-import { IrAlLogin } from '@/core/IrAlLogin'
 import { IrAOtraApp } from '@/core/IrAOtraApp'
 import { ArmazonApp, SoloFuncion } from '@/core/layout/ArmazonApp'
 import { ErrorPage } from '@/core/pages/ErrorPage'
+import { LoginPage } from '@/core/pages/LoginPage'
 import { AseguradoraFormPage } from '@/shared/aseguradoras/pages/AseguradoraFormPage'
 import { AseguradorasMapaPage } from '@/shared/aseguradoras/pages/AseguradorasMapaPage'
 import { AseguradorasPage } from '@/shared/aseguradoras/pages/AseguradorasPage'
@@ -61,7 +61,8 @@ export const router = createBrowserRouter(
       ],
     },
     { path: '/contabilidad/*', element: <QuitarPrefijo /> },
-    { path: '/login', element: <IrAlLogin /> },
+    // Su propio login (D51): contabilidad.pymes.ec/login.
+    { path: '/login', element: <LoginPage app="Contabilidad" />, errorElement: <ErrorPage /> },
     ...DE_OTRA_APP.map((path) => ({ path, element: <IrAOtraApp /> })),
     { path: '*', element: <IrAOtraApp /> },
   ],
