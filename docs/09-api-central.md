@@ -103,7 +103,7 @@ La misma aplicación se sirve en varios subdominios y reparte sus rutas (`web/sr
 
 Con `RED_PROPIA_EN_CENTRAL=true`, la red de la ficha propia (`aseguradoras.es_propia`) **es de la central**: ya no es réplica.
 
-| Operación | Dónde se resuelve (`app/shared/central/red_propia.py`) |
+| Operación | Dónde se resuelve (`app/shared/central/redes.py`) |
 |---|---|
 | Lista de prestadores con casillas (`aseguradoras/service.convenios_de_aseguradora`) | central: prestadores + convenios vivos (`?estado=todos`) |
 | Guardar la selección (`fijar_convenios`) | `PUT /api/aseguradoras/{id}/red` |
@@ -115,7 +115,22 @@ Con `RED_PROPIA_EN_CENTRAL=true`, la red de la ficha propia (`aseguradoras.es_pr
 - **Sin respaldo local**: si la central no responde → 503 «la Red convenio no está disponible». Escribir aquí mientras tanto crearía dos versiones de la red.
 - La réplica deja de enviar la red propia (`_SIN_RED_PROPIA`), y la central la ignora aunque llegue.
 - Las filas viejas de la red propia en `aseguradora_prestador` quedan como historia y no se vuelven a leer.
-- Las redes de las **demás** aseguradoras siguen aquí y se replican como antes.
+- Desde el paso 5a, las redes de las **demás** compañías también viven en la central (ver abajo).
+
+## Todas las redes viven en la central (paso 5a)
+
+Con `REDES_EN_CENTRAL=true` (en el `.env` **y** en el compose de `api-central`), la central es la dueña de la red de convenios de **todas** las compañías. El módulo `app/shared/central/redes.py` (antes `red_propia.py`; se importa como `redes_central`) generaliza la regla del paso 4e: `aplica(db, aseguradora)` es verdadero para cualquier compañía.
+
+| Pantalla / uso | Con el paso 5a |
+|---|---|
+| «Red convenio» de cualquier compañía (lista, guardar, par, listado, FC, mapa) | central, como la red propia en el 4e |
+| Ficha del prestador: pestaña de convenios (`convenios_de_prestador`) y guardar (`fijar_convenios_de_prestador`) | `GET /api/prestadores/{id}/convenios` y `PUT /api/prestadores/{id}/red` |
+| Convenios en la ficha del prestador (`convenios.listar`) | todos de la central |
+| Concurrencia: red y validación de destino (`nucleo.prestadores_de_la_red`, `prestador_en_red`) | central **sin respaldo local** (503 si no responde) |
+| Réplica | ya no envía `convenios` ni `convenio_fc` |
+
+- `aseguradora_prestador` y `aseguradora_prestador_fc` quedan como historia: no se leen ni se escriben.
+- Pruebas: `scripts/equivalencia-redes.py` (cada pantalla leída local vs central, en memoria) y `scripts/probar-redes-central.py` (escrituras reales, que se deshacen al final).
 
 ## Documentos de la aseguradora en el almacén de la central (D2)
 

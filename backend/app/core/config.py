@@ -134,8 +134,13 @@ class Settings(BaseSettings):
     concurrencia_nucleo: Literal["local", "central"] = "local"
     # La «Red convenio» de Accumedical (red de la ficha propia) vive en la API
     # central: la pantalla lee y guarda allá y la réplica deja de enviarla.
-    # Requiere CENTRAL_PLATAFORMA_*. Sin respaldo local (ver shared/central/red_propia.py).
+    # Requiere CENTRAL_PLATAFORMA_*. Sin respaldo local (ver shared/central/redes.py).
     red_propia_en_central: bool = False
+    # Paso 5a: la red de convenios de TODAS las compañías vive en la central
+    # (incluye la propia). Pantallas de red, FC, listados, mapa, la ficha del
+    # prestador y Concurrencia leen y escriben allá; la réplica deja de enviar
+    # convenios. Sin respaldo local. Requiere el mismo interruptor en la central.
+    redes_en_central: bool = False
     # Los documentos de la aseguradora (pólizas, cobertura, SLA, convenios) y los
     # listados de precios se guardan en el almacén cifrado de la central; aquí
     # queda la referencia `central:<id>`. Requiere CENTRAL_PLATAFORMA_*.

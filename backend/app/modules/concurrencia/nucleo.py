@@ -26,6 +26,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
+from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -40,6 +41,7 @@ from app.shared.aseguradoras.models import (
     AseguradoraSla,
 )
 from app.shared.catalogos.models import Ciudad, Provincia, TipoPrestador
+from app.shared.central import redes as redes_central
 from app.shared.prestadores.models import Prestador, PrestadorContacto, PrestadorSede
 
 MODULO = "concurrencia"
@@ -317,12 +319,24 @@ class _Central:
 
 
 # ═════════════════════════════ Selector ═════════════════════════════════════
-def _usar[T](operacion: str, local: Callable[[], T], central: Callable[[], T]) -> T:
-    if settings.concurrencia_nucleo != "central" or not settings.central_configurada:
+def _usar[T](
+    operacion: str, local: Callable[[], T], central: Callable[[], T], *, respaldo: bool = True
+) -> T:
+    # Sin respaldo, la central es la DUEÑA (p. ej. la red con el paso 5a): la
+    # copia local ya no vale, ni siquiera en modo «local».
+    usa_central = settings.concurrencia_nucleo == "central" and settings.central_configurada
+    if not usa_central and respaldo:
         return local()
     try:
         return central()
     except (CentralError, KeyError, ValueError) as error:
+        if not respaldo:
+            log.warning("nucleo_central_sin_respaldo", operacion=operacion,
+                        estado=getattr(error, "estado", None), error=type(error).__name__)
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="La central no respondió: la red de convenios no está disponible",
+            ) from error
         # Sin datos personales: la operación y el código de error, nada más.
         log.warning(
             "nucleo_central_respaldo_local",
@@ -350,6 +364,7 @@ def prestadores_de_la_red(
         "red",
         lambda: _Local.red(db, aseguradora_id, search),
         lambda: _Central.red(db, aseguradora_id, search),
+        respaldo=not redes_central.todas(),
     )
 
 
@@ -358,6 +373,7 @@ def prestador_en_red(db: DbSession, aseguradora_id: uuid.UUID, prestador_id: uui
         "en_red",
         lambda: _Local.en_red(db, aseguradora_id, prestador_id),
         lambda: _Central.en_red(db, aseguradora_id, prestador_id),
+        respaldo=not redes_central.todas(),
     )
 
 

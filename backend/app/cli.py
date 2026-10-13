@@ -42,7 +42,8 @@ def migrar_documentos_central() -> int:
         AseguradoraPoliza,
         AseguradoraPrestador,
     )
-    from app.shared.central import archivos, red_propia
+    from app.shared.central import archivos
+    from app.shared.central import redes as redes_central
 
     base = Path(settings.upload_dir)
     hechos = errores = 0
@@ -74,22 +75,22 @@ def migrar_documentos_central() -> int:
         for convenio in db.scalars(select(AseguradoraPrestador)):
             ruta = convenio.listado_precios_ruta
             if ruta and not archivos.es_referencia(ruta):
-                if red_propia.activa() and red_propia.es_propia(db, convenio.aseguradora_id):
-                    continue  # la red propia se migra abajo, desde la central (su dueña)
+                if redes_central.aplica(db, convenio.aseguradora_id):
+                    continue  # vive en la central (su dueña): la propia se migra abajo
                 ref = mover(ruta, convenio.listado_precios_nombre or "Listado de precios")
                 if ref:
                     convenio.listado_precios_ruta = ref
                     db.commit()
-        if red_propia.activa():
+        if redes_central.activa():
             propia = db.scalar(select(Aseguradora.id).where(Aseguradora.es_propia.is_(True)))
             if propia is not None:
-                for convenio in red_propia.convenios_vivos(propia).values():
+                for convenio in redes_central.convenios_vivos(propia).values():
                     ruta = convenio.listado_precios_ruta
                     if ruta and not archivos.es_referencia(ruta):
                         nombre = convenio.listado_precios_nombre or "Listado de precios"
                         ref = mover(ruta, nombre)
                         if ref:
-                            red_propia.guardar_listado(convenio.id, ref, nombre, None)
+                            redes_central.guardar_listado(convenio.id, ref, nombre, None)
     print(f"Migrados al almacén de la central: {hechos} · con problema: {errores}")
     return 1 if errores else 0
 

@@ -1,19 +1,21 @@
 """
-La «Red convenio» de Accumedical vive en la API central.
+Las redes de convenios (aseguradora ↔ prestador, con valores FC y listado de
+precios) cuya dueña es la API central.
 
-La red de la ficha propia (`aseguradoras.es_propia`) ya no se guarda aquí: con
-`RED_PROPIA_EN_CENTRAL=true`, la pantalla «Red convenio» y todo lo que lee esa
-red (valores FC, listado de precios, mapa, la ficha del prestador) van a la
-central, que es su dueña. Las redes de las DEMÁS compañías siguen aquí y se
-replican como siempre (la réplica ya no envía la red propia).
+  - Paso 4e, `RED_PROPIA_EN_CENTRAL`: la red de la ficha propia (Accumedical).
+  - Paso 5a, `REDES_EN_CENTRAL`: la de TODAS las compañías.
+
+Para una red que vive en la central, todo lo que la lee o la escribe va allá:
+la pantalla «Red convenio» de la aseguradora, los valores FC, el listado de
+precios, el mapa, la ficha del prestador (incluida su pestaña de convenios) y
+Concurrencia. La réplica deja de enviarla.
 
 Sin respaldo local, a propósito: si la central no responde, la red no se puede
 leer ni guardar (503). Escribir aquí «mientras tanto» crearía dos versiones de
-la misma red. Las filas antiguas de la red propia en `aseguradora_prestador`
+la misma red. Las filas de `aseguradora_prestador` / `aseguradora_prestador_fc`
 quedan como historia y no se vuelven a leer.
 
-Los archivos de listado de precios siguen en el volumen de subidas de la
-plataforma: la central guarda su ruta y su nombre.
+Los archivos de listado de precios viven en el almacén de la central (D2).
 """
 
 from __future__ import annotations
@@ -34,8 +36,14 @@ from app.shared.aseguradoras.models import Aseguradora, AseguradoraPrestador
 from app.shared.central import archivos
 
 
+def todas() -> bool:
+    """¿La central es dueña de las redes de TODAS las compañías? (paso 5a)"""
+    return settings.redes_en_central and settings.replicacion_central_configurada
+
+
 def activa() -> bool:
-    return settings.red_propia_en_central and settings.replicacion_central_configurada
+    """¿Alguna red vive en la central?"""
+    return todas() or (settings.red_propia_en_central and settings.replicacion_central_configurada)
 
 
 def es_propia(db: DbSession, aseguradora_id: uuid.UUID) -> bool:
@@ -43,12 +51,12 @@ def es_propia(db: DbSession, aseguradora_id: uuid.UUID) -> bool:
 
 
 def aplica(db: DbSession, aseguradora_id: uuid.UUID) -> bool:
-    """¿Esta red se lee y escribe en la central? Solo la propia, y solo con el interruptor."""
-    return activa() and es_propia(db, aseguradora_id)
+    """¿La red de ESTA compañía se lee y escribe en la central?"""
+    return todas() or (activa() and es_propia(db, aseguradora_id))
 
 
 # ── HTTP ──────────────────────────────────────────────────────────────────────
-_NO_DISPONIBLE = "La central no respondió: la Red convenio no está disponible en este momento"
+_NO_DISPONIBLE = "La central no respondió: la red de convenios no está disponible en este momento"
 
 
 def _llamar(
@@ -98,7 +106,7 @@ def _convenio_ns(c: dict[str, Any]) -> Any:
 
 # ── La red ───────────────────────────────────────────────────────────────────
 def convenios_vivos(aseguradora_id: uuid.UUID) -> dict[uuid.UUID, Any]:
-    """prestador_id → convenio vivo (cualquier estado) de la red propia."""
+    """prestador_id → convenio vivo (cualquier estado) de la red de esa compañía."""
     _, filas = _llamar("GET", f"/api/aseguradoras/{aseguradora_id}/convenios?estado=todos")
     return {uuid.UUID(c["prestador_id"]): _convenio_ns(c) for c in filas}
 
@@ -175,10 +183,12 @@ def _detalle(convenio_id: uuid.UUID) -> dict[str, Any] | None:
     return None if estado == 404 else r
 
 
-def es_convenio_propio(db: DbSession, convenio_id: uuid.UUID) -> bool:
-    """¿Este convenio es de la red propia (y por tanto vive en la central)?"""
+def es_convenio_central(db: DbSession, convenio_id: uuid.UUID) -> bool:
+    """¿Este convenio vive en la central? (todos con el paso 5a; si no, los de la red propia)"""
     if not activa():
         return False
+    if todas():
+        return True
     d = _detalle(convenio_id)
     if d is not None:
         return es_propia(db, uuid.UUID(d["aseguradora_id"]))
@@ -192,11 +202,11 @@ def obtener_convenio(
     db: DbSession, prestador_id: uuid.UUID, convenio_id: uuid.UUID
 ) -> tuple[Any, str] | None:
     """
-    (convenio, razón social) si el convenio es de la red propia; None si no lo es
-    (y lo resuelve la base local). 404 si es de la red propia pero ya no existe o
-    no es de ese prestador.
+    (convenio, razón social) si el convenio vive en la central; None si no (y lo
+    resuelve la base local). 404 si vive en la central pero ya no existe o no es
+    de ese prestador.
     """
-    if not es_convenio_propio(db, convenio_id):
+    if not es_convenio_central(db, convenio_id):
         return None
     d = _detalle(convenio_id)
     if d is None or uuid.UUID(d["prestador_id"]) != prestador_id:
@@ -236,14 +246,39 @@ def fijar_fc(convenio_id: uuid.UUID, pedidos: dict[str, dict[str, Any]], autor: 
 def convenios_del_prestador(
     db: DbSession, prestador_id: uuid.UUID
 ) -> list[tuple[Any, str, str | None, str]]:
-    """El convenio con la red propia, visto desde el prestador (forma de `convenios.listar`)."""
+    """Convenios que viven en la central, vistos desde el prestador (forma de `listar`)."""
     _, filas = _llamar("GET", f"/api/prestadores/{prestador_id}/convenios")
     salida = []
     for c in filas:
         aseguradora_id = uuid.UUID(c["aseguradora_id"])
-        if not es_propia(db, aseguradora_id):
+        if not aplica(db, aseguradora_id):
             continue
         ruc = db.scalar(select(Aseguradora.ruc).where(Aseguradora.id == aseguradora_id))
         a = c["aseguradora"]
         salida.append((_convenio_ns(c), a["razon_social"], a["nombre_comercial"], ruc))
     return salida
+
+
+# ── La ficha del prestador: sus convenios con todas las compañías (paso 5a) ──
+def convenios_por_aseguradora(prestador_id: uuid.UUID) -> dict[uuid.UUID, Any]:
+    """aseguradora_id → convenio vivo (cualquier estado) de este prestador."""
+    _, filas = _llamar("GET", f"/api/prestadores/{prestador_id}/convenios")
+    return {uuid.UUID(c["aseguradora_id"]): _convenio_ns(c) for c in filas}
+
+
+def fijar_del_prestador(
+    prestador_id: uuid.UUID, seleccion: list[dict[str, Any]], autor: uuid.UUID
+) -> dict[str, list[str]] | None:
+    """Espejo de `fijar` desde el prestador. La central no toca el convenio con la ficha propia."""
+    cuerpo = {
+        "aseguradoras": [
+            {
+                "aseguradora_id": str(f["aseguradora_id"]),
+                "red_privada": bool(f["red_privada"]),
+                "red_publica": bool(f["red_publica"]),
+            }
+            for f in seleccion
+        ]
+    }
+    _, r = _llamar("PUT", f"/api/prestadores/{prestador_id}/red", cuerpo, usuario=autor)
+    return r

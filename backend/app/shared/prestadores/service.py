@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.shared.aseguradoras.models import AseguradoraPrestador
 from app.shared.catalogos.models import Ciudad, Provincia, TipoPrestador
-from app.shared.central import red_propia
+from app.shared.central import redes as redes_central
 from app.shared.contactos import service as contactos
 from app.shared.geo import prohibir_vaciar
 from app.shared.prestadores import convenios as convenios_service
@@ -91,8 +91,8 @@ def puntos_del_mapa(
     obligaría a rellenar columnas de mentira en cada lado.
     """
     en_red: set[uuid.UUID] | None = None
-    if aseguradora_id is not None and red_propia.aplica(db, aseguradora_id):
-        en_red = red_propia.prestadores_en_red(aseguradora_id)
+    if aseguradora_id is not None and redes_central.aplica(db, aseguradora_id):
+        en_red = redes_central.prestadores_en_red(aseguradora_id)
         if not en_red:
             return []
     elif aseguradora_id is not None:
