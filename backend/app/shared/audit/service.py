@@ -52,6 +52,9 @@ ACCIONES = (
     # la central (app, usuario y motivo), o se rechazó un enlace no válido.
     "informe_compartido",
     "informe_compartido_rechazado",
+    # App Pacientes (D49): alguien de Accumedical pidió el informe final de un
+    # caso desde la ficha del paciente (con su motivo).
+    "informe_pedido",
     # Concurrencia: las fotos que el auditor toma en el hospital. Al log solo
     # van MIME y tamaño, jamás la imagen: es dato clínico (A09).
     "foto_subida",

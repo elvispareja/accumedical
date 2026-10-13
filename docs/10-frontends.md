@@ -21,6 +21,8 @@ web/                         package.json + node_modules únicos
 | Build | `npm run build` | `npm run build:concurrencia` → `dist/concurrencia` |
 | Tipos | `npm run typecheck` | `npm run typecheck:concurrencia` |
 
+La app **Pacientes** (`web/apps/pacientes`, D49) sigue la misma forma: `web-pacientes` (5175), `PACIENTES_BASE`, `npm run dev:pacientes` / `build:pacientes` / `typecheck:pacientes`, raíz de `pacientes.pymes.ec`. No es un módulo de `modules`: su puerta es «solo personal de Accumedical» y su armazón es propio (`Armazon.tsx`).
+
 - nginx de la app (`infra/nginx/dev.conf`) elige el frontend con `map "$host$uri" $frontend`: todo `concurrencia.*` → `web-concurrencia`; en local, `localhost/concurrencia…` → `web-concurrencia`; el resto → `web`. **Al cambiar `dev.conf` hay que hacer `nginx -s reload`**: compose no recrea el contenedor si solo cambió el contenido del archivo.
 - **Dirección lógica vs. real (D48).** En toda la plataforma un caso se nombra `/concurrencia/…`: avisos guardados, menús de admin, la redirección del login. `dominios.ts` la convierte en la real quitando el prefijo en su subdominio: `/concurrencia/supervision/7` → `https://concurrencia.pymes.ec/supervision/7`.
 - Dentro de la app de Concurrencia las rutas son relativas a su raíz (`/dashboard`, `/nueva`, `/<id>`). El router usa `basename` = `BASE_URL` y tiene dos puertas:

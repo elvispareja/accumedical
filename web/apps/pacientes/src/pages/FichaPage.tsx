@@ -1,0 +1,271 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, ExternalLink, FileSignature, Pencil } from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+
+import {
+  corregirPaciente,
+  obtenerPaciente,
+  pedirInforme,
+  type EventoPaciente,
+  type IdentidadPaciente,
+  type Paciente,
+} from '@pacientes/api'
+import { fecha, nombreCompleto } from '@pacientes/pages/ListaPage'
+import { destinoDeModuloEnOtraPestana } from '@/core/dominios'
+import { Boton } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+import { Modal } from '@/shared/components/ui/modal'
+import { useToast } from '@/shared/components/ui/toast'
+
+/** Cómo se lee cada tipo de evento. Uno nuevo de otra app sale con su código. */
+const TIPOS: Record<string, string> = {
+  visita_concurrencia: 'Visita de concurrencia',
+  informe_concurrencia: 'Informe final entregado',
+}
+
+function detalleError(error: unknown, porDefecto: string): string {
+  const d = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  return typeof d === 'string' ? d : porDefecto
+}
+
+/**
+ * La ficha de un paciente (D49): su identidad —que corrige SOLO este registro,
+ * porque la central es su dueña— y lo que le ha pasado en TODAS las auditorías.
+ * Lo clínico no está aquí: el caso se abre en su app y el informe final, con un
+ * enlace de un solo uso que emite la central (D3).
+ */
+export function FichaPage() {
+  const { id } = useParams<{ id: string }>()
+  const navegar = useNavigate()
+  const consulta = useQuery({
+    queryKey: ['paciente', id],
+    queryFn: () => obtenerPaciente(id!),
+    enabled: Boolean(id),
+  })
+  const [editando, setEditando] = useState(false)
+  const [informeDe, setInformeDe] = useState<EventoPaciente | null>(null)
+  const p = consulta.data
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8">
+      <Boton variante="fantasma" tamano="sm" onClick={() => navegar('/dashboard')}>
+        <ArrowLeft aria-hidden="true" />
+        Pacientes
+      </Boton>
+
+      {consulta.isError ? (
+        <p className="mt-6 text-sm text-tenue-fg">
+          {detalleError(consulta.error, 'No pudimos cargar la ficha del paciente.')}
+        </p>
+      ) : !p ? (
+        <div className="mt-6 space-y-3" role="status" aria-label="Cargando">
+          <div className="h-7 w-1/2 animate-pulse rounded bg-tenue" />
+          <div className="h-24 animate-pulse rounded bg-tenue" />
+        </div>
+      ) : (
+        <>
+          <header className="mt-4 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1 className="font-display text-2xl font-semibold tracking-tight">{nombreCompleto(p)}</h1>
+              <p className="mt-1 font-mono text-xs text-tenue-fg">
+                {p.tipo_documento_codigo} · {p.numero_documento}
+              </p>
+            </div>
+            <Boton variante="contorno" onClick={() => setEditando(true)}>
+              <Pencil aria-hidden="true" />
+              Corregir datos
+            </Boton>
+          </header>
+
+          <dl className="mt-6 grid gap-4 rounded-md border border-borde bg-superficie p-5 text-sm sm:grid-cols-3">
+            <Dato titulo="Correo" valor={p.email} />
+            <Dato titulo="Teléfono" valor={p.telefono} />
+            <Dato titulo="Fecha de nacimiento" valor={p.fecha_nacimiento ? fecha(p.fecha_nacimiento) : null} />
+            <Dato titulo="En el registro desde" valor={fecha(p.created_at)} />
+            <Dato titulo="Última corrección" valor={fecha(p.updated_at)} />
+          </dl>
+
+          <h2 className="mt-8 font-display text-base font-semibold">Historial en las auditorías</h2>
+          {p.eventos.length === 0 ? (
+            <p className="mt-3 text-sm text-tenue-fg">
+              Todavía sin movimientos: aparecen cuando un caso suyo culmina o se entrega su informe.
+            </p>
+          ) : (
+            <ol className="mt-3 space-y-3">
+              {p.eventos.map((e) => (
+                <li key={e.id} className="rounded-md border border-borde bg-superficie p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">{TIPOS[e.tipo_evento] ?? e.tipo_evento}</p>
+                      <p className="mt-0.5 text-xs text-tenue-fg">
+                        {e.aplicacion_nombre} · {fecha(e.fecha_evento)}
+                        {e.aseguradora_nombre ? ` · ${e.aseguradora_nombre}` : ''}
+                        {typeof e.resumen.codigo === 'string' ? ` · ${e.resumen.codigo}` : ''}
+                        {e.documento?.visita_codigo ? ` · ${e.documento.visita_codigo}` : ''}
+                      </p>
+                      {e.documento && (
+                        <p className="mt-1 text-xs text-tenue-fg">
+                          Entrega {e.documento.numero_entrega ?? '—'}
+                          {e.documento.firmado ? ` · firmado por ${e.documento.firmante ?? '—'}` : ' · sin firma electrónica'}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      {e.ruta_caso && (
+                        <Boton
+                          variante="contorno"
+                          tamano="sm"
+                          onClick={() =>
+                            window.open(destinoDeModuloEnOtraPestana(e.ruta_caso!) ?? e.ruta_caso!, '_blank', 'noopener')
+                          }
+                        >
+                          <ExternalLink aria-hidden="true" />
+                          Abrir caso
+                        </Boton>
+                      )}
+                      {e.documento && (
+                        <Boton variante="contorno" tamano="sm" onClick={() => setInformeDe(e)}>
+                          <FileSignature aria-hidden="true" />
+                          Ver informe
+                        </Boton>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          <CorregirIdentidad paciente={p} abierto={editando} onCerrar={() => setEditando(false)} />
+          <PedirInforme evento={informeDe} onCerrar={() => setInformeDe(null)} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function Dato({ titulo, valor }: { titulo: string; valor: string | null }) {
+  return (
+    <div>
+      <dt className="text-xs text-tenue-fg">{titulo}</dt>
+      <dd className="mt-0.5">{valor || '—'}</dd>
+    </div>
+  )
+}
+
+function CorregirIdentidad({ paciente, abierto, onCerrar }: { paciente: Paciente; abierto: boolean; onCerrar: () => void }) {
+  const queryClient = useQueryClient()
+  const toast = useToast()
+  const inicial = (): IdentidadPaciente => ({
+    nombre_principal: paciente.nombre_principal,
+    nombre_secundario: paciente.nombre_secundario,
+    apellido_paterno: paciente.apellido_paterno,
+    apellido_materno: paciente.apellido_materno,
+    email: paciente.email,
+    telefono: paciente.telefono,
+    fecha_nacimiento: paciente.fecha_nacimiento,
+  })
+  const [form, setForm] = useState<IdentidadPaciente>(inicial)
+  const guardar = useMutation({
+    mutationFn: () =>
+      corregirPaciente(paciente.id, {
+        ...form,
+        nombre_secundario: form.nombre_secundario || null,
+        apellido_materno: form.apellido_materno || null,
+        email: form.email || null,
+        telefono: form.telefono || null,
+        fecha_nacimiento: form.fecha_nacimiento || null,
+      }),
+    onSuccess: (datos) => {
+      queryClient.setQueryData(['paciente', paciente.id], datos)
+      void queryClient.invalidateQueries({ queryKey: ['pacientes'] })
+      toast.exito('Datos del paciente corregidos')
+      onCerrar()
+    },
+    onError: (error) => toast.error(detalleError(error, 'No pudimos guardar la corrección')),
+  })
+  const campo = (clave: keyof IdentidadPaciente, titulo: string, props: Record<string, unknown> = {}) => (
+    <div>
+      <Label htmlFor={`p-${clave}`}>{titulo}</Label>
+      <Input
+        id={`p-${clave}`}
+        value={form[clave] ?? ''}
+        onChange={(e) => setForm({ ...form, [clave]: e.target.value })}
+        {...props}
+      />
+    </div>
+  )
+  return (
+    <Modal
+      abierto={abierto}
+      onCerrar={onCerrar}
+      titulo="Corregir datos del paciente"
+      descripcion="El documento no se cambia: es su identidad. Lo que corrijas aquí lo verán todas las auditorías."
+      pie={
+        <>
+          <Boton variante="fantasma" onClick={onCerrar}>
+            Cancelar
+          </Boton>
+          <Boton onClick={() => guardar.mutate()} cargando={guardar.isPending}>
+            Guardar
+          </Boton>
+        </>
+      }
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        {campo('nombre_principal', 'Primer nombre')}
+        {campo('nombre_secundario', 'Segundo nombre')}
+        {campo('apellido_paterno', 'Apellido paterno')}
+        {campo('apellido_materno', 'Apellido materno')}
+        {campo('email', 'Correo', { type: 'email', mayusculas: false })}
+        {campo('telefono', 'Teléfono', { mayusculas: false })}
+        {campo('fecha_nacimiento', 'Fecha de nacimiento', { type: 'date' })}
+      </div>
+    </Modal>
+  )
+}
+
+function PedirInforme({ evento, onCerrar }: { evento: EventoPaciente | null; onCerrar: () => void }) {
+  const toast = useToast()
+  const [motivo, setMotivo] = useState('')
+  const pedir = useMutation({
+    mutationFn: () => pedirInforme(evento!.id, motivo.trim()),
+    onSuccess: (r) => {
+      // El enlace vale UNA vez y unos minutos: se abre ya, en otra pestaña.
+      window.open(r.url, '_blank', 'noopener')
+      setMotivo('')
+      onCerrar()
+    },
+    onError: (error) => toast.error(detalleError(error, 'No pudimos obtener el informe')),
+  })
+  return (
+    <Modal
+      abierto={evento !== null}
+      onCerrar={onCerrar}
+      titulo="Ver el informe final firmado"
+      descripcion="El informe sigue en su auditoría. Se abre con un enlace de un solo uso, y queda registrado quién lo pidió y para qué."
+      pie={
+        <>
+          <Boton variante="fantasma" onClick={onCerrar}>
+            Cancelar
+          </Boton>
+          <Boton onClick={() => pedir.mutate()} cargando={pedir.isPending} disabled={motivo.trim().length < 10}>
+            Abrir informe
+          </Boton>
+        </>
+      }
+    >
+      <Label htmlFor="motivo-informe">Motivo (mínimo 10 caracteres)</Label>
+      <Input
+        id="motivo-informe"
+        value={motivo}
+        onChange={(e) => setMotivo(e.target.value)}
+        placeholder="Ej.: revisión del caso para la auditoría de vida"
+        mayusculas={false}
+        maxLength={300}
+      />
+    </Modal>
+  )
+}

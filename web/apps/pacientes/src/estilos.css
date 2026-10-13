@@ -1,0 +1,7 @@
+/*
+ * El CSS de Pacientes (D49). Arranca con la base de la plataforma y debajo va
+ * lo propio de esta app; cambiar aquí no afecta a admin ni a los módulos.
+ */
+@import '@/index.css';
+
+/* ── Propio de Pacientes ────────────────────────────────────────────────── */

@@ -194,6 +194,22 @@ def require_global_admin(
     return ctx
 
 
+def require_personal_accumedical(
+    request: Request,
+    ctx: AuthContext = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+) -> AuthContext:
+    """
+    Solo personal de ACCUMEDICAL (sin aseguradora): el administrador global y la
+    gente de la plataforma. Un usuario de aseguradora recibe el 403 genérico
+    aunque tenga sesión: es la puerta de la app Pacientes (D49), que reúne a las
+    personas de todas las compañías.
+    """
+    if ctx.user.aseguradora_id is not None:
+        _denegar(db, request, ctx, module_code=None, detalle={"ruta": request.url.path})
+    return ctx
+
+
 def require_coordinacion(
     request: Request,
     ctx: AuthContext = Depends(get_current_user),

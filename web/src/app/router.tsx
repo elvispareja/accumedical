@@ -1,8 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 
 import { BandejaEntradaPage } from '@/app/bandeja/BandejaEntradaPage'
-import { PacienteDetallePage } from '@/app/pacientes/PacienteDetallePage'
-import { PacientesPage } from '@/app/pacientes/PacientesPage'
 import { RequireModule } from '@/core/auth/RequireModule'
 import { GuardaDeDominio } from '@/core/GuardaDeDominio'
 import { IrAOtraApp } from '@/core/IrAOtraApp'
@@ -74,13 +72,11 @@ export const router = createBrowserRouter([
           // La red de convenios de Accumedical misma con los prestadores.
           { path: 'red-convenio', element: <RedConvenioPage /> },
           { path: 'red-convenio/mapa', element: <RedConvenioMapaPage /> },
-          // Con quién trabaja Accumedical: las personas que registran los casos.
-          { path: 'pacientes', element: <PacientesPage /> },
-          // Se llamó «Clientes» hasta sep 2026: un enlace guardado sigue llevando.
-          { path: 'clientes', element: <Navigate to="/admin/pacientes" replace /> },
-          // La persona se identifica por su documento, no por un id: es lo que la
-          // identifica en todas las auditorías.
-          { path: 'pacientes/:tipo/:numero', element: <PacienteDetallePage /> },
+          // Los pacientes viven en su propia app, pacientes.pymes.ec (D49): estas
+          // direcciones solo llevan allá, para no romper enlaces guardados.
+          { path: 'pacientes', element: <Navigate to="/pacientes/dashboard" replace /> },
+          { path: 'clientes', element: <Navigate to="/pacientes/dashboard" replace /> },
+          { path: 'pacientes/:tipo/:numero', element: <Navigate to="/pacientes/dashboard" replace /> },
           { path: 'usuarios', element: <UsuariosPage /> },
           { path: 'usuarios/nuevo', element: <UsuarioFormPage /> },
           { path: 'usuarios/:id/editar', element: <UsuarioFormPage /> },
@@ -153,6 +149,7 @@ export const router = createBrowserRouter([
       // `/concurrencia/…` lo sirve `apps/concurrencia` (nginx lo enruta allá).
       // Si una navegación interna llega a esa ruta, se salta con recarga completa.
       { path: '/concurrencia/*', element: <IrAOtraApp /> },
+      { path: '/pacientes/*', element: <IrAOtraApp /> },
       // El resto va al final: las rutas estáticas de arriba ganan al segmento
       // dinámico. Un slug que no existe y uno sin permiso acaban en el mismo sitio,
       // así que la interfaz tampoco delata qué módulos hay.

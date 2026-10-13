@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../src/*"],
+      "@pacientes/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "tailwind.config.ts", "../../src/vite-env.d.ts"]
+}

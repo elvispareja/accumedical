@@ -215,3 +215,20 @@ Los documentos de un caso **se quedan en Concurrencia**. Lo único que sale es e
 
 No hay carga retroactiva: los informes enviados antes de D3 no se guardaron.
 Prueba de punta a punta: `python3 -I /srv/accumedical/scripts/probar-informe-compartido.py <evento_id>`.
+
+## Registro de pacientes en la central y app Pacientes (D49)
+
+Los pacientes **viven en la central** (`personas`), una persona por tipo y número de documento.
+
+- **Al registrar un caso** (Concurrencia; mañana cualquier app):
+  - al escribir el documento, `_paciente_conocido` busca **primero en la central**: solo devuelve la identidad, y la central audita quién buscó qué documento;
+  - si no está, o la central no responde, busca en los casos de esa compañía;
+  - al guardar, `central.publicar_ya` crea o vincula la persona en la central en ese momento (tarea tras responder); la pasada periódica sigue de respaldo.
+- **Privacidad (LOPDP):** con la central, un usuario de aseguradora puede autocompletar la identidad de una persona que solo vino por otra compañía. Se acepta a pedido del usuario, con dos límites: solo se devuelven los nombres (nunca de dónde vino ni qué casos tiene) y cada búsqueda queda auditada en la central.
+- **App Pacientes** (`pacientes.pymes.ec`, `web/apps/pacientes`): **solo personal de Accumedical** (`require_personal_accumedical`: sin aseguradora). La API es `app/shared/pacientes/router.py`, que habla con la central con la credencial de la plataforma y el usuario real:
+  - `GET /api/v1/pacientes` (lista y búsqueda; central `GET /api/personas`, scope `personas:admin`);
+  - `GET /api/v1/pacientes/{id}`: la persona y su historial en todas las apps; los nombres de aplicación y aseguradora salen del espejo local;
+  - `PUT /api/v1/pacientes/{id}`: corregir la identidad; **la central es la dueña** y el documento no se cambia;
+  - `POST /api/v1/pacientes/eventos/{id}/informe`: enlace de un solo uso al informe final (D3), con motivo y auditoría (`informe_pedido`).
+- Admin ya no tiene pantallas de pacientes: «Pacientes Accumedical» abre la app en pestaña nueva, y `/admin/pacientes…` redirige.
+- Las personas que crea `probar-api-central.py` se retiran con `python -m app.cli retirar-personas-de-prueba` (central).

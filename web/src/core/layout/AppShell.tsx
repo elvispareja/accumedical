@@ -43,7 +43,8 @@ const ENTRADAS: EntradaLateral[] = [
   // Con quién trabaja Accumedical. La sección está por construir; la entrada
   // existe para reservarle su sitio, y su pantalla lo dice en vez de llevar a
   // un error. NO está en `ENTRADAS_POR_FUNCION`: es del administrador.
-  { a: '/admin/pacientes', etiqueta: 'Pacientes Accumedical', icono: Briefcase },
+  // Su propia app (D49): se abre en pestaña nueva en pacientes.pymes.ec.
+  { a: '/pacientes/dashboard', etiqueta: 'Pacientes Accumedical', icono: Briefcase },
 ]
 
 // Las dos familias comerciales, en el orden en que se presentan. Una sin

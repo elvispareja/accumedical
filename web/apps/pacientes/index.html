@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <title>Pacientes · Accumedical</title>
+    <script>
+      // Aplica el tema antes del primer pintado para que no haya destello blanco.
+      // Debe seguir siendo compatible con la CSP estricta: en producción este bloque
+      // se sirve con su hash SHA-256 en script-src, nunca con 'unsafe-inline'.
+      ;(function () {
+        try {
+          var guardado = localStorage.getItem('accumedical:tema')
+          var oscuro =
+            guardado === 'oscuro' ||
+            (guardado !== 'claro' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', oscuro)
+        } catch (e) {
+          /* almacenamiento bloqueado: se queda en el tema claro */
+        }
+      })()
+    </script>
+  </head>
+  <body class="h-full">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

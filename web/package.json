@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit",
     "dev:concurrencia": "vite --config apps/concurrencia/vite.config.ts",
     "build:concurrencia": "tsc --noEmit -p apps/concurrencia && vite build --config apps/concurrencia/vite.config.ts",
-    "typecheck:concurrencia": "tsc --noEmit -p apps/concurrencia"
+    "typecheck:concurrencia": "tsc --noEmit -p apps/concurrencia",
+    "dev:pacientes": "vite --config apps/pacientes/vite.config.ts",
+    "build:pacientes": "tsc --noEmit -p apps/pacientes && vite build --config apps/pacientes/vite.config.ts",
+    "typecheck:pacientes": "tsc --noEmit -p apps/pacientes"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.1.0",

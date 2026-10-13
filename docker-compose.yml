@@ -120,6 +120,30 @@ services:
       start_period: 40s
     networks: [edge]
 
+  # La app PACIENTES (D49): registro de pacientes de la plataforma, solo personal
+  # de Accumedical. Misma imagen y node_modules; su app es web/apps/pacientes.
+  web-pacientes:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    command: ["npm", "run", "dev:pacientes"]
+    environment:
+      VITE_HMR_CLIENT_PORT: "8080"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5175/pacientes/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks: [edge]
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -139,6 +163,8 @@ services:
       web:
         condition: service_healthy
       web-concurrencia:
+        condition: service_healthy
+      web-pacientes:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/api/v1/health"]
