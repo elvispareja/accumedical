@@ -44,6 +44,7 @@ from app.shared.aseguradoras.models import (
     AseguradoraModulo,
     AseguradoraSla,
 )
+from app.shared.catalogos.models import TipoPrestador
 from app.shared.central import replicacion
 from app.shared.prestadores.models import Prestador, PrestadorContacto, PrestadorSede
 from app.shared.users.models import (
@@ -78,6 +79,9 @@ class _Ficha:
 _APP = {"aplicacion_codigo": "module_code"}
 # Orden de dependencias: la ficha antes que sus contactos, sedes y lo contratado.
 FICHAS: dict[str, _Ficha] = {
+    # El catálogo de tipos de prestador (Parámetros en admin) va PRIMERO: los
+    # prestadores lo referencian.
+    "tipos_prestador": _Ficha("tipos_prestador", "codigo", ("codigo",)),
     "aseguradoras": _Ficha("aseguradoras", "id", ("id",)),
     "aseguradora_contactos": _Ficha("aseguradora_contactos", "id", ("id",)),
     "prestadores": _Ficha("prestadores", "id", ("id",)),
@@ -126,6 +130,7 @@ FICHAS.update({
 })
 ORDEN = tuple(FICHAS)
 _POR_MODELO = {
+    TipoPrestador: "tipos_prestador",
     Aseguradora: "aseguradoras",
     AseguradoraContacto: "aseguradora_contactos",
     Prestador: "prestadores",

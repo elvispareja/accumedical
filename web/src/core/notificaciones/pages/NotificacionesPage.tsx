@@ -4,6 +4,7 @@ import { Bell, CheckCheck, ChevronLeft, ChevronRight, RotateCw } from 'lucide-re
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { abrirRuta } from '@/core/dominios'
 import { esCoordinador } from '@/core/auth/area'
 import { useSesion } from '@/core/auth/useSesion'
 import { identidadDe } from '@/core/modulos/identidad'
@@ -149,7 +150,8 @@ export function NotificacionesPage({ moduloFijo }: { moduloFijo?: string } = {})
 
   function abrir(n: Notificacion) {
     if (!n.leida) leer.mutate(n.id)
-    navegar(n.url)
+    // Si el aviso es de otra app, en otra pestaña (dominios.abrirRuta).
+    abrirRuta(n.url, navegar)
   }
 
   return (

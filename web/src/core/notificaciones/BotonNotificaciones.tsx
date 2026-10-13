@@ -4,6 +4,7 @@ import { Bell, CheckCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import { abrirRuta } from '@/core/dominios'
 import { useArea } from '@/core/auth/area'
 import { identidadDe } from '@/core/modulos/identidad'
 import {
@@ -108,7 +109,8 @@ export function BotonNotificaciones({ modulo }: { modulo?: { codigo: string; rut
   function abrir(n: Notificacion) {
     setAbierto(false)
     if (!n.leida) leer.mutate(n.id)
-    navegar(n.url)
+    // Si el aviso es de otra app, en otra pestaña (dominios.abrirRuta).
+    abrirRuta(n.url, navegar)
   }
 
   // Lo que llega DESPUÉS de haber entrado se anuncia con un toast abajo a la

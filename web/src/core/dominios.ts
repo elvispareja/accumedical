@@ -67,6 +67,31 @@ export function destinoEnOtroDominio(ruta: string, resto = ''): string | null {
 }
 
 /**
+ * Abre una ruta lógica (p. ej. el destino de un aviso): si es de OTRA app —otro
+ * subdominio—, en una PESTAÑA NUEVA y la actual se queda donde está (pedido del
+ * usuario); si es de esta misma app, con `navegar`, como cualquier enlace.
+ */
+export function abrirRuta(ruta: string, navegar: (ruta: string) => void): void {
+  const vigente = rutaVigente(ruta)
+  const otra = destinoEnOtroDominio(vigente)
+  if (otra) window.open(otra, '_blank', 'noopener')
+  else navegar(vigente)
+}
+
+/**
+ * Avisos guardados ANTES de D45 apuntan a la supervisión vieja dentro de admin
+ * (`/admin/auditorias/<slug>/<caso>`); hoy ese caso vive en su módulo.
+ */
+function rutaVigente(ruta: string): string {
+  const vieja = /^\/admin\/auditorias\/([a-z0-9-]+)(?:\/([^/?#]+))?/.exec(ruta)
+  if (!vieja) return ruta
+  const [, slug, caso] = vieja
+  if (!caso || caso === 'programar') return `/${slug}/${caso ?? 'dashboard'}`
+  return `/${slug}/supervision/${caso}`
+}
+
+
+/**
  * Si esta ruta es de un MÓDULO servido en otro subdominio, su URL completa; si
  * no, null. Es lo que el menú de admin abre en una PESTAÑA NUEVA (p. ej. las
  * auditorías de Concurrencia desde admin.pymes.ec): admin queda abierto donde

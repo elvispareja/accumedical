@@ -173,8 +173,8 @@ _SIN_RED_PROPIA = {
 # Con REDES_EN_CENTRAL (paso 5a) la central es dueña de TODAS las redes: estas
 # entidades ya no se envían (la central, además, las ignoraría).
 _REDES = ("convenios", "convenio_fc")
-_FICHAS = ("aseguradoras", "aseguradora_contactos", "prestadores", "prestador_contactos",
-           "prestador_sedes", "aseguradora_aplicaciones", "aseguradora_sla",
+_FICHAS = ("tipos_prestador", "aseguradoras", "aseguradora_contactos", "prestadores",
+           "prestador_contactos", "prestador_sedes", "aseguradora_aplicaciones", "aseguradora_sla",
            "aseguradora_coberturas", "usuarios", "usuario_aplicaciones", "usuario_grupos",
            "usuario_coordinaciones")
 
