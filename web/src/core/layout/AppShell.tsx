@@ -116,7 +116,7 @@ function GrupoAuditorias({ modulos }: { modulos: ModuloCatalogo[] }) {
             {suyos.map((m) => (
               <EntradaMenu
                 key={m.codigo}
-                a={`/admin/auditorias/${m.slug}`}
+                a={`/${m.slug}`}
                 etiqueta={m.nombre}
                 icono={identidadDe(m.codigo).Icono}
                 anidada

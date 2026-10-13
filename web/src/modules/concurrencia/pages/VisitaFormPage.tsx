@@ -241,7 +241,7 @@ export function VisitaFormPage({
   const { data: sesion } = useSesion()
 
   // A dónde se vuelve: la bandeja de compañía, o la pantalla de supervisión
-  // desde la que se llegó (/concurrencia o /admin/auditorias/concurrencia).
+  // desde la que se llegó (/concurrencia).
   const volverA = supervision ? ubicacion.pathname.replace(/\/programar$/, '') : BANDEJA
   const [aseguradoraId, setAseguradoraId] = useState('')
   const aseguradoras = useQuery({

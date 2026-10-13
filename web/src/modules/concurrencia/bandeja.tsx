@@ -2,7 +2,6 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { MapPin } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { useSesion } from '@/core/auth/useSesion'
 import { listarSupervision, urlInformePdfSupervision } from '@/modules/concurrencia/api'
 import { EstadoVisitaBadge, Ventana } from '@/modules/concurrencia/components/visitas'
 import { CuadroAuditoria } from '@/shared/components/CuadroAuditoria'
@@ -71,15 +70,10 @@ export function CuadroDeConcurrencia({ filtros, ...props }: PropsCuadroAuditoria
  */
 export function CasosDeConcurrencia({ filtros }: PropsCasosAuditoria) {
   const [pagina, setPagina] = useState(1)
-  const { data: sesion } = useSesion()
 
-  // Cada quien abre el caso por SU ruta: el administrador global no tiene
-  // módulos, así que `/concurrencia` lo echa a «sin accesos»; su panel —y el
-  // caso que cuelga de él— viven en Auditorías. Misma regla que en el panel.
-  const rutaDelCaso = (id: string) =>
-    sesion?.user.es_admin_global
-      ? `/admin/auditorias/concurrencia/${id}`
-      : `/concurrencia/supervision/${id}`
+  // El caso se abre siempre en el módulo: el administrador global entra como
+  // coordinador de plataforma (D45), con la misma ruta que él.
+  const rutaDelCaso = (id: string) => `/concurrencia/supervision/${id}`
 
   // Al cambiar el filtro se vuelve a la primera página: la cuarta puede no
   // existir con lo que queda.

@@ -27,6 +27,10 @@ export const ROL_COORDINADOR = 'supervisor'
  * no `grupo_coordinado`, que solo lleva el de familia.
  */
 export function esCoordinador(sesion?: Sesion | null): boolean {
+  // El administrador global recibe todos los módulos con rol de coordinador para
+  // entrar a cada uno como coordinador de plataforma (D45), pero NO coordina: su
+  // área sigue siendo `/admin` y su menú, el de administración.
+  if (sesion?.user.es_admin_global) return false
   return Boolean(sesion?.modulos.some((m) => m.rol === ROL_COORDINADOR))
 }
 

@@ -9,7 +9,7 @@ import { RequireSession } from '@/core/auth/RequireSession'
 import { AppShell } from '@/core/layout/AppShell'
 import { ModuloShell } from '@/core/layout/ModuloShell'
 import { NotificacionesPage } from '@/core/notificaciones/pages/NotificacionesPage'
-import { AuditoriaPendientePage } from '@/core/pages/AuditoriaPendientePage'
+import { RedirigirAlModulo } from '@/core/pages/RedirigirAlModulo'
 import { ErrorPage } from '@/core/pages/ErrorPage'
 import { DefinirPasswordPage } from '@/core/pages/DefinirPasswordPage'
 import { LoginPage } from '@/core/pages/LoginPage'
@@ -17,9 +17,6 @@ import { SeleccionarModuloPage } from '@/core/pages/SeleccionarModuloPage'
 import { ModuloPendientePage } from '@/core/pages/ModuloPendientePage'
 import { SinAccesosPage } from '@/core/pages/SinAccesosPage'
 import { rutasConcurrencia } from '@/modules/concurrencia/routes'
-import { CasoSupervisionPage } from '@/modules/concurrencia/pages/CasoSupervisionPage'
-import { SupervisionPage } from '@/modules/concurrencia/pages/SupervisionPage'
-import { VisitaFormPage } from '@/modules/concurrencia/pages/VisitaFormPage'
 import { AseguradoraFormPage } from '@/shared/aseguradoras/pages/AseguradoraFormPage'
 import { ConfiguracionPage } from '@/shared/configuracion/pages/ConfiguracionPage'
 import { AseguradorasPage } from '@/shared/aseguradoras/pages/AseguradorasPage'
@@ -86,17 +83,18 @@ export const router = createBrowserRouter([
           { path: 'usuarios', element: <UsuariosPage /> },
           { path: 'usuarios/nuevo', element: <UsuarioFormPage /> },
           { path: 'usuarios/:id/editar', element: <UsuarioFormPage /> },
-          // Auditorías: el administrador supervisa cada requerimiento con LA MISMA
-          // pantalla del supervisor de plataforma; el backend le abre esa puerta.
-          { path: 'auditorias', element: <Navigate to="/admin/auditorias/concurrencia" replace /> },
-          { path: 'auditorias/concurrencia', element: <SupervisionPage /> },
-          // El caso, como página entera y no como diálogo.
-          { path: 'auditorias/concurrencia/:id', element: <CasoSupervisionPage /> },
-          { path: 'auditorias/concurrencia/programar', element: <VisitaFormPage supervision /> },
-          // El resto de requerimientos sale igual en el menú, aunque todavía no
-          // tenga panel: la dirección existe y enseña su cartel. Va DESPUÉS de las
-          // estáticas —que ganan al segmento dinámico— y no antes.
-          { path: 'auditorias/:slug', element: <AuditoriaPendientePage /> },
+          // Auditorías (D45): el administrador entra a CADA módulo como coordinador
+          // de plataforma, en el subdominio y con las pantallas del módulo. Estas
+          // direcciones ya no tienen pantalla propia: solo llevan a la del módulo,
+          // para que los enlaces y avisos guardados sigan funcionando.
+          { path: 'auditorias', element: <Navigate to="/concurrencia" replace /> },
+          { path: 'auditorias/concurrencia', element: <Navigate to="/concurrencia" replace /> },
+          {
+            path: 'auditorias/concurrencia/programar',
+            element: <Navigate to="/concurrencia/programar" replace />,
+          },
+          { path: 'auditorias/concurrencia/:id', element: <RedirigirAlModulo a="/concurrencia/supervision/:id" /> },
+          { path: 'auditorias/:slug', element: <RedirigirAlModulo a="/:slug" /> },
           // Los catálogos que mantiene la propia gente. Quien crea prestadores
           // tiene que poder nombrar su tipo.
           { path: 'parametros', element: <Navigate to="/admin/parametros/tipos-prestador" replace /> },

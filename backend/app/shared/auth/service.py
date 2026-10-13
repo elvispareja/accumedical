@@ -242,7 +242,22 @@ def resolver_modulos(db: DbSession, user: User) -> list[ModuloResuelto]:
     Dos caminos suman: las filas por módulo (`user_module_access`) y la familia
     que coordina el usuario (`user_grupo_access`), que abarca todos los módulos
     vivos de esa familia —incluidos los que se agreguen mañana—.
+
+    El administrador global entra a TODOS los módulos vivos como coordinador de
+    plataforma: es exactamente el alcance que ya le da `require_module_access`
+    en cada petición. Así cada módulo le enseña SU propia pantalla de
+    coordinación, en su subdominio y con su diseño, y admin no tiene que copiar
+    las pantallas de cada módulo (opción 2, D45).
     """
+    if user.is_superadmin:
+        return [
+            ModuloResuelto(codigo=f[0], slug=f[1], nombre=f[2], icono=f[3], color_acento=f[4],
+                           orden=f[5], rol=ROL_COORDINADOR)
+            for f in db.execute(
+                select(*_columnas_modulo()).where(Module.activo.is_(True))
+                .order_by(Module.orden, Module.nombre)
+            )
+        ]
     por_modulo = db.execute(
         select(*_columnas_modulo(), Role.code)
         .select_from(UserModuleAccess)

@@ -147,7 +147,9 @@ export function ModuloShell() {
   // MISMO menú lateral que el resto de la plataforma, uno por línea y de la A a
   // la Z. Quien opera o audita un módulo suelto conserva su topbar con el
   // selector, que para dos entradas es más directo que una columna entera.
-  if (esCoordinador(sesion)) {
+  // El administrador global entra al módulo COMO coordinador de plataforma (D45):
+  // mismo armazón y mismo menú, en el subdominio y con el diseño del módulo.
+  if (esCoordinador(sesion) || sesion?.user.es_admin_global) {
     return (
       // La marca del panel es SIEMPRE la de Accumedical, también para quien
       // entra desde una aseguradora: el menú es la plataforma, y la compañía se

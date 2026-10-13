@@ -4,7 +4,6 @@ import { ArrowLeft, Clock, FileText, ImageUp } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { useSesion } from '@/core/auth/useSesion'
 import {
   obtenerVisitaSupervision,
   prorrogarVisita,
@@ -41,13 +40,10 @@ export function CasoSupervisionPage() {
   const { id } = useParams<{ id: string }>()
   const navegar = useNavigate()
   const sinMovimiento = useReducedMotion()
-  const { data: sesion } = useSesion()
 
-  // De dónde vino y a dónde se vuelve. El administrador global no tiene módulos,
-  // así que su panel es el de Auditorías; el coordinador, el del módulo.
-  const listado = sesion?.user.es_admin_global
-    ? '/admin/auditorias/concurrencia'
-    : '/concurrencia'
+  // A dónde se vuelve: el panel del módulo, también para el administrador global,
+  // que entra como coordinador de plataforma (D45).
+  const listado = '/concurrencia'
 
   const detalle = useQuery({
     queryKey: ['supervision-visita', id],

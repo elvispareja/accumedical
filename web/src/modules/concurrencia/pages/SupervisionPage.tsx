@@ -15,7 +15,6 @@ import {
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
-import { useSesion } from '@/core/auth/useSesion'
 import { cn } from '@/lib/utils'
 import {
   asignarAuditor,
@@ -59,9 +58,8 @@ function mensajeDeError(error: unknown, porDefecto: string): string {
  * uno no navega, acota la lista de abajo. Y los filtros son cuatro: búsqueda,
  * estado, **rango de fechas** y solo los que están sin asignar.
  *
- * La misma pantalla sirve al coordinador (`/concurrencia`) y al administrador
- * global (`/admin/auditorias/concurrencia`); lo único que cambia es por dónde
- * abre cada uno el caso.
+ * La misma pantalla sirve al coordinador de plataforma y al administrador
+ * global, que entra al módulo como él (D45), en `/concurrencia`.
  */
 export function SupervisionPage() {
   const toast = useToast()
@@ -81,13 +79,9 @@ export function SupervisionPage() {
   const [asignando, setAsignando] = useState<VisitaSupervision | null>(null)
   const [pagina, setPagina] = useState(1)
 
-  // Cada quien abre el caso por SU ruta: el administrador global no tiene
-  // módulos, así que su panel —y el detalle que cuelga de él— vive en Auditorías.
-  const { data: sesion } = useSesion()
-  const rutaDelCaso = (id: string) =>
-    sesion?.user.es_admin_global
-      ? `/admin/auditorias/concurrencia/${id}`
-      : `/concurrencia/supervision/${id}`
+  // El caso se abre siempre en el módulo: el administrador global entra como
+  // coordinador de plataforma (D45), con la misma ruta que él.
+  const rutaDelCaso = (id: string) => `/concurrencia/supervision/${id}`
 
   // Una notificación vieja llega como `?caso=<id>`: se redirige a la página del
   // caso. Las nuevas ya apuntan ahí directamente; esto es solo la puerta de
@@ -97,7 +91,7 @@ export function SupervisionPage() {
   useEffect(() => {
     if (casoDeLaUrl) navegar(rutaDelCaso(casoDeLaUrl), { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [casoDeLaUrl, sesion?.user.es_admin_global])
+  }, [casoDeLaUrl])
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -185,8 +179,7 @@ export function SupervisionPage() {
             auditores — y las que programes tú, si el pedido te llega por correo.
           </p>
         </div>
-        {/* La misma pantalla sirve en /concurrencia y en /admin/auditorias/…,
-            así que el destino se arma sobre la ruta actual, no en absoluto. */}
+        {/* El destino se arma sobre la ruta actual, no en absoluto. */}
         <Link
           to={`${ubicacion.pathname.replace(/\/$/, '')}/programar`}
           className="inline-flex h-10 items-center gap-2 rounded bg-marca px-4 text-sm font-medium text-marca-fg transition-opacity duration-150 hover:opacity-90"

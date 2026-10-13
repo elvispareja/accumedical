@@ -72,9 +72,8 @@ def avisar_en_campana(db: DbSession, visita) -> int:
     # Cada uno a SU pantalla del caso, que no es la misma para los tres —y por
     # eso la URL se guarda por notificación y no se deduce del módulo—:
     #
-    #   · la coordinación de Accumedical entra por su panel de supervisión;
-    #   · el administrador global supervisa desde `/admin/auditorias`, y
-    #     `/concurrencia` ni siquiera lo deja pasar, porque no tiene módulos;
+    #   · la coordinación de Accumedical y el administrador global (que entra al
+    #     módulo como coordinador de plataforma, D45) por el panel de supervisión;
     #   · la coordinación de la COMPAÑÍA abre el caso de su propia empresa, en
     #     solo lectura: las visitas las gestiona su equipo operador, y las dos
     #     rutas de arriba le responderían 403.
@@ -86,7 +85,7 @@ def avisar_en_campana(db: DbSession, visita) -> int:
         for quien in nucleo.coordinadores_de_plataforma(db)
     ]
     destinos += [
-        (admin, f"/admin/auditorias/concurrencia/{visita.id}")
+        (admin, f"/concurrencia/supervision/{visita.id}")
         for admin in nucleo.superadmins(db)
     ]
     # Por las MISMAS dos puertas que el correo: la fila del módulo o la
