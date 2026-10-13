@@ -27,7 +27,14 @@ from app.core.security.deps import (
     require_permission,
     verificar_csrf,
 )
-from app.modules.concurrencia import firma, notificaciones, permissions, service, transcripcion
+from app.modules.concurrencia import (
+    firma,
+    informes,
+    notificaciones,
+    permissions,
+    service,
+    transcripcion,
+)
 from app.modules.concurrencia import informe as informe_ia
 from app.modules.concurrencia import pdf as informe_pdf
 from app.modules.concurrencia.schemas import (
@@ -1101,6 +1108,10 @@ def enviar_informe(
         # campana; el correo con el PDF sale después y a más gente.
         notificaciones.avisar_culminacion_en_campana(db, visita)
 
+    # Lo entregado queda guardado TAL CUAL (D3): el correo adjunta estos mismos
+    # bytes, y es lo único del caso que otra app podrá ver (enlace de la central).
+    entrega = informes.guardar_entrega(db, visita, contenido, ctx.user.id)
+
     audit.registrar(
         db,
         accion="informe_enviado",
@@ -1115,6 +1126,7 @@ def enviar_informe(
             "destinatarios": len(destinatarios),
             "longitud": len(visita.informe or ""),
             "estado": {"antes": estado_anterior, "despues": visita.estado},
+            "entrega": {"id": str(entrega.id), "numero": entrega.numero, "sha256": entrega.sha256},
         },
     )
     db.commit()

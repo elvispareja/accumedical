@@ -32,3 +32,35 @@ def cifrar(texto: str) -> bytes:
 def descifrar(datos: bytes) -> str:
     """Lanza `cryptography.fernet.InvalidToken` si el archivo fue manipulado."""
     return _fernet().decrypt(datos).decode()
+
+
+# ── Documentos (bytes): AES-256-GCM con llave PROPIA por propósito ───────────
+# Para los informes entregados (D3). Llave distinta de la de configuración
+# (otra `info` en HKDF): comprometer un uso no abre el otro. `contexto` es el id
+# de la fila y va como dato asociado: un contenido cifrado copiado a OTRA fila
+# no descifra. Formato: nonce (12 bytes) ‖ texto cifrado ‖ etiqueta (16 bytes).
+# OJO: cambiar el SECRET_KEY deja ilegibles los documentos ya guardados.
+
+
+def _aesgcm(proposito: bytes):
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    llave = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b"accumedical-documentos",
+        info=b"documentos guardados en la base: " + proposito,
+    ).derive(settings.secret_key.get_secret_value().encode())
+    return AESGCM(llave)
+
+
+def cifrar_bytes(datos: bytes, proposito: bytes, contexto: bytes) -> bytes:
+    import os
+
+    nonce = os.urandom(12)
+    return nonce + _aesgcm(proposito).encrypt(nonce, datos, contexto)
+
+
+def descifrar_bytes(datos: bytes, proposito: bytes, contexto: bytes) -> bytes:
+    """Lanza `cryptography.exceptions.InvalidTag` si fue manipulado o no es de esa fila."""
+    return _aesgcm(proposito).decrypt(datos[:12], datos[12:], contexto)

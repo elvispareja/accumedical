@@ -11,6 +11,10 @@ Qué publica, y nada más:
                                        (código, fechas, sede). Nunca el informe,
                                        las notas ni las fotos: lo clínico se
                                        queda en Concurrencia.
+  informe entregado      →  evento `informe_concurrencia` con la FICHA del PDF
+                                       firmado (número, huella, tamaño, firmante).
+                                       El PDF no viaja: otra app lo ve solo con
+                                       un enlace de un solo uso (informes.py, D3).
 
 Lo corre una tarea periódica (app.main) y el comando `python -m app.cli
 sincronizar-central`. Si la central no responde, la visita queda pendiente y se
@@ -28,7 +32,8 @@ from sqlalchemy.orm import Session
 
 from app.core.central import CentralError, ClienteCentral
 from app.core.logging import log
-from app.modules.concurrencia.models import SyncCentral, Visita
+from app.modules.concurrencia import informes
+from app.modules.concurrencia.models import InformeEntregado, SyncCentral, Visita
 
 TIPO_EVENTO = "visita_concurrencia"
 APLICACION = "concurrencia"
@@ -151,6 +156,50 @@ def sincronizar_visita(db: Session, c: ClienteCentral, v: Visita) -> bool:
     return ok
 
 
+def publicar_informe(db: Session, c: ClienteCentral, entrega: InformeEntregado) -> bool:
+    """La ficha de una entrega como evento `informe_concurrencia` (idempotente por su id)."""
+    visita = db.get(Visita, entrega.visita_id)
+    sync = db.get(SyncCentral, entrega.visita_id)
+    try:
+        if visita is None or sync is None or sync.persona_central_id is None:
+            raise CentralError(None, "persona aún no publicada")
+        cuerpo = {
+            "persona_id": str(sync.persona_central_id),
+            "tipo_evento": informes.TIPO_EVENTO,
+            "fecha_evento": entrega.entregado_at.isoformat(),
+            "referencia_externa": str(entrega.id),
+            "resultado": {"documento": informes.ficha(entrega, visita)},
+        }
+        estado, r = c.llamar("POST", "/api/eventos", cuerpo, usuario=entrega.entregado_por)
+        if estado not in (200, 201):
+            raise CentralError(estado, "registrar informe")
+        entrega.evento_central_id = uuid.UUID(r["id"])
+        entrega.ultimo_error = None
+        ok = True
+    except CentralError as error:
+        entrega.intentos = (entrega.intentos or 0) + 1
+        entrega.ultimo_error = f"{error.estado or 'sin respuesta'}: {error.detalle}"[:200]
+        ok = False
+    db.commit()
+    return ok
+
+
+def informes_pendientes(db: Session, limite: int) -> list[InformeEntregado]:
+    """Entregas sin publicar cuya persona ya está en la central."""
+    return list(
+        db.scalars(
+            select(InformeEntregado)
+            .join(SyncCentral, SyncCentral.visita_id == InformeEntregado.visita_id)
+            .where(
+                InformeEntregado.evento_central_id.is_(None),
+                SyncCentral.persona_central_id.is_not(None),
+            )
+            .order_by(InformeEntregado.intentos, InformeEntregado.entregado_at)
+            .limit(limite)
+        )
+    )
+
+
 def sincronizar_pendientes(db: Session, c: ClienteCentral, limite: int = 50) -> tuple[int, int]:
     """Devuelve (sincronizadas, fallidas). Si la central no responde, corta la pasada."""
     hechas = fallidas = 0
@@ -161,5 +210,13 @@ def sincronizar_pendientes(db: Session, c: ClienteCentral, limite: int = 50) -> 
             fallidas += 1
             fila = db.get(SyncCentral, visita.id)
             if fila and fila.ultimo_error and fila.ultimo_error.startswith("sin respuesta"):
-                break  # central caída: no tiene sentido seguir golpeando
+                return hechas, fallidas  # central caída: no tiene sentido seguir golpeando
+    # Después de las visitas: así la persona de cada informe ya está publicada.
+    for entrega in informes_pendientes(db, limite):
+        if publicar_informe(db, c, entrega):
+            hechas += 1
+        else:
+            fallidas += 1
+            if entrega.ultimo_error and entrega.ultimo_error.startswith("sin respuesta"):
+                break
     return hechas, fallidas

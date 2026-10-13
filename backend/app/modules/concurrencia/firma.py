@@ -106,6 +106,16 @@ def _cargar_firmante(ruta: Path, contrasena: str):
         return firmante
 
 
+def titular_actual() -> str | None:
+    """El nombre (CN) del certificado con el que se firma hoy; None sin firma."""
+    config = _config_actual()
+    if config is None:
+        return None
+    certificado = _cargar_firmante(*config).signing_cert
+    nombre = certificado.subject.native.get("common_name")
+    return str(nombre)[:200] if nombre else "(certificado sin nombre)"
+
+
 def firmar(pdf: bytes) -> bytes:
     """
     Devuelve el PDF firmado (PAdES) con un sello visible al pie de la última

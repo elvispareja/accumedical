@@ -26,6 +26,7 @@ from app.core.middlewares import (
 )
 from app.modules.calificacion.router import router as calificacion_router
 from app.modules.carta_credito.router import router as carta_credito_router
+from app.modules.concurrencia.informes import compartido as concurrencia_compartido_router
 from app.modules.concurrencia.router import router as concurrencia_router
 from app.modules.suscripcion.router import router as suscripcion_router
 from app.shared.aseguradoras.router import router as aseguradoras_router
@@ -53,6 +54,9 @@ PUBLIC_PATHS = {
     # tener sesión: el token del enlace es la credencial, de un solo uso.
     "/api/v1/auth/invitacion",
     "/api/v1/auth/definir-password",
+    # El informe entregado que otra app pidió a la central (D3): el enlace de un
+    # solo uso que emitió la central ES la credencial, y se canjea allí.
+    "/api/v1/concurrencia/compartido/informes/{entrega_id}",
 }
 
 INTERVALO_PURGA_SEG = 3600
@@ -314,6 +318,7 @@ api.include_router(configuracion_router)
 api.include_router(suscripcion_router)
 api.include_router(calificacion_router)
 api.include_router(concurrencia_router)
+api.include_router(concurrencia_compartido_router)
 api.include_router(carta_credito_router)
 
 app.include_router(api)

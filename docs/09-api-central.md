@@ -135,3 +135,36 @@ Con `DOCUMENTOS_EN_CENTRAL=true` (`app/shared/central/archivos.py`):
 - La central valida de nuevo cada archivo (PDF sin contenido activo, Excel sin macros): es más estricta que la validación de aquí.
 - Sin respaldo local: si la central no responde, subir o ver un documento da 503.
 - Cliente: `ClienteCentral.llamar_binario` (envía el archivo como cuerpo) y `.descargar` (recibe bytes).
+
+## Informe final entregado: guardado y compartido con otras apps (D3)
+
+Los documentos de un caso **se quedan en Concurrencia**. Lo único que sale es el
+**informe final firmado**, tal como se entregó, y solo con un enlace de la central.
+
+1. **Al pulsar «Enviar informe»** (`enviar_informe`) se guarda el PDF firmado exacto en
+   `conc_informes_entregados` como entrega n.º *n* del caso, en la misma transacción
+   que culmina la visita. Corregir y reenviar crea la entrega *n+1*; ninguna se pisa.
+   El correo adjunta esos mismos bytes.
+   - Cifrado AES-256-GCM (`core/security/cifrado.cifrar_bytes`, llave HKDF propia
+     derivada del `SECRET_KEY`, id de la fila como dato asociado).
+   - `sha256` del PDF en claro; al servir se verifica: si no coincide → 500 y log
+     `informe_entregado_alterado`.
+   - **Cambiar el `SECRET_KEY` deja ilegibles las entregas guardadas.**
+2. **El sincronizador** (cada 120 s, `central.sincronizar_pendientes`) publica, después
+   de las visitas, un evento `informe_concurrencia` por entrega, con la **ficha**
+   (número, huella, tamaño, firmante, fecha, `url_relativa`) y nunca el PDF.
+   Es idempotente (`referencia_externa` = id de la entrega).
+3. **Otra app** pide a la central `POST /api/eventos/{id}/acceso` con un motivo. Recibe
+   un enlace de un solo uso, válido 5 minutos:
+   `https://concurrencia.pymes.ec/api/v1/concurrencia/compartido/informes/{entrega}?acceso=…`
+4. **`GET /api/v1/concurrencia/compartido/informes/{entrega_id}`** (`informes.py`, en
+   `PUBLIC_PATHS`, sin sesión: el enlace ES la credencial; límite por IP como el login):
+   - canjea el token en la central (`POST /api/accesos/canjear`), que verifica que no
+     se usó, que no venció y que es para ESA entrega;
+   - registra `informe_compartido` en la auditoría, con la app, el usuario y el motivo;
+   - entrega el PDF con `no-store` y `no-referrer`;
+   - cualquier fallo responde 404 y queda registrado como `informe_compartido_rechazado`.
+5. El access log de uvicorn tapa `?acceso=` y `?token=`.
+
+No hay carga retroactiva: los informes enviados antes de D3 no se guardaron.
+Prueba de punta a punta: `python3 -I /srv/accumedical/scripts/probar-informe-compartido.py <evento_id>`.

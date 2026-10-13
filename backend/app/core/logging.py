@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 import uuid
 from contextvars import ContextVar
@@ -45,6 +46,20 @@ def _inyectar_request_id(_logger, _nombre, evento: dict) -> dict:
     return evento
 
 
+# Enlaces cuya query ES la credencial (invitación, informe compartido D3): el
+# access log de uvicorn escribe la ruta con la query, así que se tapa el valor.
+_QUERY_SECRETA = re.compile(r"([?&](?:token|acceso)=)[^&\s]+", re.IGNORECASE)
+
+
+class _TaparQuerySecreta(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) >= 3:
+            args = list(record.args)
+            args[2] = _QUERY_SECRETA.sub(r"\1[redactado]", str(args[2]))
+            record.args = tuple(args)
+        return True
+
+
 def configurar_logging() -> None:
     nivel = getattr(logging, settings.log_level.upper(), logging.INFO)
 
@@ -52,6 +67,9 @@ def configurar_logging() -> None:
     for ruidoso in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(ruidoso).handlers.clear()
         logging.getLogger(ruidoso).propagate = True
+    acceso = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, _TaparQuerySecreta) for f in acceso.filters):
+        acceso.addFilter(_TaparQuerySecreta())
 
     structlog.configure(
         processors=[

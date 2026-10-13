@@ -48,6 +48,10 @@ ACCIONES = (
     "informe_corregido",
     # Concurrencia: el auditor envía el informe en PDF a los correos del caso.
     "informe_enviado",
+    # Concurrencia (D3): otra app abrió un informe entregado con un enlace de
+    # la central (app, usuario y motivo), o se rechazó un enlace no válido.
+    "informe_compartido",
+    "informe_compartido_rechazado",
     # Concurrencia: las fotos que el auditor toma en el hospital. Al log solo
     # van MIME y tamaño, jamás la imagen: es dato clínico (A09).
     "foto_subida",

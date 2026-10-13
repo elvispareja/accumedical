@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, LargeBinary, String, Text, text
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -254,3 +254,44 @@ class SyncCentral(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(
         TS, nullable=False, server_default=text("now()"), onupdate=text("now()")
     )
+
+
+class InformeEntregado(Base):
+    """
+    El PDF EXACTO que se entregó al pulsar «Enviar informe» (D3): firmado,
+    cifrado y numerado por caso (entrega 1, 2…; corregir y reenviar crea otra,
+    nunca pisa la anterior). Es lo único del caso que otras aplicaciones pueden
+    ver, y solo con un enlace de un solo uso emitido por la central.
+
+    Solo se agrega: el contenido no se edita ni se regenera. `sha256` es la
+    huella del PDF en claro (la que viaja a la central en la ficha del evento);
+    `contenido_cifrado` usa AES-256-GCM con el id de la fila como dato asociado.
+    `evento_central_id` queda nulo hasta que la ficha se publica en la central.
+    """
+
+    __tablename__ = "conc_informes_entregados"
+    __table_args__ = (
+        CheckConstraint("numero >= 1", name="numero_positivo"),
+        CheckConstraint(r"sha256 ~ '^[0-9a-f]{64}$'", name="sha256_formato"),
+        CheckConstraint("tamano_bytes > 0", name="tamano"),
+        Index("uq_conc_informes_entregados_visita_numero", "visita_id", "numero", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = columna_pk_uuid()
+    visita_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conc_visitas.id", ondelete="RESTRICT"), nullable=False
+    )
+    numero: Mapped[int] = mapped_column(nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    tamano_bytes: Mapped[int] = mapped_column(nullable=False)
+    contenido_cifrado: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    firmante: Mapped[str | None] = mapped_column(String(200))
+    entregado_por: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    entregado_at: Mapped[dt.datetime] = mapped_column(
+        TS, nullable=False, server_default=text("now()")
+    )
+    evento_central_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    intentos: Mapped[int] = mapped_column(nullable=False, server_default=text("0"))
+    ultimo_error: Mapped[str | None] = mapped_column(String(200))
