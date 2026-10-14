@@ -663,25 +663,44 @@ def pacientes_registrados(
     ], total
 
 
-def operadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[Any]:
+def operadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[tuple[Any, bool]]:
     """
-    Para el filtro «Operador» del supervisor de MI aseguradora: los operadores
-    de hoy MÁS todo aquel que creó algún caso de la compañía, aunque ya no opere,
-    lo hayan desactivado o haya cambiado de rol (14/10/2026: en medicina no se
-    borra nada y lo que hizo cada persona sigue a su nombre).
+    Para el filtro «Operador» del supervisor de MI aseguradora: `(usuario,
+    vigente)` de los operadores de hoy, de quien lo fue alguna vez (historial de
+    accesos, D57) y de todo aquel que creó algún caso de la compañía, aunque ya
+    no opere, lo hayan desactivado o haya cambiado de rol (14/10/2026: en
+    medicina no se borra nada y lo que hizo cada persona sigue a su nombre).
+    `vigente` = activo y operador de Concurrencia hoy.
     """
-    vigentes = nucleo.operadores_de_la_compania(db, aseguradora_id)
-    conocidos = {u.id for u in vigentes}
-    autores = [
-        i for i in db.scalars(
-            select(Visita.created_by)
-            .where(Visita.aseguradora_id == aseguradora_id, Visita.created_by.is_not(None))
-            .distinct()
+    from app.shared.users.models import HistorialAcceso
+
+    actuales = {u.id: u for u in nucleo.operadores_de_la_compania(db, aseguradora_id)}
+    autores = set(
+        db.scalars(
+            select(Visita.created_by).where(
+                Visita.aseguradora_id == aseguradora_id, Visita.created_by.is_not(None)
+            )
         )
-        if i not in conocidos
+    )
+    otros = autores | set(
+        db.scalars(
+            select(HistorialAcceso.user_id).where(
+                HistorialAcceso.module_code == nucleo.MODULO,
+                HistorialAcceso.rol == "operador",
+            )
+        )
+    )
+    todos = dict(actuales)
+    for u in nucleo.usuarios_por_ids(db, sorted(otros - set(actuales))):
+        # Del historial salen operadores de todas las compañías: solo los suyos.
+        # Las cuentas dadas de baja (las de pruebas) solo si crearon algún caso.
+        if u.aseguradora_id == aseguradora_id and (u.deleted_at is None or u.id in autores):
+            todos[u.id] = u
+    filas = [
+        (u, bool(u.is_active) and u.deleted_at is None and u.id in actuales)
+        for u in todos.values()
     ]
-    todos = list(vigentes) + list(nucleo.usuarios_por_ids(db, autores))
-    return sorted(todos, key=lambda u: (personas.de_fila(u), str(u.id)))
+    return sorted(filas, key=lambda f: (not f[1], personas.de_fila(f[0]), str(f[0].id)))
 
 
 def coordenadas_de_destinos(

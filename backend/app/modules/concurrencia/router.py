@@ -258,9 +258,11 @@ def listar_operadores(
             id=str(u.id),
             nombre_completo=personas.de_fila(u),
             email=u.email,
-            activo=u.is_active,
+            # Vigente: activo Y operador de Concurrencia hoy. Quien ya no lo es
+            # sigue en la lista (sus casos siguen a su nombre), marcado.
+            activo=vigente,
         )
-        for u in service.operadores_de_la_compania(db, _aseguradora_de(ctx))
+        for u, vigente in service.operadores_de_la_compania(db, _aseguradora_de(ctx))
     ]
 
 
