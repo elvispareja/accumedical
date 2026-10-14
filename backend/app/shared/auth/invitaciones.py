@@ -34,16 +34,45 @@ def _enlace(token: str) -> str:
     return f"{settings.app_base_url.rstrip('/')}/definir-password?token={token}"
 
 
-def _cuerpo(usuario: User, enlace: str, horas: int) -> tuple[str, str]:
+ASUNTO_RESTABLECER = "Restablece tu contraseña de Accumedical"
+
+_INTRO_INVITACION = (
+    "Se ha creado tu usuario en Accumedical. Para entrar necesitas entrar tu "
+    "propia contraseña en este enlace:"
+)
+_INTRO_HTML_INVITACION = (
+    "Se ha creado tu usuario en Accumedical. Para entrar, crea tu propia contraseña:"
+)
+# La contraseña es UNA para todas las aplicaciones: el correo lo dice, para que
+# nadie piense que este enlace es «de» una app en particular.
+_INTRO_RESTABLECER = (
+    "Te enviamos este enlace para poner una contraseña nueva. Es la misma para "
+    "todas las aplicaciones de Accumedical a las que tienes acceso:"
+)
+
+
+def _cuerpo(
+    usuario: User,
+    enlace: str,
+    horas: int,
+    *,
+    restablecer: bool = False,
+) -> tuple[str, str]:
     # Se saluda por el primer nombre, que es como se saluda a una persona.
     saludo = f"Hola, {usuario.nombre_principal}"
+    intro = _INTRO_RESTABLECER if restablecer else _INTRO_INVITACION
+    intro_html = _INTRO_RESTABLECER if restablecer else _INTRO_HTML_INVITACION
+    boton = "Poner mi contraseña nueva" if restablecer else "Crear mi contraseña"
+    aviso = (
+        "Si no lo pediste, ignóralo: tu contraseña actual sigue valiendo."
+        if restablecer
+        else "Si no esperabas este correo, ignóralo: sin abrirlo, la cuenta no se activa."
+    )
     texto = (
         f"{saludo}:\n\n"
-        "Se ha creado tu usuario en Accumedical. Para entrar necesitas entrar tu "
-        "propia contraseña en este enlace:\n\n"
+        f"{intro}\n\n"
         f"{enlace}\n\n"
-        f"El enlace caduca en {horas} horas y solo se puede usar una vez. "
-        "Si no esperabas este correo, ignóralo: sin abrirlo, la cuenta no se activa.\n\n"
+        f"El enlace caduca en {horas} horas y solo se puede usar una vez. {aviso}\n\n"
         "Accumedical"
     )
     html = f"""<!doctype html>
@@ -59,17 +88,16 @@ def _cuerpo(usuario: User, enlace: str, horas: int) -> tuple[str, str]:
         </td></tr>
         <tr><td style="padding:8px 28px 0;font-size:15px;line-height:1.55;color:#33443f">
           <p style="margin:0 0 20px">
-            Se ha creado tu usuario en Accumedical. Para entrar, crea tu propia contraseña:
+            {intro_html}
           </p>
           <p style="margin:0 0 20px">
             <a href="{enlace}" style="display:inline-block;padding:11px 20px;border-radius:7px;
                background:#0f5a4a;color:#fff;text-decoration:none;font-weight:600">
-              Crear mi contraseña
+              {boton}
             </a>
           </p>
           <p style="margin:0 0 20px;font-size:13px;color:#6b7c77">
-            El enlace caduca en {horas} horas y solo se puede usar una vez.
-            Si no esperabas este correo, ignóralo: sin abrirlo, la cuenta no se activa.
+            El enlace caduca en {horas} horas y solo se puede usar una vez. {aviso}
           </p>
           <p style="margin:0 0 28px;font-size:12px;color:#6b7c77;word-break:break-all">
             ¿No funciona el botón? Copia esta dirección: {enlace}
@@ -112,6 +140,14 @@ def enviar_invitacion(usuario: User, token: str) -> None:
     """Se llama DESPUÉS del commit: un correo enviado no se puede deshacer."""
     texto, html = _cuerpo(usuario, _enlace(token), settings.invitacion_ttl_horas)
     enviar(para=usuario.email, asunto=ASUNTO, texto=texto, html=html)
+
+
+def enviar_restablecer(usuario: User, token: str) -> None:
+    """El enlace para olvidos: mismo token de un solo uso, otro texto."""
+    texto, html = _cuerpo(
+        usuario, _enlace(token), settings.invitacion_ttl_horas, restablecer=True
+    )
+    enviar(para=usuario.email, asunto=ASUNTO_RESTABLECER, texto=texto, html=html)
 
 
 def resolver(db: DbSession, token: str) -> tuple[PasswordSetupToken, User]:

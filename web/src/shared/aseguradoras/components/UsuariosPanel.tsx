@@ -23,6 +23,7 @@ import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Modal } from '@/shared/components/ui/modal'
 import { useToast } from '@/shared/components/ui/toast'
+import { LlavesDeCuenta } from '@/shared/usuarios/components/LlavesDeCuenta'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const ROLES: { valor: Rol; etiqueta: string; ayuda: string }[] = [
@@ -584,6 +585,14 @@ export function UsuariosPanel({
                 >
                   {usuario.is_active ? 'Desactivar' : 'Activar'}
                 </Boton>
+              </div>
+              {/* Solo el superadministrador las ve (el componente lo decide). */}
+              <div className="mt-2">
+                <LlavesDeCuenta
+                  userId={usuario.id}
+                  email={usuario.email}
+                  activo={usuario.is_active}
+                />
               </div>
             </motion.li>
           ))}

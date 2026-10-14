@@ -18,6 +18,7 @@ import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Select } from '@/shared/components/ui/select'
 import { useToast } from '@/shared/components/ui/toast'
+import { LlavesDeCuenta } from '@/shared/usuarios/components/LlavesDeCuenta'
 import {
   FORMATOS,
   filtrarDocumento,
@@ -319,6 +320,16 @@ export function UsuarioFormPage() {
               <MailCheck className="size-4" aria-hidden="true" />
               Invitación pendiente: todavía no ha definido su contraseña.
             </p>
+          )}
+          {/* Solo el superadministrador las ve (el componente lo decide). */}
+          {editando && detalle.data && (
+            <div className="mt-3">
+              <LlavesDeCuenta
+                userId={detalle.data.id}
+                email={detalle.data.email}
+                activo={detalle.data.is_active}
+              />
+            </div>
           )}
         </div>
         <div className="flex gap-2">

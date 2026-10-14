@@ -42,6 +42,7 @@ from app.shared.configuracion.router import router as configuracion_router
 from app.shared.notificaciones.router import router as notificaciones_router
 from app.shared.pacientes.router import router as pacientes_router
 from app.shared.prestadores.router import router as prestadores_router
+from app.shared.users.cuentas import router as cuentas_router
 from app.shared.users.router import router as usuarios_plataforma_router
 
 configurar_logging()
@@ -349,6 +350,7 @@ api.include_router(aseguradoras_convenios_router)
 api.include_router(aseguradoras_router)
 api.include_router(prestadores_router)
 api.include_router(usuarios_plataforma_router)
+api.include_router(cuentas_router)
 api.include_router(pacientes_router)
 api.include_router(configuracion_router)
 api.include_router(suscripcion_router)

@@ -30,6 +30,9 @@ ACCIONES = (
     "usuario_desactivado",
     "invitacion_enviada",
     "password_definida",
+    # Las llaves del superadministrador (shared/users/cuentas.py).
+    "password_cambiada_por_admin",
+    "enlace_restablecer_enviado",
     "logo_subido",
     # Concurrencia: el supervisor de plataforma deriva un caso a un auditor.
     "visita_derivada",

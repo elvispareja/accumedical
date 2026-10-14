@@ -101,7 +101,7 @@ export function DefinirPasswordPage() {
               Este enlace ya no sirve
             </h1>
             <p className="mt-2 text-sm text-tenue-fg">
-              Los enlaces de invitación caducan y solo se pueden usar una vez. Pide uno nuevo a
+              Estos enlaces caducan y solo se pueden usar una vez. Pide uno nuevo a
               quien administra la plataforma.
             </p>
             <Link
@@ -124,8 +124,14 @@ export function DefinirPasswordPage() {
               Hola, {invitacion.data!.nombre_completo}
             </h1>
             <p className="mt-1 text-sm text-tenue-fg">
-              Crea tu contraseña para entrar con{' '}
+              Pon tu contraseña para entrar con{' '}
               <span className="font-mono text-xs">{invitacion.data!.email}</span>.
+            </p>
+            {/* Una sola contraseña para todo: no importa de qué app venga el
+                pedido, al entrar la plataforma lo lleva a la suya. */}
+            <p className="mt-2 text-sm text-tenue-fg">
+              Es la misma contraseña para todas las aplicaciones de Accumedical a las que tienes
+              acceso. Al entrar te llevamos a la tuya.
             </p>
 
             <form onSubmit={enviar} noValidate className="mt-6 space-y-4">

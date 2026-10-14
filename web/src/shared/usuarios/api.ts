@@ -145,3 +145,18 @@ export async function reenviarInvitacionPlataforma(id: string) {
   const { data } = await api.post<{ detail: string }>(`/shared/usuarios/${id}/invitacion`)
   return data
 }
+
+// ── Las dos llaves de la cuenta: SOLO el superadministrador (14/10/2026) ──
+// Sirven para cualquier persona, del personal o de una aseguradora: la
+// contraseña es una sola para todas las aplicaciones de Accumedical.
+
+/** Fija una contraseña nueva; cierra sus sesiones y anula enlaces pendientes. */
+export async function cambiarPasswordComoAdmin(id: string, password: string, motivo: string) {
+  await api.post(`/shared/cuentas/${id}/password`, { password, motivo })
+}
+
+/** Le envía por correo un enlace de un solo uso para poner contraseña nueva. */
+export async function enviarEnlaceRestablecer(id: string) {
+  const { data } = await api.post<{ detail: string }>(`/shared/cuentas/${id}/enlace-restablecer`)
+  return data
+}
