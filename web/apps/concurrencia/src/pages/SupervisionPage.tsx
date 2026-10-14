@@ -22,6 +22,7 @@ import {
   listarSupervision,
   obtenerDashboardSupervision,
   obtenerFiltrosSupervision,
+  usuariosDeAseguradoraSupervision,
   type AuditorElegible,
   type VisitaSupervision,
 } from '@concurrencia/api'
@@ -34,7 +35,6 @@ import {
   Ventana,
 } from '@concurrencia/components/visitas'
 import { Boton } from '@/shared/components/ui/button'
-import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
 import { Modal } from '@/shared/components/ui/modal'
 import { Select } from '@/shared/components/ui/select'
@@ -79,6 +79,7 @@ export function SupervisionPage() {
   const [hasta, setHasta] = useState('')
   const [aseguradoraId, setAseguradoraId] = useState('')
   const [personaId, setPersonaId] = useState('')
+  const [usuarioId, setUsuarioId] = useState('')
   const [asignando, setAsignando] = useState<VisitaSupervision | null>(null)
   const [pagina, setPagina] = useState(1)
 
@@ -107,7 +108,17 @@ export function SupervisionPage() {
   const consulta = useQuery({
     queryKey: [
       'supervision',
-      { busquedaAplicada, estado, soloSinAsignar, desde, hasta, aseguradoraId, personaId, pagina },
+      {
+        busquedaAplicada,
+        estado,
+        soloSinAsignar,
+        desde,
+        hasta,
+        aseguradoraId,
+        personaId,
+        usuarioId,
+        pagina,
+      },
     ],
     queryFn: () =>
       listarSupervision({
@@ -118,6 +129,7 @@ export function SupervisionPage() {
         hasta,
         aseguradora_id: aseguradoraId,
         persona_id: personaId,
+        usuario_id: usuarioId,
         page: pagina,
         page_size: POR_PAGINA,
       }),
@@ -139,6 +151,13 @@ export function SupervisionPage() {
     queryFn: obtenerFiltrosSupervision,
   })
   const personal = filtros.data?.personal ?? []
+  // El tercer selector se desbloquea al elegir la compañía: su gente, también
+  // la que ya no está (a ellos tampoco se les borra, solo se les desactiva).
+  const usuariosAseguradora = useQuery({
+    queryKey: ['supervision-filtros', 'aseguradora', aseguradoraId],
+    queryFn: () => usuariosDeAseguradoraSupervision(aseguradoraId),
+    enabled: Boolean(aseguradoraId),
+  })
 
   const derivar = useMutation({
     mutationFn: ({ visita, auditorId }: { visita: VisitaSupervision; auditorId: string | null }) =>
@@ -165,19 +184,27 @@ export function SupervisionPage() {
   function aplicarFiltro(filtro: FiltroDeCuadro = {}) {
     setBusqueda('')
     setBusquedaAplicada('')
-    setSoloSinAsignar(false)
+    setSoloSinAsignar(filtro.sinAsignar ?? false)
     setEstado(filtro.estado ?? '')
     setDesde(filtro.desde ?? '')
     setHasta(filtro.hasta ?? '')
     setAseguradoraId('')
     setPersonaId('')
+    setUsuarioId('')
     setPagina(1)
   }
 
   const datos = consulta.data
   const totalPaginas = datos ? Math.max(1, Math.ceil(datos.total / datos.page_size)) : 1
   const hayFiltros = Boolean(
-    busquedaAplicada || estado || soloSinAsignar || desde || hasta || aseguradoraId || personaId,
+    busquedaAplicada ||
+      estado ||
+      soloSinAsignar ||
+      desde ||
+      hasta ||
+      aseguradoraId ||
+      personaId ||
+      usuarioId,
   )
   const sinAuditores = auditores.data?.length === 0
 
@@ -221,11 +248,12 @@ export function SupervisionPage() {
         error={cifras.isError}
         onReintentar={() => cifras.refetch()}
         alFiltrar={aplicarFiltro}
+        conSinAsignar
       />
 
       {/* ── Filtros ── El estado se elige pulsando un cuadro de arriba: sin
           selector propio (pedido del usuario), así no hay dos controles para lo mismo. */}
-      <div className="mt-6 grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_10.5rem_10.5rem]">
+      <div className="mt-6 grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_13rem_13rem]">
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
@@ -240,67 +268,53 @@ export function SupervisionPage() {
             className="pl-9"
           />
         </div>
-        <Input
-          type="date"
-          value={desde}
-          onChange={(e) => {
-            setDesde(e.target.value)
-            setPagina(1)
-          }}
-          aria-label="Desde esta fecha"
-        />
-        <Input
-          type="date"
-          value={hasta}
-          min={desde || undefined}
-          onChange={(e) => {
-            setHasta(e.target.value)
-            setPagina(1)
-          }}
-          aria-label="Hasta esta fecha"
-        />
+        <ConEtiqueta etiqueta="Desde">
+          <Input
+            type="date"
+            value={desde}
+            onChange={(e) => {
+              setDesde(e.target.value)
+              setPagina(1)
+            }}
+            aria-label="Desde esta fecha"
+            className="pl-16"
+          />
+        </ConEtiqueta>
+        <ConEtiqueta etiqueta="Hasta">
+          <Input
+            type="date"
+            value={hasta}
+            min={desde || undefined}
+            onChange={(e) => {
+              setHasta(e.target.value)
+              setPagina(1)
+            }}
+            aria-label="Hasta esta fecha"
+            className="pl-16"
+          />
+        </ConEtiqueta>
       </div>
 
-      {/* La trazabilidad: quién intervino —aunque ya no esté en Concurrencia—
-          y de qué compañía. Los dos se combinan: «los casos de LA UNIÓN en los
-          que estuvo tal auditor». */}
-      <div className="mt-3 grid items-center gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_14rem]">
+      {/* La trazabilidad, en tres selectores que se combinan: nuestro
+          personal, la compañía y —al elegirla se desbloquea— su gente. Todos
+          incluyen a quien ya no está: en medicina no se borra nada. */}
+      <div className="mt-3 grid items-center gap-3 sm:grid-cols-3">
         <Select
           value={personaId}
           onChange={(e) => {
             setPersonaId(e.target.value)
             setPagina(1)
           }}
-          aria-label="Personal que intervino"
+          aria-label="Nuestro personal"
         >
-          <option value="">Todo el personal</option>
-          {personal.some((p) => p.vigente) && (
-            <optgroup label="En Concurrencia">
-              {personal
-                .filter((p) => p.vigente)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {`${p.nombre_completo} · ${p.detalle}`}
-                  </option>
-                ))}
-            </optgroup>
-          )}
-          {personal.some((p) => !p.vigente) && (
-            <optgroup label="Ya no están">
-              {personal
-                .filter((p) => !p.vigente)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {`${p.nombre_completo} · ${p.detalle}`}
-                  </option>
-                ))}
-            </optgroup>
-          )}
+          <option value="">Todo nuestro personal</option>
+          {gruposDePersonas(personal, 'En Concurrencia')}
         </Select>
         <Select
           value={aseguradoraId}
           onChange={(e) => {
             setAseguradoraId(e.target.value)
+            setUsuarioId('')
             setPagina(1)
           }}
           aria-label="Aseguradora"
@@ -312,15 +326,20 @@ export function SupervisionPage() {
             </option>
           ))}
         </Select>
-        <Checkbox
-          id="sin-asignar"
-          checked={soloSinAsignar}
-          onChange={(v) => {
-            setSoloSinAsignar(v)
+        <Select
+          value={usuarioId}
+          onChange={(e) => {
+            setUsuarioId(e.target.value)
             setPagina(1)
           }}
-          titulo="Solo sin asignar"
-        />
+          disabled={!aseguradoraId}
+          aria-label="Usuarios de la aseguradora"
+        >
+          <option value="">
+            {aseguradoraId ? 'Todos los usuarios de la aseguradora' : 'Elige primero la aseguradora'}
+          </option>
+          {gruposDePersonas(usuariosAseguradora.data ?? [], 'Activos')}
+        </Select>
       </div>
 
       {/* La salida de cualquier filtro, incluida la de haber pulsado un cuadro:
@@ -514,6 +533,43 @@ export function SupervisionPage() {
       )}
     </div>
   )
+}
+
+/** Una fecha con su nombre dentro de la caja: «Desde», «Hasta». */
+function ConEtiqueta({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-tenue-fg">
+        {etiqueta}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Las personas de un filtro en dos grupos: las que siguen y las que ya no
+ * están. Es una función y no un componente: el `Select` propio lee sus
+ * `<optgroup>` hijos directamente y no expande componentes.
+ */
+function gruposDePersonas(
+  lista: { id: string; nombre_completo: string; detalle: string; vigente: boolean }[],
+  vigentes: string,
+) {
+  return [
+    { titulo: vigentes, filas: lista.filter((p) => p.vigente) },
+    { titulo: 'Ya no están', filas: lista.filter((p) => !p.vigente) },
+  ]
+    .filter((g) => g.filas.length > 0)
+    .map((g) => (
+      <optgroup key={g.titulo} label={g.titulo}>
+        {g.filas.map((p) => (
+          <option key={p.id} value={p.id}>
+            {`${p.nombre_completo} · ${p.detalle}`}
+          </option>
+        ))}
+      </optgroup>
+    ))
 }
 
 function Th({ children }: { children: React.ReactNode }) {

@@ -214,6 +214,8 @@ export async function listarPrestadoresDeLaRed() {
 /** Las cifras del panel del supervisor de la compañía, ya acotadas por el backend. */
 /** Los cuadros del panel. Las mismas cifras para los dos paneles. */
 export interface CifrasVisitas {
+  /** Sin auditor, en cualquier estado. Solo en supervisión (0 para la compañía). */
+  sin_asignar: number
   programadas: number
   /** Derivadas a un auditor que todavía no ha llegado. */
   asignadas: number
@@ -359,6 +361,14 @@ export async function obtenerFiltrosSupervision() {
   return data
 }
 
+/** Los usuarios de una compañía que tienen, tuvieron o tocaron casos de Concurrencia. */
+export async function usuariosDeAseguradoraSupervision(aseguradoraId: string) {
+  const { data } = await api.get<PersonaDelFiltro[]>(
+    `/concurrencia/supervision/filtros/aseguradoras/${aseguradoraId}/usuarios`,
+  )
+  return data
+}
+
 export async function listarSupervision(filtros: {
   search?: string
   estado?: string
@@ -372,6 +382,8 @@ export async function listarSupervision(filtros: {
   /** Trazabilidad: los casos de una compañía y/o en los que intervino una persona. */
   aseguradora_id?: string
   persona_id?: string
+  /** Un usuario de la compañía elegida: misma regla de «intervino». */
+  usuario_id?: string
   page: number
   page_size: number
 }) {
@@ -386,6 +398,7 @@ export async function listarSupervision(filtros: {
       paciente_numero_documento: filtros.paciente_numero_documento || undefined,
       aseguradora_id: filtros.aseguradora_id || undefined,
       persona_id: filtros.persona_id || undefined,
+      usuario_id: filtros.usuario_id || undefined,
       page: filtros.page,
       page_size: filtros.page_size,
     },

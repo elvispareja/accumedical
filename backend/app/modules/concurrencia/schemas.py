@@ -313,6 +313,8 @@ class CifrasVisitasOut(BaseModel):
     """
 
     programadas: int
+    # Sin auditor, en cualquier estado: lo mismo que el filtro «Sin asignar».
+    sin_asignar: int = 0
     # Derivadas a un auditor que todavía no ha llegado.
     asignadas: int = 0
     # El auditor marcó «Ya llegué» y el informe no ha salido.

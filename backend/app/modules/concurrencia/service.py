@@ -900,7 +900,15 @@ def cifras_de_visitas(
         )
     ) or 0
 
+    # Lo interno no viaja a la compañía: a quién se deriva es cosa de Accumedical.
+    sin_asignar = (
+        db.scalar(select(func.count()).where(*condiciones, Visita.auditor_id.is_(None))) or 0
+        if interno
+        else 0
+    )
+
     return {
+        "sin_asignar": sin_asignar,
         "programadas": totales.get("programada", 0),
         "asignadas": totales.get("asignada", 0),
         "auditando": totales.get("auditando", 0),
@@ -953,6 +961,7 @@ def listar_supervision(
     documento: tuple[str, str] | None = None,
     aseguradora_id: uuid.UUID | None = None,
     persona_id: uuid.UUID | None = None,
+    usuario_id: uuid.UUID | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[tuple[Any, ...]], int]:
@@ -986,6 +995,9 @@ def listar_supervision(
     # Los casos en los que intervino alguien del personal, esté o no todavía.
     if persona_id is not None:
         consulta = consulta.where(Visita.id.in_(_visitas_de_la_persona(persona_id)))
+    # Y la de un usuario de la compañía: la misma regla de «intervino».
+    if usuario_id is not None:
+        consulta = consulta.where(Visita.id.in_(_visitas_de_la_persona(usuario_id)))
     # Los casos de UNA persona: lo que pide la ficha del paciente.
     if documento is not None:
         consulta = consulta.where(
@@ -1040,12 +1052,15 @@ def _visitas_de_la_persona(persona_id: uuid.UUID):  # noqa: ANN202
     )
 
 
-def ids_del_personal(db: DbSession) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
+def ids_del_personal(
+    db: DbSession, aseguradora_id: uuid.UUID | None = None
+) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
     """
     Quién está o estuvo en Concurrencia: `(con_tramo, intervinieron)`. Lo
     primero sale del historial de accesos (D57); lo segundo, de los casos —quien
-    los creó, derivó, auditó o tuvo asignados—, por si alguno es anterior al
-    historial. Quién de ellos es de una compañía lo descarta quien llama.
+    los creó, editó, derivó, auditó, tuvo asignados, dictó notas o subió
+    fotos—, por si alguno es anterior al historial. Con `aseguradora_id`, solo
+    los casos de esa compañía. Quién es de qué compañía lo filtra quien llama.
     """
     from app.shared.audit.models import AuditLog
     from app.shared.users.models import HistorialAcceso
@@ -1058,26 +1073,82 @@ def ids_del_personal(db: DbSession) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
             )
         )
     )
+    casos = select(Visita.id)
+    if aseguradora_id is not None:
+        casos = casos.where(Visita.aseguradora_id == aseguradora_id)
     intervinieron: set[uuid.UUID] = set()
-    for fila in db.execute(select(Visita.created_by, Visita.updated_by, Visita.auditor_id)):
+    for fila in db.execute(
+        select(Visita.created_by, Visita.updated_by, Visita.auditor_id).where(
+            Visita.id.in_(casos)
+        )
+    ):
         intervinieron.update(i for i in fila if i)
     for tabla in (VisitaNota, VisitaFoto):
-        intervinieron.update(i for i in db.scalars(select(tabla.created_by).distinct()) if i)
-    intervinieron.update(
-        i
-        for i in db.scalars(
-            select(AuditLog.user_id).where(AuditLog.entidad == "conc_visitas").distinct()
+        intervinieron.update(
+            i
+            for i in db.scalars(
+                select(tabla.created_by).where(tabla.visita_id.in_(casos)).distinct()
+            )
+            if i
         )
-        if i
+    del_caso = and_(
+        AuditLog.entidad == "conc_visitas",
+        AuditLog.entidad_id.in_(select(cast(casos.subquery().c.id, String))),
+    )
+    intervinieron.update(
+        i for i in db.scalars(select(AuditLog.user_id).where(del_caso).distinct()) if i
     )
     for detalle in db.scalars(
-        select(AuditLog.detalle).where(AuditLog.accion == "visita_derivada")
+        select(AuditLog.detalle).where(del_caso, AuditLog.accion == "visita_derivada")
     ):
         for lado in ("antes", "despues"):
             valor = ((detalle or {}).get(lado) or {}).get("auditor_id")
             if valor:
                 intervinieron.add(uuid.UUID(valor))
     return con_tramo, intervinieron
+
+
+def usuarios_de_la_aseguradora(
+    db: DbSession, aseguradora_id: uuid.UUID
+) -> list[tuple[Any, bool, str]]:
+    """
+    El tercer filtro de trazabilidad: la gente DE LA COMPAÑÍA que tiene o tuvo
+    Concurrencia (operadores, su coordinador) o participó en sus casos, esté o
+    no todavía —a ellos tampoco se les borra, solo se les desactiva—.
+    `(usuario, vigente, rol)`.
+    """
+    from app.shared.users.models import HistorialAcceso
+    from app.shared.users.service import ETIQUETA_ROL
+
+    tramos: dict[uuid.UUID, list[Any]] = {}
+    for t in db.scalars(
+        select(HistorialAcceso)
+        .where(
+            or_(
+                HistorialAcceso.module_code == nucleo.MODULO,
+                and_(
+                    HistorialAcceso.ambito == "compania",
+                    HistorialAcceso.aseguradora_id == aseguradora_id,
+                ),
+            )
+        )
+        .order_by(HistorialAcceso.desde.desc())
+    ):
+        tramos.setdefault(t.user_id, []).append(t)
+    vigentes = {u.id for u in nucleo.operadores_de_la_compania(db, aseguradora_id)}
+    _con_tramo, intervinieron = ids_del_personal(db, aseguradora_id)
+    filas: list[tuple[Any, bool, str]] = []
+    for u in nucleo.usuarios_por_ids(db, sorted(set(tramos) | intervinieron | vigentes)):
+        if u.aseguradora_id != aseguradora_id:
+            continue
+        suyos = tramos.get(u.id, [])
+        abiertos = [t for t in suyos if t.hasta is None]
+        activo = bool(u.is_active) and u.deleted_at is None
+        vigente = activo and (bool(abiertos) or u.id in vigentes)
+        roles = [ETIQUETA_ROL.get(t.rol, t.rol) for t in (abiertos or suyos)]
+        rol = " · ".join(dict.fromkeys(roles)) or "Operador"
+        filas.append((u, vigente, rol))
+    return sorted(filas, key=lambda f: (not f[1], personas.de_fila(f[0]), str(f[0].id)))
 
 
 def tramos_en_concurrencia(db: DbSession) -> dict[uuid.UUID, list[Any]]:

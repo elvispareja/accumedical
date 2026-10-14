@@ -1213,6 +1213,7 @@ def listar_supervision(
     # persona del personal, aunque ya no esté en Concurrencia.
     aseguradora_id: uuid.UUID | None = Query(default=None),
     persona_id: uuid.UUID | None = Query(default=None),
+    usuario_id: uuid.UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=service.MAX_PAGE_SIZE),
     ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
@@ -1240,6 +1241,7 @@ def listar_supervision(
         documento=documento,
         aseguradora_id=aseguradora_id,
         persona_id=persona_id,
+        usuario_id=usuario_id,
         page=page,
         page_size=page_size,
     )
@@ -1315,6 +1317,31 @@ def filtros_supervision(
             key=lambda a: a.nombre,
         ),
     )
+
+
+@router.get(
+    "/supervision/filtros/aseguradoras/{aseguradora_id}/usuarios",
+    response_model=list[PersonaDelFiltro],
+)
+def usuarios_de_aseguradora_supervision(
+    aseguradora_id: uuid.UUID,
+    ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
+    db: DbSession = Depends(get_db),
+) -> list[PersonaDelFiltro]:
+    """
+    El tercer selector de trazabilidad: los usuarios de ESA compañía que
+    participaron en sus casos, aunque ya no estén (solo se les desactiva).
+    """
+    _solo_supervision(ctx)
+    return [
+        PersonaDelFiltro(
+            id=str(u.id),
+            nombre_completo=personas.de_fila(u),
+            detalle=rol if vigente else f"{rol} · ya no está",
+            vigente=vigente,
+        )
+        for u, vigente, rol in service.usuarios_de_la_aseguradora(db, aseguradora_id)
+    ]
 
 
 @router.get("/supervision/dashboard", response_model=CifrasVisitasOut)

@@ -16,6 +16,8 @@ export function hoyLocal(): string {
 /** Lo que pone un cuadro al pulsarlo: un estado y, el de hoy, además el día. */
 export interface FiltroDeCuadro {
   estado?: string
+  /** El cuadro «Sin asignar» de supervisión: casos sin auditor. */
+  sinAsignar?: boolean
   desde?: string
   hasta?: string
 }
@@ -36,28 +38,31 @@ export function CuadrosDeVisitas({
   error = false,
   onReintentar,
   alFiltrar,
+  conSinAsignar = false,
   className,
 }: {
   cifras?: CifrasVisitas
+  /** Supervisión suma un octavo cuadro, «Sin asignar»: quedan 4 y 4. */
+  conSinAsignar?: boolean
   cargando?: boolean
   error?: boolean
   onReintentar?: () => void
   alFiltrar: (filtro: FiltroDeCuadro) => void
   className?: string
 }) {
-  if (cargando) return <Esqueleto className={className} />
+  // Con el octavo cuadro la rejilla es de 4 en 4 (pedido del usuario); sin él,
+  // los siete caben en una fila en pantallas muy anchas.
+  const rejilla = conSinAsignar
+    ? 'grid grid-cols-2 gap-3 sm:grid-cols-4'
+    : 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7'
+  if (cargando) return <Esqueleto className={cn(rejilla, className)} cuantos={conSinAsignar ? 8 : 7} />
   if (error) return <EstadoError className={className} onReintentar={onReintentar} />
   if (!cifras) return null
 
   // Siete cuadros: los seis estados y el de hoy. Ninguno se puede esconder sin
   // que las cuentas dejen de cuadrar con el total.
   return (
-    <div
-      className={cn(
-        'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7',
-        className,
-      )}
-    >
+    <div className={cn(rejilla, className)}>
       <Cifra
         indice={0}
         etiqueta="Hoy"
@@ -117,6 +122,16 @@ export function CuadrosDeVisitas({
         punto="bg-peligro"
         alPulsar={() => alFiltrar({ estado: 'no_auditado' })}
       />
+      {conSinAsignar && (
+        <Cifra
+          indice={7}
+          etiqueta="Sin asignar"
+          valor={cifras.sin_asignar}
+          detalle="sin auditor todavía"
+          punto="bg-tenue-fg"
+          alPulsar={() => alFiltrar({ sinAsignar: true })}
+        />
+      )}
     </div>
   )
 }
@@ -184,17 +199,10 @@ function Cifra({
   )
 }
 
-function Esqueleto({ className }: { className?: string }) {
+function Esqueleto({ className, cuantos }: { className?: string; cuantos: number }) {
   return (
-    <div
-      className={cn(
-        'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7',
-        className,
-      )}
-      role="status"
-      aria-label="Cargando las cifras"
-    >
-      {Array.from({ length: 7 }, (_, i) => (
+    <div className={className} role="status" aria-label="Cargando las cifras">
+      {Array.from({ length: cuantos }, (_, i) => (
         <div key={i} className="rounded-md border border-borde bg-superficie px-4 py-4">
           <div className="h-3 w-20 animate-pulse rounded bg-tenue" />
           <div className="mt-3 h-8 w-14 animate-pulse rounded bg-tenue" />
