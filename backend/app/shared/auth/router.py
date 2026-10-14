@@ -242,7 +242,11 @@ def cambiar_modulo_activo(
     """
     code = auth_service.codigo_por_slug(db, datos.slug)
     role_id = auth_service.rol_en_modulo(db, ctx.user.id, code) if code else None
-    if role_id is None:
+    # El administrador global supervisa todos los módulos sin fila de acceso
+    # propia (misma regla que require_module_access): anunciar en cuál está no
+    # puede negársele. Sin esto, entrar como admin a Concurrencia daba 403 y el
+    # aviso «No pudimos cambiar de módulo».
+    if role_id is None and not (code and ctx.user.is_superadmin):
         audit.registrar(
             db, accion="acceso_denegado", request=request, user_id=ctx.user.id,
             session_id=ctx.sesion.id, module_code=code,
@@ -262,7 +266,11 @@ def cambiar_modulo_activo(
     db.commit()
 
     modulos = auth_service.resolver_modulos(db, ctx.user)
-    permisos = auth_service.permisos_de(db, role_id)
+    permisos = (
+        auth_service.permisos_de(db, role_id)
+        if role_id is not None
+        else auth_service.permisos_del_modulo(db, code)  # el admin: como supervisor
+    )
     return _armar_sesion_out(db, ctx.user, modulos, modulo_activo=code, permisos=permisos)
 
 
