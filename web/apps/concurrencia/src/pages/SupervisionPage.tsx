@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Inbox,
+  Lock,
   MapPin,
   Pencil,
   Plus,
@@ -43,6 +44,8 @@ import { useToast } from '@/shared/components/ui/toast'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const POR_PAGINA = 20
+/** Solo en la agenda se deriva, reasigna o desasigna (igual que el servidor). */
+const ESTADOS_DERIVABLES = ['programada', 'asignada']
 
 function mensajeDeError(error: unknown, porDefecto: string): string {
   const detalle = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
@@ -427,7 +430,11 @@ export function SupervisionPage() {
                       </td>
                       <td className="px-4 py-3">
                         {/* Derivar abre un diálogo con los auditores agrupados
-                            por cercanía al destino; aquí solo se ve quién es. */}
+                            por cercanía al destino; aquí solo se ve quién es.
+                            Fuera de la agenda (en auditoría, culminado,
+                            cancelado, no auditado) la asignación queda FIJA:
+                            se ve, pero no se cambia ni se quita. */}
+                        {ESTADOS_DERIVABLES.includes(fila.estado) ? (
                         <button
                           type="button"
                           onClick={() => setAsignando(fila)}
@@ -446,6 +453,20 @@ export function SupervisionPage() {
                           </span>
                           <UserCheck className="size-4 shrink-0 text-tenue-fg" aria-hidden="true" />
                         </button>
+                        ) : (
+                          <span
+                            title="Asignación fija: el caso ya salió de la agenda"
+                            className={cn(
+                              'flex h-9 w-48 items-center gap-2 rounded border border-dashed border-borde pl-3 pr-3 text-sm',
+                              !fila.auditor_nombre && 'text-tenue-fg',
+                            )}
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              {fila.auditor_nombre ?? 'Sin asignar'}
+                            </span>
+                            <Lock className="size-3.5 shrink-0 text-tenue-fg" aria-label="Asignación fija" />
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <Boton

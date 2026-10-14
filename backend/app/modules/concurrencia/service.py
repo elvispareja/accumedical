@@ -1328,6 +1328,16 @@ def auditores_disponibles(db: DbSession) -> list[tuple[Any, ...]]:
     return [f for f in filas if f[0].id in activados]
 
 
+#: Solo mientras el caso está en la agenda se deriva, reasigna o desasigna.
+ESTADOS_DERIVABLES = ("programada", "asignada")
+ETIQUETA_ESTADO = {
+    "auditando": "en auditoría",
+    "culminada": "culminado",
+    "cancelada": "cancelado",
+    "no_auditado": "no auditado",
+}
+
+
 def asignar_auditor(
     db: DbSession, visita: Visita, auditor_id: uuid.UUID | None, autor: uuid.UUID
 ) -> dict[str, Any]:
@@ -1336,6 +1346,19 @@ def asignar_auditor(
     contra la base en el momento de asignar: si al auditor lo desactivaron con
     el desplegable abierto, el guardado se rechaza.
     """
+    # **La asignación queda fija en cuanto el caso sale de la agenda**
+    # (14/10/2026, pedido del usuario): en auditoría, culminado, cancelado o no
+    # auditado ya no se cambia ni se quita el auditor —es quien llegó, auditó o
+    # debía ir, y eso es trazabilidad—. Un no auditado vuelve a «asignada» con
+    # la prórroga, y ahí sí se puede reasignar.
+    if visita.estado not in ESTADOS_DERIVABLES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                f"El caso está {ETIQUETA_ESTADO.get(visita.estado, visita.estado)}: "
+                "ya no se puede cambiar ni quitar el auditor"
+            ),
+        )
     if auditor_id is not None:
         # La lista viaja con ciudad y provincia; aquí solo importa quién es.
         validos = {a.id for a, _ciudad, _provincia in auditores_disponibles(db)}
