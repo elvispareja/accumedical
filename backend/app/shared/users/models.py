@@ -287,15 +287,8 @@ class UserGrupoAccess(Base):
         CheckConstraint("grupo IN ('suscripcion', 'siniestro')", name="grupo"),
         # Total, como en user_module_access: una fila por usuario y familia.
         UniqueConstraint("user_id", "grupo", name="uq_user_grupo_access_user_id_grupo"),
-        # UNO SOLO por familia, garantizado por la base y no por la disciplina
-        # del servicio: parcial sobre las filas vivas, para que revocar libere
-        # el puesto sin borrar el historial.
-        Index(
-            "uq_user_grupo_access_coordinador_unico",
-            "grupo",
-            unique=True,
-            postgresql_where="activo",
-        ),
+        # (Hasta el 14/10/2026 había «uno solo por familia». Los coordinadores
+        # pasaron a ser por aplicación y varios: ver CoordinacionHistorial.)
     )
 
     id: Mapped[uuid.UUID] = columna_pk_uuid()
@@ -316,6 +309,48 @@ class UserGrupoAccess(Base):
     )
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CoordinacionHistorial(Base):
+    """
+    Quién coordinó cada aplicación y cuándo (14/10/2026): la TRAZABILIDAD que
+    pidió el cliente para cuando un coordinador se va y se le pasa la app a
+    otro. Una fila por tramo: `desde` al dársele la coordinación (o al
+    reactivarlo), `hasta` al quitársela (o al desactivarlo). Solo se añaden
+    filas o se cierra la abierta; nunca se borra.
+
+    Lo que cada coordinador HIZO sigue en `audit_log` y en las tablas de cada
+    módulo con su usuario: esto responde «¿quién era el coordinador entonces?».
+    """
+
+    __tablename__ = "coordinacion_historial"
+    __table_args__ = (
+        Index("ix_coordinacion_historial_module_code", "module_code"),
+        # Un solo tramo ABIERTO por persona y aplicación.
+        Index(
+            "uq_coordinacion_historial_abierto",
+            "user_id",
+            "module_code",
+            unique=True,
+            postgresql_where="hasta IS NULL",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = columna_pk_uuid()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    module_code: Mapped[str] = mapped_column(
+        String(30), ForeignKey("modules.code", ondelete="RESTRICT"), nullable=False
+    )
+    desde: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
+    hasta: Mapped[dt.datetime | None] = mapped_column(TS)
+    otorgado_por: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    retirado_por: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT")
     )
 
 

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session as DbSession
 
 from app.core.db import get_db
@@ -75,6 +77,35 @@ def listar(
     db: DbSession = Depends(get_db),
 ) -> list[UsuarioPlataformaSalida]:
     return [_salida(db, u) for u in service.listar(db, ctx.grupo)]
+
+
+class TramoCoordinacion(BaseModel):
+    user_id: str
+    nombre: str
+    email: str | None
+    desde: dt.datetime
+    hasta: dt.datetime | None
+    vigente: bool
+    otorgado_por: str | None
+    retirado_por: str | None
+
+
+class CoordinacionDeApp(BaseModel):
+    module_code: str
+    module_nombre: str
+    tramos: list[TramoCoordinacion]
+
+
+@router.get("/coordinaciones", response_model=list[CoordinacionDeApp])
+def coordinaciones(
+    ctx: AuthContext = Depends(require_coordinacion),
+    db: DbSession = Depends(get_db),
+) -> list[CoordinacionDeApp]:
+    """
+    Quién coordina cada aplicación HOY y quién la coordinó antes, con desde,
+    hasta y quién dio o quitó la coordinación. La trazabilidad del traspaso.
+    """
+    return [CoordinacionDeApp(**c) for c in service.coordinaciones(db)]
 
 
 @router.get("/{user_id}", response_model=UsuarioPlataformaSalida)
@@ -154,16 +185,18 @@ def actualizar(
         }
     if is_active is not None and is_active != usuario.is_active:
         if is_active:
-            # Reactivar recupera su alcance: si otro tomó su familia o su
-            # función mientras estaba desactivado, no caben dos y se corta aquí.
-            service.validar_coordinador_unico(
-                db, service.grupo_coordinado_por(db, usuario.id), salvo_user_id=usuario.id
-            )
+            # Reactivar recupera su alcance: si otro tomó su función mientras
+            # estaba desactivado, no caben dos y se corta aquí. (Coordinadores
+            # puede haber varios por aplicación: ahí no hay choque.)
             service.validar_funcion_unica(
                 db, service.funcion_de(db, usuario.id), salvo_user_id=usuario.id
             )
         usuario.is_active = is_active
         detalle["is_active"] = is_active
+        # Trazabilidad: desactivar cierra sus tramos de coordinación; reactivar
+        # los abre de nuevo.
+        db.flush()
+        service.sincronizar_historial(db, usuario, ctx.user.id)
         # Desactivar mata TODAS sus sesiones vivas, no solo impide entrar de nuevo.
         if not is_active:
             detalle["sesiones_revocadas"] = auth_service.revocar_sesiones_de_usuario(

@@ -57,12 +57,12 @@ const ROLES: { valor: RolPlataforma; etiqueta: string; ayuda: string }[] = [
   {
     valor: 'coordinador',
     etiqueta: 'Coordinador',
-    ayuda: 'Abarca una familia entera. Uno solo por familia.',
+    ayuda: 'Coordina las aplicaciones que se le marquen. Puede haber varios por aplicación.',
   },
   {
     valor: 'auditor',
     etiqueta: 'Auditor',
-    ayuda: 'Entra a los módulos que se le marquen.',
+    ayuda: 'Audita las aplicaciones que se le marquen.',
   },
   {
     valor: 'convenio',
@@ -148,9 +148,9 @@ export function UsuarioFormPage() {
   const toast = useToast()
 
   const [form, setForm] = useState<Formulario>(VACIO)
-  // Un rol por persona: coordina una familia, o audita los módulos marcados.
+  // Un rol por persona: coordina o audita las aplicaciones marcadas (desde el
+  // 14/10/2026 el coordinador ya no es de una familia), o lleva una función.
   const [rol, setRol] = useState<RolPlataforma>('auditor')
-  const [grupo, setGrupo] = useState<GrupoPlataforma | ''>('')
   const [modulosMarcados, setModulosMarcados] = useState<Set<string>>(new Set())
 
   // Un coordinador de familia solo da de alta AUDITORES de su familia: ni otro
@@ -206,10 +206,12 @@ export function UsuarioFormPage() {
     })
     const acceso = detalle.data.acceso
     setRol(acceso.rol)
-    setGrupo(acceso.grupo ?? '')
-    // Al coordinador no se le marcan módulos: los suyos salen de la familia.
+    // Coordinador y auditor: las aplicaciones marcadas. Un coordinador de
+    // familia que aún no se convirtió trae aquí las de su familia.
     setModulosMarcados(
-      acceso.rol === 'auditor' ? new Set(acceso.modulos.map((m) => m.module_code)) : new Set(),
+      acceso.rol === 'auditor' || acceso.rol === 'coordinador'
+        ? new Set(acceso.modulos.map((m) => m.module_code))
+        : new Set(),
     )
   }, [detalle.data])
 
@@ -233,13 +235,9 @@ export function UsuarioFormPage() {
         telefono: form.telefono.trim() || null,
         provincia_codigo: form.provincia_codigo || null,
         ciudad_codigo: form.ciudad_codigo || null,
-        // El coordinador manda su familia; el auditor, sus módulos; las
-        // funciones transversales, nada. Nunca dos cosas a la vez.
-        acceso: FUNCIONES.includes(rol)
-          ? { rol }
-          : rol === 'coordinador'
-            ? { rol, grupo: grupo as GrupoPlataforma }
-            : { rol, modulos: [...modulosMarcados] },
+        // Coordinador y auditor mandan sus aplicaciones; las funciones
+        // transversales, nada. Nunca dos cosas a la vez.
+        acceso: FUNCIONES.includes(rol) ? { rol } : { rol, modulos: [...modulosMarcados] },
       }
       return id ? actualizarUsuarioPlataforma(id, cuerpo) : crearUsuarioPlataforma(cuerpo)
     },
@@ -269,11 +267,11 @@ export function UsuarioFormPage() {
     if (problemaDocumento) return toast.error(problemaDocumento)
     const problemaTelefono = problemaConTelefono(form.telefono)
     if (problemaTelefono) return toast.error(problemaTelefono)
-    if (rol === 'coordinador' && !grupo) {
-      return toast.error('Elige qué familia va a coordinar: Suscripción o Siniestro')
+    if (rol === 'coordinador' && modulosMarcados.size === 0) {
+      return toast.error('Marca al menos una aplicación: un coordinador sin ellas no coordina nada')
     }
     if (rol === 'auditor' && modulosMarcados.size === 0) {
-      return toast.error('Marca al menos un módulo: un auditor sin módulos no entra a nada')
+      return toast.error('Marca al menos una aplicación: un auditor sin ellas no entra a nada')
     }
     guardar.mutate()
   }
@@ -460,7 +458,7 @@ export function UsuarioFormPage() {
           descripcion={
             miFamilia
               ? `Marca a qué módulos de ${ETIQUETA_GRUPO[miFamilia]} entra. Solo puedes dar de alta auditores de tu familia.`
-              : 'El coordinador abarca una familia entera; el auditor, los módulos que se le marquen. Convenio y Contabilidad son transversales. De coordinador hay uno por familia, y de las funciones, uno de cada.'
+              : 'Coordinador y auditor entran a las aplicaciones que se les marquen; una aplicación puede tener varios coordinadores, y queda registro de quién la coordinó y cuándo. Convenio y Contabilidad son transversales, uno de cada.'
           }
           retraso={0.05}
         >
@@ -508,40 +506,6 @@ export function UsuarioFormPage() {
                 A qué pantallas entra está por definir: el rol ya se puede asignar y, en
                 cuanto se decida, se le abre la puerta sin tocar su ficha.
               </p>
-            </div>
-          ) : rol === 'coordinador' ? (
-            // La familia entera, con los módulos que abarca a la vista: así se
-            // ve QUÉ se está concediendo sin tener que marcarlos.
-            <div className="mt-5 space-y-3">
-              {familias.map((clave) => (
-                <label
-                  key={clave}
-                  className={cn(
-                    'flex cursor-pointer items-start gap-3 rounded-md border p-4 transition-colors duration-150',
-                    grupo === clave
-                      ? 'border-marca/40 bg-marca-suave/40'
-                      : 'border-borde hover:bg-tenue/50',
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="familia"
-                    value={clave}
-                    checked={grupo === clave}
-                    onChange={() => setGrupo(clave)}
-                    className="mt-1 size-4 shrink-0 accent-[hsl(var(--marca))]"
-                  />
-                  <span className="min-w-0">
-                    <span className="block font-display text-sm font-medium">
-                      {ETIQUETA_GRUPO[clave]}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-tenue-fg">
-                      {(porFamilia.get(clave) ?? []).map((m) => m.nombre).join(' · ') ||
-                        'Sin módulos activos'}
-                    </span>
-                  </span>
-                </label>
-              ))}
             </div>
           ) : (
             <div className="mt-5 space-y-5">

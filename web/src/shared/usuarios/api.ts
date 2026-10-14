@@ -87,6 +87,30 @@ export interface UsuarioPlataformaCuerpo {
   acceso: AccesoPlataformaCuerpo
 }
 
+/** Un tramo de coordinación: quién coordinó una aplicación, desde y hasta cuándo. */
+export interface TramoCoordinacion {
+  user_id: string
+  nombre: string
+  email: string | null
+  desde: string
+  hasta: string | null
+  vigente: boolean
+  otorgado_por: string | null
+  retirado_por: string | null
+}
+
+export interface CoordinacionDeApp {
+  module_code: string
+  module_nombre: string
+  tramos: TramoCoordinacion[]
+}
+
+/** Quién coordina cada aplicación hoy y quién la coordinó antes (la trazabilidad). */
+export async function listarCoordinaciones() {
+  const { data } = await api.get<CoordinacionDeApp[]>('/shared/usuarios/coordinaciones')
+  return data
+}
+
 export async function listarUsuariosPlataforma() {
   const { data } = await api.get<UsuarioPlataforma[]>('/shared/usuarios')
   return data

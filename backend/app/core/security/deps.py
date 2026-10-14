@@ -13,7 +13,7 @@ from app.core.security import cookies, tokens
 from app.shared.audit import service as audit
 from app.shared.auth import service as auth_service
 from app.shared.auth.models import Sesion
-from app.shared.users.models import User, UserFuncion, UserGrupoAccess
+from app.shared.users.models import User, UserFuncion
 
 # Toda denegación de autorización responde EXACTAMENTE esto. Nunca se revela si el
 # módulo existe, si el usuario existe, ni qué accesos tiene. El motivo real va al
@@ -220,8 +220,8 @@ def require_coordinacion(
     db: DbSession = Depends(get_db),
 ) -> AuthContext:
     """
-    Abre la puerta al administrador global **o** al coordinador de una familia,
-    y deja en `ctx.grupo` cuál es la suya.
+    Abre la puerta SOLO al administrador global (desde el 14/10/2026; antes
+    también al coordinador de una familia). Deja `ctx.grupo = None`.
 
     Esa diferencia es toda la autorización de lo que cuelga detrás: `None` es el
     admin y lo ve todo; `"siniestro"` o `"suscripcion"` acotan al coordinador a
@@ -234,14 +234,9 @@ def require_coordinacion(
     if ctx.user.is_superadmin:
         ctx.grupo = None
         return ctx
-    grupo = db.scalar(
-        select(UserGrupoAccess.grupo).where(
-            UserGrupoAccess.user_id == ctx.user.id, UserGrupoAccess.activo.is_(True)
-        )
-    )
-    if grupo is not None:
-        ctx.grupo = grupo
-        return ctx
+    # Desde el 14/10/2026 los usuarios de Accumedical los crea y administra SOLO
+    # el administrador (decisión del cliente): el coordinador ya no es de una
+    # familia ni da de alta auditores.
     _denegar(db, request, ctx, module_code=None, detalle={"ruta": request.url.path})
     raise AssertionError("inalcanzable: _denegar siempre lanza")  # pragma: no cover
 

@@ -12,6 +12,7 @@ from app.shared.auth import invitaciones
 from app.shared.catalogos.models import Ciudad, Module
 from app.shared.contactos.service import validar_documento
 from app.shared.users.models import (
+    CoordinacionHistorial,
     PasswordSetupToken,
     Role,
     User,
@@ -245,15 +246,14 @@ def fijar_acceso(
     db: DbSession, usuario: User, acceso: dict[str, Any], autor: uuid.UUID
 ) -> None:
     """
-    Fija a qué entra el usuario: o coordina una familia entera, o audita los
-    módulos marcados. Nunca las dos cosas, así que al cambiar de rol se revoca
-    lo del otro camino.
+    Fija a qué entra el usuario: coordina las aplicaciones marcadas, o las
+    audita, o lleva una función transversal. Un rol por persona, así que al
+    cambiar se revoca lo del otro camino.
 
     Revocar es `activo=False` con su marca de tiempo, nunca borrar: estas tablas
     son la puerta que se consulta en cada request y su historial importa.
     """
     rol = acceso["rol"]
-    grupo = acceso.get("grupo")
     modulos = list(acceso.get("modulos") or [])
 
     grupos_existentes = {
@@ -292,36 +292,24 @@ def fijar_acceso(
                 funcion_existente.revoked_at = None
                 funcion_existente.revoked_by = None
                 funcion_existente.granted_by = autor
+        db.flush()
+        sincronizar_historial(db, usuario, autor)  # si coordinaba, su tramo se cierra
         return
 
-    if rol == "coordinador":
-        validar_coordinador_unico(db, grupo, salvo_user_id=usuario.id)
-        # Un coordinador no lleva módulos sueltos: su alcance sale de la familia.
-        _revocar(modulos_existentes.values(), autor)
-        for otro, fila in grupos_existentes.items():
-            if otro != grupo and fila.activo:
-                _revocar([fila], autor)
-        db.flush()  # libera el puesto antes de ocupar el nuevo
-
-        fila = grupos_existentes.get(grupo)
-        if fila is None:
-            db.add(UserGrupoAccess(user_id=usuario.id, grupo=grupo, granted_by=autor))
-        elif not fila.activo:
-            fila.activo = True
-            fila.revoked_at = None
-            fila.revoked_by = None
-            fila.granted_by = autor
-        return
-
-    # ── Auditor: módulos marcados, uno a uno ─────────────────────────────────
+    # ── Coordinador o auditor: por APLICACIÓN, una a una ─────────────────────
+    # El coordinador entra a cada app con el rol de coordinación de ESA app
+    # (`supervisor`, «Coordinador de …»); el auditor, con el de auditor. Desde
+    # el 14/10/2026 ya no hay coordinador de familia: si quedaba una fila de
+    # familia, se revoca aquí.
     _validar_modulos(db, modulos)
     _revocar(grupos_existentes.values(), autor)
 
+    codigo_rol = ROL_COORDINADOR if rol == "coordinador" else "auditor"
     rol_auditor = {
         module_code: role_id
         for role_id, module_code in db.execute(
             select(Role.id, Role.module_code).where(
-                Role.code == "auditor", Role.activo.is_(True)
+                Role.code == codigo_rol, Role.activo.is_(True)
             )
         ).all()
     }
@@ -332,7 +320,7 @@ def fijar_acceso(
             # cliente. Mejor 422 legible que 500.
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"El rol auditor no existe en el módulo {module_code}",
+                detail=f"El rol {rol} no existe en el módulo {module_code}",
             )
         fila = modulos_existentes.get(module_code)
         if fila is None:
@@ -354,6 +342,80 @@ def fijar_acceso(
     for module_code, fila in modulos_existentes.items():
         if module_code not in modulos:
             _revocar([fila], autor)
+    db.flush()
+    sincronizar_historial(db, usuario, autor)
+
+
+def modulos_que_coordina(db: DbSession, user_id: uuid.UUID) -> set[str]:
+    """Las aplicaciones que coordina HOY (filas vivas con el rol de coordinación)."""
+    return set(
+        db.scalars(
+            select(UserModuleAccess.module_code)
+            .join(Role, Role.id == UserModuleAccess.role_id)
+            .where(
+                UserModuleAccess.user_id == user_id,
+                UserModuleAccess.activo.is_(True),
+                Role.code == ROL_COORDINADOR,
+            )
+        )
+    )
+
+
+def sincronizar_historial(db: DbSession, usuario: User, autor: uuid.UUID | None) -> None:
+    """
+    Deja `coordinacion_historial` igual a lo que coordina HOY: abre un tramo por
+    cada app que empieza a coordinar y cierra los de las que deja. Un usuario
+    DESACTIVADO no coordina nada (sus filas de acceso se conservan para cuando
+    vuelva, pero su tramo se cierra). Es la trazabilidad del traspaso.
+    """
+    vigentes = modulos_que_coordina(db, usuario.id) if usuario.is_active else set()
+    abiertos = {
+        fila.module_code: fila
+        for fila in db.scalars(
+            select(CoordinacionHistorial).where(
+                CoordinacionHistorial.user_id == usuario.id,
+                CoordinacionHistorial.hasta.is_(None),
+            )
+        )
+    }
+    for module_code, fila in abiertos.items():
+        if module_code not in vigentes:
+            fila.hasta = func.now()
+            fila.retirado_por = autor
+    for module_code in vigentes - set(abiertos):
+        db.add(CoordinacionHistorial(user_id=usuario.id, module_code=module_code,
+                                     otorgado_por=autor))
+
+
+def coordinaciones(db: DbSession) -> list[dict[str, Any]]:
+    """Por aplicación: quién la coordina hoy y quién la coordinó antes (más reciente primero)."""
+    nombres = {
+        u.id: " ".join(x for x in (u.nombre_principal, u.apellido_paterno) if x)
+        for u in db.scalars(select(User))
+    }
+    correos = dict(db.execute(select(User.id, User.email)).all())
+    filas = db.execute(
+        select(CoordinacionHistorial, Module.nombre, Module.orden)
+        .join(Module, Module.code == CoordinacionHistorial.module_code)
+        .order_by(Module.orden, Module.nombre, CoordinacionHistorial.desde.desc())
+    ).all()
+    por_modulo: dict[str, dict[str, Any]] = {}
+    for fila, nombre_modulo, _orden in filas:
+        grupo = por_modulo.setdefault(
+            fila.module_code,
+            {"module_code": fila.module_code, "module_nombre": nombre_modulo, "tramos": []},
+        )
+        grupo["tramos"].append({
+            "user_id": str(fila.user_id),
+            "nombre": nombres.get(fila.user_id, "—"),
+            "email": correos.get(fila.user_id),
+            "desde": fila.desde,
+            "hasta": fila.hasta,
+            "vigente": fila.hasta is None,
+            "otorgado_por": nombres.get(fila.otorgado_por) if fila.otorgado_por else None,
+            "retirado_por": nombres.get(fila.retirado_por) if fila.retirado_por else None,
+        })
+    return list(por_modulo.values())
 
 
 def _revocar(filas, autor: uuid.UUID) -> None:
@@ -499,6 +561,28 @@ def acceso_de(db: DbSession, user_id: uuid.UUID) -> dict[str, Any]:
         # Transversal: ni familia ni módulos. Qué ve, por definir.
         return {"rol": funcion, "grupo": None, "modulos": []}
 
+    # Coordinador por aplicación (desde el 14/10/2026): sus apps son las filas
+    # vivas con el rol de coordinación.
+    coordina = db.execute(
+        select(UserModuleAccess.module_code, Module.nombre)
+        .join(Module, Module.code == UserModuleAccess.module_code)
+        .join(Role, Role.id == UserModuleAccess.role_id)
+        .where(
+            UserModuleAccess.user_id == user_id,
+            UserModuleAccess.activo.is_(True),
+            Module.activo.is_(True),
+            Role.code == ROL_COORDINADOR,
+        )
+        .order_by(Module.orden, Module.nombre)
+    ).all()
+    if coordina:
+        return {
+            "rol": "coordinador",
+            "grupo": None,
+            "modulos": [{"module_code": c, "module_nombre": n} for c, n in coordina],
+        }
+
+    # Coordinador de FAMILIA que aún no se convirtió (esquema anterior).
     grupo = grupo_coordinado_por(db, user_id)
     if grupo is not None:
         modulos = db.execute(

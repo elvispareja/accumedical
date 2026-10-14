@@ -14,6 +14,7 @@ import { useToast } from '@/shared/components/ui/toast'
 import {
   ETIQUETA_GRUPO,
   actualizarUsuarioPlataforma,
+  listarCoordinaciones,
   listarUsuariosPlataforma,
   reenviarInvitacionPlataforma,
   type UsuarioPlataforma,
@@ -107,7 +108,7 @@ export function UsuariosPage() {
           <p className="mt-1 text-sm text-tenue-fg">
             {miFamilia
               ? 'Los médicos auditores de tu familia: los que ya entran a alguno de tus módulos.'
-              : 'Tu propio personal: coordinadores —uno por familia— y médicos auditores.'}
+              : 'Tu propio personal: coordinadores y médicos auditores, cada uno con las aplicaciones que se le marquen.'}
           </p>
         </div>
         <Boton onClick={() => navegar(`${area}/usuarios/nuevo`)}>
@@ -291,7 +292,94 @@ export function UsuariosPage() {
             : `${visibles.length} de ${consulta.data.length} usuarios`}
         </p>
       )}
+
+      {!miFamilia && <CoordinadoresPorAplicacion />}
     </div>
+  )
+}
+
+const FECHA = new Intl.DateTimeFormat('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })
+
+/**
+ * Quién coordina cada aplicación HOY y quién la coordinó antes (14/10/2026).
+ * Es la trazabilidad del traspaso: cuando un coordinador se va y la app pasa a
+ * otro, su tramo queda aquí con su fecha de salida, y lo que hizo sigue a su
+ * nombre en la auditoría.
+ */
+function CoordinadoresPorAplicacion() {
+  const coordinaciones = useQuery({ queryKey: ['coordinaciones'], queryFn: listarCoordinaciones })
+  const [abierta, setAbierta] = useState<string | null>(null)
+  if (!coordinaciones.data || coordinaciones.data.length === 0) return null
+  return (
+    <section className="mt-10" aria-labelledby="titulo-coordinaciones">
+      <h2 id="titulo-coordinaciones" className="font-display text-lg font-semibold tracking-tight">
+        Coordinadores por aplicación
+      </h2>
+      <p className="mt-1 text-sm text-tenue-fg">
+        Quién coordina cada aplicación hoy y quién la coordinó antes. Puede haber varios por
+        aplicación; al desactivar o cambiar a un coordinador su tramo se cierra, pero queda aquí.
+      </p>
+      <ul className="mt-4 divide-y divide-borde overflow-hidden rounded-md border border-borde bg-superficie">
+        {coordinaciones.data.map((app) => {
+          const vigentes = app.tramos.filter((t) => t.vigente)
+          const anteriores = app.tramos.filter((t) => !t.vigente)
+          const verHistorial = abierta === app.module_code
+          return (
+            <li key={app.module_code} className="p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-display text-sm font-semibold">{app.module_nombre}</p>
+                  <p className="mt-1 text-sm">
+                    {vigentes.length
+                      ? vigentes.map((t) => t.nombre).join(' · ')
+                      : <span className="text-tenue-fg">Sin coordinador</span>}
+                  </p>
+                </div>
+                {anteriores.length > 0 || vigentes.length > 0 ? (
+                  <button
+                    type="button"
+                    className="text-xs text-marca underline-offset-4 hover:underline"
+                    onClick={() => setAbierta(verHistorial ? null : app.module_code)}
+                    aria-expanded={verHistorial}
+                  >
+                    {verHistorial ? 'Ocultar historial' : `Historial (${app.tramos.length})`}
+                  </button>
+                ) : null}
+              </div>
+              {verHistorial && (
+                <table className="mt-3 w-full text-left text-xs">
+                  <thead className="text-tenue-fg">
+                    <tr>
+                      <th className="py-1.5 pr-3 font-medium">Coordinador</th>
+                      <th className="py-1.5 pr-3 font-medium">Desde</th>
+                      <th className="py-1.5 pr-3 font-medium">Hasta</th>
+                      <th className="py-1.5 pr-3 font-medium">Se lo dio</th>
+                      <th className="py-1.5 font-medium">Se lo quitó</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {app.tramos.map((t) => (
+                      <tr key={`${t.user_id}-${t.desde}`} className="border-t border-borde">
+                        <td className="py-1.5 pr-3">
+                          {t.nombre}
+                          {t.email ? <span className="block text-tenue-fg">{t.email}</span> : null}
+                        </td>
+                        <td className="py-1.5 pr-3 tabular">{FECHA.format(new Date(t.desde))}</td>
+                        <td className="py-1.5 pr-3 tabular">
+                          {t.hasta ? FECHA.format(new Date(t.hasta)) : <span className="text-exito">vigente</span>}
+                        </td>
+                        <td className="py-1.5 pr-3">{t.otorgado_por ?? '—'}</td>
+                        <td className="py-1.5">{t.retirado_por ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 

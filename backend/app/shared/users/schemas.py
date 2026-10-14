@@ -47,11 +47,16 @@ class AccesoPlataforma(BaseModel):
     @model_validator(mode="after")
     def _coherente(self):
         if self.rol == "coordinador":
-            if self.grupo is None:
-                raise ValueError("El coordinador necesita la familia que va a coordinar")
-            if self.modulos:
+            # Desde el 14/10/2026 el coordinador es de cada APLICACIÓN (una o
+            # varias) y puede haber varios por aplicación; ya no de una familia.
+            if self.grupo is not None:
                 raise ValueError(
-                    "El coordinador abarca la familia entera: no se le marcan módulos sueltos"
+                    "El coordinador ya no se asigna por familia: "
+                    "marca las aplicaciones que coordina"
+                )
+            if not self.modulos:
+                raise ValueError(
+                    "Marca al menos una aplicación: un coordinador sin ellas no coordina nada"
                 )
         elif self.rol == "auditor":
             if self.grupo is not None:
