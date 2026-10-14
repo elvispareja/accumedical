@@ -26,6 +26,7 @@ from app.shared.aseguradoras.models import (
 from app.shared.catalogos.models import Ciudad, Provincia
 from app.shared.contactos.service import validar_documento
 from app.shared.prestadores.models import Prestador, PrestadorSede
+from app.shared.users import pendientes
 from app.shared.users.models import User
 
 MAX_PAGE_SIZE = 100
@@ -1019,7 +1020,9 @@ def listar_supervision(
     return _completar(db, filas), total
 
 
-def _visitas_de_la_persona(persona_id: uuid.UUID):  # noqa: ANN202
+def _visitas_de_la_persona(  # noqa: ANN202
+    persona_id: uuid.UUID, *, asignaciones_pasadas: bool = True
+):
     """
     **La trazabilidad del personal** (14/10/2026): los casos en los que una
     persona intervino de cualquier forma —los creó, los derivó, los auditó, los
@@ -1030,13 +1033,16 @@ def _visitas_de_la_persona(persona_id: uuid.UUID):  # noqa: ANN202
     from app.shared.audit.models import AuditLog
 
     texto = str(persona_id)
-    auditados = select(AuditLog.entidad_id).where(
-        AuditLog.entidad == "conc_visitas",
-        or_(
-            AuditLog.user_id == persona_id,
+    quien = [AuditLog.user_id == persona_id]
+    # Un auditor al que le quitaron el caso intervino (sale en el filtro), pero
+    # ya no tiene nada pendiente en él (no bloquea su desactivación).
+    if asignaciones_pasadas:
+        quien += [
             AuditLog.detalle["antes"]["auditor_id"].astext == texto,
             AuditLog.detalle["despues"]["auditor_id"].astext == texto,
-        ),
+        ]
+    auditados = select(AuditLog.entidad_id).where(
+        AuditLog.entidad == "conc_visitas", or_(*quien)
     )
     return union(
         select(Visita.id).where(
@@ -1050,6 +1056,34 @@ def _visitas_de_la_persona(persona_id: uuid.UUID):  # noqa: ANN202
         select(VisitaNota.visita_id).where(VisitaNota.created_by == persona_id),
         select(VisitaFoto.visita_id).where(VisitaFoto.created_by == persona_id),
     )
+
+
+#: Los estados en que un caso sigue abierto: quien participa en uno así no se
+#: puede desactivar ni perder Concurrencia (14/10/2026). Cancelado, culminado
+#: y no auditado ya no esperan nada de nadie.
+ESTADOS_ABIERTOS = ("programada", "asignada", "auditando")
+
+
+def casos_abiertos_de(db: DbSession, persona_id: uuid.UUID) -> list[str]:
+    """
+    Los casos abiertos en que participa la persona —los creó, editó, derivó,
+    los tiene asignados, dictó notas o subió fotos—, como «CONC-0001
+    (asignada)». Es la regla de Concurrencia para `users.pendientes`.
+    """
+    filas = db.execute(
+        select(Visita.codigo_interno, Visita.estado)
+        .where(
+            Visita.deleted_at.is_(None),
+            Visita.estado.in_(ESTADOS_ABIERTOS),
+            Visita.id.in_(_visitas_de_la_persona(persona_id, asignaciones_pasadas=False)),
+        )
+        .order_by(Visita.desde, Visita.codigo_interno)
+    ).all()
+    nombre = {"programada": "programada", "asignada": "asignada", "auditando": "en auditoría"}
+    return [f"{codigo} {nombre[estado]}" for codigo, estado in filas]
+
+
+pendientes.registrar(nucleo.MODULO, casos_abiertos_de)
 
 
 def ids_del_personal(

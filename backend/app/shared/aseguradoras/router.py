@@ -60,6 +60,7 @@ from app.shared.auth import service as auth_service
 from app.shared.catalogos.models import Module
 from app.shared.central import archivos as archivos_central
 from app.shared.central import redes as redes_central
+from app.shared.users import pendientes
 from app.shared.users import service as plataforma_usuarios
 
 # Las dependencias se crean UNA vez y se reutilizan —en el router y en los
@@ -975,6 +976,23 @@ def actualizar_usuario(
 ) -> UsuarioSalida:
     usuario = usuarios_service.obtener(db, aseguradora_id, user_id)
     detalle: dict = {}
+
+    # No se desactiva a quien tiene casos abiertos, ni se le quita la app donde
+    # los tiene (14/10/2026): primero deben culminar, cancelarse o no auditarse.
+    if datos.is_active is False and usuario.is_active:
+        pendientes.validar(db, usuario.id, accion="desactivar a este usuario")
+    # El coordinador de la compañía abarca todo y no tiene filas por app:
+    # hacerlo coordinador no le quita nada; dejar de serlo, sí.
+    if datos.acceso is not None and usuario.is_active and datos.acceso.rol == "operador":
+        nuevas = {a.module_code for a in datos.acceso.accesos}
+        actuales = (
+            pendientes.con_regla()
+            if usuarios_service.es_coordinador(db, usuario.id)
+            else pendientes.modulos_vigentes(db, usuario.id)
+        )
+        quitadas = actuales - nuevas
+        if quitadas:
+            pendientes.validar(db, usuario.id, quitadas, accion="quitarle esa aplicación")
 
     if datos.acceso is not None:
         usuarios_service.fijar_acceso(db, usuario, datos.acceso.model_dump(), ctx.user.id)

@@ -14,7 +14,7 @@ from app.shared.audit import service as audit
 from app.shared.auth import invitaciones
 from app.shared.auth import service as auth_service
 from app.shared.catalogos.models import Ciudad, Provincia, TipoDocumento
-from app.shared.users import service
+from app.shared.users import pendientes, service
 from app.shared.users.models import User
 from app.shared.users.schemas import (
     AccesoPlataformaSalida,
@@ -189,6 +189,14 @@ def actualizar(
     # También al editar: nadie se saca de su familia por la puerta de atrás.
     if acceso is not None:
         service.validar_alcance(db, ctx.grupo, acceso)
+        # Quitarle una aplicación con casos abiertos en ella tampoco se puede.
+        nuevas = {a["module_code"] for a in acceso.get("aplicaciones") or []}
+        quitadas = pendientes.modulos_vigentes(db, usuario.id) - nuevas
+        if quitadas and usuario.is_active:
+            pendientes.validar(db, usuario.id, quitadas, accion="quitarle esa aplicación")
+    # No se desactiva a quien tiene casos abiertos (14/10/2026).
+    if is_active is False and usuario.is_active:
+        pendientes.validar(db, usuario.id, accion="desactivar a este usuario")
 
     diff = service.actualizar(db, usuario, cambios)
     detalle: dict = dict(diff["despues"])
