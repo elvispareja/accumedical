@@ -107,21 +107,9 @@ export interface Tramo {
   retirado_por: string | null
 }
 
-export interface HistorialDeApp {
-  module_code: string
-  module_nombre: string
-  tramos: Tramo[]
-}
-
 export interface TramoDeUsuario extends Tramo {
   ambito: 'aplicacion' | 'funcion' | 'compania'
   donde: string
-}
-
-/** Por aplicación: quién la coordina, audita o atiende hoy, y quién antes. */
-export async function historialPorAplicacion() {
-  const { data } = await api.get<HistorialDeApp[]>('/shared/usuarios/historial-por-aplicacion')
-  return data
 }
 
 /** La trayectoria de una persona: cada rol que tuvo, dónde y cuándo. */

@@ -14,7 +14,6 @@ import { useToast } from '@/shared/components/ui/toast'
 import {
   ETIQUETA_GRUPO,
   actualizarUsuarioPlataforma,
-  historialPorAplicacion,
   listarUsuariosPlataforma,
   reenviarInvitacionPlataforma,
   type UsuarioPlataforma,
@@ -269,99 +268,7 @@ export function UsuariosPage() {
         </p>
       )}
 
-      {!miFamilia && <AccesosPorAplicacion />}
     </div>
-  )
-}
-
-const FECHA = new Intl.DateTimeFormat('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })
-
-/**
- * Por aplicación: quién la coordina, audita o atiende HOY y quién lo hizo
- * antes (14/10/2026). Es la trazabilidad: quitar un rol o desactivar a alguien
- * cierra su tramo con fecha, y lo que hizo sigue a su nombre en la auditoría.
- */
-function AccesosPorAplicacion() {
-  const historial = useQuery({ queryKey: ['historial-por-aplicacion'], queryFn: historialPorAplicacion })
-  const [abierta, setAbierta] = useState<string | null>(null)
-  if (!historial.data || historial.data.length === 0) return null
-  return (
-    <section className="mt-10" aria-labelledby="titulo-por-aplicacion">
-      <h2 id="titulo-por-aplicacion" className="font-display text-lg font-semibold tracking-tight">
-        Personal por aplicación
-      </h2>
-      <p className="mt-1 text-sm text-tenue-fg">
-        Quién coordina, audita o atiende cada aplicación hoy, y quién lo hizo antes. Nada se borra.
-      </p>
-      <ul className="mt-4 divide-y divide-borde overflow-hidden rounded-md border border-borde bg-superficie">
-        {historial.data.map((app) => {
-          const vigentes = app.tramos.filter((t) => t.vigente)
-          const porRol = new Map<string, string[]>()
-          for (const t of vigentes) porRol.set(t.rol_etiqueta, [...(porRol.get(t.rol_etiqueta) ?? []), t.nombre])
-          const ver = abierta === app.module_code
-          return (
-            <li key={app.module_code} className="p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-display text-sm font-semibold">{app.module_nombre}</p>
-                  {porRol.size === 0 ? (
-                    <p className="mt-1 text-sm text-tenue-fg">Nadie con acceso vigente</p>
-                  ) : (
-                    [...porRol.entries()].map(([rol, nombres]) => (
-                      <p key={rol} className="mt-1 text-sm">
-                        <span className="text-tenue-fg">{rol}: </span>
-                        {nombres.join(' · ')}
-                      </p>
-                    ))
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="text-xs text-marca underline-offset-4 hover:underline"
-                  onClick={() => setAbierta(ver ? null : app.module_code)}
-                  aria-expanded={ver}
-                >
-                  {ver ? 'Ocultar historial' : `Historial (${app.tramos.length})`}
-                </button>
-              </div>
-              {ver && (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="text-tenue-fg">
-                      <tr>
-                        <th className="py-1.5 pr-3 font-medium">Persona</th>
-                        <th className="py-1.5 pr-3 font-medium">Rol</th>
-                        <th className="py-1.5 pr-3 font-medium">Desde</th>
-                        <th className="py-1.5 pr-3 font-medium">Hasta</th>
-                        <th className="py-1.5 pr-3 font-medium">Se lo dio</th>
-                        <th className="py-1.5 font-medium">Se lo quitó</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {app.tramos.map((t, i) => (
-                        <tr key={`${t.user_id}-${t.desde}-${i}`} className="border-t border-borde">
-                          <td className="py-1.5 pr-3">
-                            {t.nombre}
-                            {t.email ? <span className="block text-tenue-fg">{t.email}</span> : null}
-                          </td>
-                          <td className="py-1.5 pr-3">{t.rol_etiqueta}</td>
-                          <td className="py-1.5 pr-3 tabular">{FECHA.format(new Date(t.desde))}</td>
-                          <td className="py-1.5 pr-3 tabular">
-                            {t.hasta ? FECHA.format(new Date(t.hasta)) : <span className="text-exito">vigente</span>}
-                          </td>
-                          <td className="py-1.5 pr-3">{t.otorgado_por ?? '—'}</td>
-                          <td className="py-1.5">{t.retirado_por ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </li>
-          )
-        })}
-      </ul>
-    </section>
   )
 }
 
