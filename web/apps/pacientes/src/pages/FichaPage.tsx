@@ -17,6 +17,8 @@ import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Modal } from '@/shared/components/ui/modal'
+import { Select } from '@/shared/components/ui/select'
+import { useCiudades, useProvincias } from '@/shared/catalogos/hooks'
 import { useToast } from '@/shared/components/ui/toast'
 
 /** Cómo se lee cada tipo de evento. Uno nuevo de otra app sale con su código. */
@@ -80,9 +82,18 @@ export function FichaPage() {
           </header>
 
           <dl className="mt-6 grid gap-4 rounded-md border border-borde bg-superficie p-5 text-sm sm:grid-cols-3">
+            <Dato titulo="Sexo" valor={p.sexo ? SEXOS[p.sexo] : null} />
+            <Dato titulo="Fecha de nacimiento" valor={p.fecha_nacimiento ? fecha(p.fecha_nacimiento) : null} />
             <Dato titulo="Correo" valor={p.email} />
             <Dato titulo="Teléfono" valor={p.telefono} />
-            <Dato titulo="Fecha de nacimiento" valor={p.fecha_nacimiento ? fecha(p.fecha_nacimiento) : null} />
+            <Dato titulo="Otro teléfono" valor={p.telefono_secundario} />
+            <Dato
+              titulo="Ciudad"
+              valor={[p.ciudad_nombre, p.provincia_nombre].filter(Boolean).join(', ') || null}
+            />
+            <div className="sm:col-span-3">
+              <Dato titulo="Dirección del domicilio" valor={p.direccion} />
+            </div>
             <Dato titulo="En el registro desde" valor={fecha(p.created_at)} />
             <Dato titulo="Última corrección" valor={fecha(p.updated_at)} />
           </dl>
@@ -146,6 +157,8 @@ export function FichaPage() {
   )
 }
 
+const SEXOS = { femenino: 'Femenino', masculino: 'Masculino' } as const
+
 function Dato({ titulo, valor }: { titulo: string; valor: string | null }) {
   return (
     <div>
@@ -166,8 +179,15 @@ function CorregirIdentidad({ paciente, abierto, onCerrar }: { paciente: Paciente
     email: paciente.email,
     telefono: paciente.telefono,
     fecha_nacimiento: paciente.fecha_nacimiento,
+    sexo: paciente.sexo,
+    telefono_secundario: paciente.telefono_secundario,
+    provincia_codigo: paciente.provincia_codigo,
+    ciudad_codigo: paciente.ciudad_codigo,
+    direccion: paciente.direccion,
   })
   const [form, setForm] = useState<IdentidadPaciente>(inicial)
+  const provincias = useProvincias()
+  const ciudades = useCiudades(form.provincia_codigo || null)
   const guardar = useMutation({
     mutationFn: () =>
       corregirPaciente(paciente.id, {
@@ -177,6 +197,11 @@ function CorregirIdentidad({ paciente, abierto, onCerrar }: { paciente: Paciente
         email: form.email || null,
         telefono: form.telefono || null,
         fecha_nacimiento: form.fecha_nacimiento || null,
+        sexo: form.sexo || null,
+        telefono_secundario: form.telefono_secundario || null,
+        provincia_codigo: form.provincia_codigo || null,
+        ciudad_codigo: form.ciudad_codigo || null,
+        direccion: form.direccion?.trim() || null,
       }),
     onSuccess: (datos) => {
       queryClient.setQueryData(['paciente', paciente.id], datos)
@@ -202,7 +227,7 @@ function CorregirIdentidad({ paciente, abierto, onCerrar }: { paciente: Paciente
       abierto={abierto}
       onCerrar={onCerrar}
       titulo="Corregir datos del paciente"
-      descripcion="El documento no se cambia: es su identidad. Lo que corrijas aquí lo verán todas las auditorías."
+      descripcion="El documento no se cambia: es su identidad. Obligatorios solo el primer nombre y el apellido paterno; lo demás es opcional. Lo que corrijas aquí lo verán todas las auditorías."
       pie={
         <>
           <Boton variante="fantasma" onClick={onCerrar}>
@@ -222,6 +247,52 @@ function CorregirIdentidad({ paciente, abierto, onCerrar }: { paciente: Paciente
         {campo('email', 'Correo', { type: 'email', mayusculas: false })}
         {campo('telefono', 'Teléfono', { mayusculas: false })}
         {campo('fecha_nacimiento', 'Fecha de nacimiento', { type: 'date' })}
+        <div>
+          <Label htmlFor="p-sexo">Sexo</Label>
+          <Select
+            id="p-sexo"
+            value={form.sexo ?? ''}
+            onChange={(e) => setForm({ ...form, sexo: (e.target.value || null) as IdentidadPaciente['sexo'] })}
+          >
+            <option value="">Sin dato</option>
+            <option value="femenino">Femenino</option>
+            <option value="masculino">Masculino</option>
+          </Select>
+        </div>
+        {campo('telefono_secundario', 'Otro teléfono', { mayusculas: false })}
+        <div>
+          <Label htmlFor="p-provincia">Provincia</Label>
+          <Select
+            id="p-provincia"
+            value={form.provincia_codigo ?? ''}
+            // Cambiar de provincia invalida la ciudad: es de la otra.
+            onChange={(e) => setForm({ ...form, provincia_codigo: e.target.value || null, ciudad_codigo: null })}
+          >
+            <option value="">Sin dato</option>
+            {provincias.data?.map((p) => (
+              <option key={p.codigo} value={p.codigo}>
+                {p.nombre}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="p-ciudad">Ciudad o cantón</Label>
+          <Select
+            id="p-ciudad"
+            value={form.ciudad_codigo ?? ''}
+            onChange={(e) => setForm({ ...form, ciudad_codigo: e.target.value || null })}
+            disabled={!form.provincia_codigo}
+          >
+            <option value="">{form.provincia_codigo ? 'Sin dato' : 'Elige primero la provincia'}</option>
+            {ciudades.data?.map((c) => (
+              <option key={c.codigo} value={c.codigo}>
+                {c.nombre}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="sm:col-span-2">{campo('direccion', 'Dirección del domicilio')}</div>
       </div>
     </Modal>
   )

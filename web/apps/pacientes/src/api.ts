@@ -52,6 +52,13 @@ export interface Paciente {
   email: string | null
   telefono: string | null
   fecha_nacimiento: string | null
+  sexo: 'femenino' | 'masculino' | null
+  telefono_secundario: string | null
+  provincia_codigo: string | null
+  provincia_nombre: string | null
+  ciudad_codigo: string | null
+  ciudad_nombre: string | null
+  direccion: string | null
   created_at: string
   updated_at: string
   eventos: EventoPaciente[]
@@ -65,6 +72,11 @@ export interface IdentidadPaciente {
   email: string | null
   telefono: string | null
   fecha_nacimiento: string | null
+  sexo: 'femenino' | 'masculino' | null
+  telefono_secundario: string | null
+  provincia_codigo: string | null
+  ciudad_codigo: string | null
+  direccion: string | null
 }
 
 export async function listarPacientes(q: string, page: number) {

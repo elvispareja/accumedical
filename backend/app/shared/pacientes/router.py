@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,7 +28,7 @@ from app.core.db import get_db
 from app.core.security.deps import AuthContext, require_personal_accumedical, verificar_csrf
 from app.shared.aseguradoras.models import Aseguradora
 from app.shared.audit import service as audit
-from app.shared.catalogos.models import Module
+from app.shared.catalogos.models import Ciudad, Module, Provincia
 
 router = APIRouter(
     prefix="/pacientes",
@@ -121,6 +121,14 @@ class Paciente(BaseModel):
     email: str | None
     telefono: str | None
     fecha_nacimiento: dt.date | None
+    # Lo que registran otras apps (Calificación de Riesgo). Todo opcional.
+    sexo: str | None = None
+    telefono_secundario: str | None = None
+    provincia_codigo: str | None = None
+    provincia_nombre: str | None = None
+    ciudad_codigo: str | None = None
+    ciudad_nombre: str | None = None
+    direccion: str | None = None
     created_at: dt.datetime
     updated_at: dt.datetime
     eventos: list[Evento]
@@ -187,8 +195,16 @@ def _ficha(ctx: AuthContext, db: DbSession, persona_id: uuid.UUID) -> Paciente:
                 ),
             )
         )
+    # Los nombres de provincia y ciudad, del catálogo local (es el mismo de la central).
+    codigo_provincia, codigo_ciudad = persona.get("provincia_codigo"), persona.get("ciudad_codigo")
+    provincia = db.get(Provincia, codigo_provincia) if codigo_provincia else None
+    ciudad = db.get(Ciudad, codigo_ciudad) if codigo_ciudad else None
     return Paciente(
-        **{k: persona[k] for k in Paciente.model_fields if k != "eventos"}, eventos=eventos
+        **{k: persona.get(k) for k in Paciente.model_fields
+           if k not in ("eventos", "provincia_nombre", "ciudad_nombre")},
+        provincia_nombre=provincia.nombre if provincia else None,
+        ciudad_nombre=ciudad.nombre if ciudad else None,
+        eventos=eventos,
     )
 
 
@@ -211,6 +227,11 @@ class IdentidadCorregir(BaseModel):
     email: str | None = Field(default=None, max_length=254)
     telefono: str | None = Field(default=None, max_length=25)
     fecha_nacimiento: dt.date | None = None
+    sexo: Literal["femenino", "masculino"] | None = None
+    telefono_secundario: str | None = Field(default=None, max_length=25)
+    provincia_codigo: str | None = Field(default=None, pattern=r"^[0-9]{2}$")
+    ciudad_codigo: str | None = Field(default=None, pattern=r"^[0-9]{4}$")
+    direccion: str | None = Field(default=None, max_length=300)
 
 
 @router.put("/{persona_id}", response_model=Paciente)
