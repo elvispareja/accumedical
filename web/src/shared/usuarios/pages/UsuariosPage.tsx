@@ -14,21 +14,13 @@ import { useToast } from '@/shared/components/ui/toast'
 import {
   ETIQUETA_GRUPO,
   actualizarUsuarioPlataforma,
-  listarCoordinaciones,
+  historialPorAplicacion,
   listarUsuariosPlataforma,
   reenviarInvitacionPlataforma,
   type UsuarioPlataforma,
 } from '@/shared/usuarios/api'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
-
-const ROL_ETIQUETA: Record<string, string> = {
-  coordinador: 'Coordinador',
-  auditor: 'Auditor',
-  call_center: 'Call center',
-  convenio: 'Convenio',
-  contabilidad: 'Contabilidad',
-}
 
 /**
  * El personal de la plataforma: coordinadores y médicos auditores. Usuarios del
@@ -199,26 +191,9 @@ export function UsuariosPage() {
                         {fila.telefono ?? '—'}
                       </td>
                       <td className="px-4 py-3">
-                        {/* El coordinador se enseña por su familia —que es lo
-                            que de verdad abarca—; el auditor, por sus módulos. */}
-                        <p className="truncate text-xs font-medium">
-                          {ROL_ETIQUETA[fila.acceso.rol] ?? fila.acceso.rol}
-                          {fila.acceso.grupo
-                            ? ` · ${ETIQUETA_GRUPO[fila.acceso.grupo]}`
-                            : ''}
-                        </p>
-                        <p
-                          className="truncate text-[0.6875rem] text-tenue-fg"
-                          title={fila.acceso.modulos.map((m) => m.module_nombre).join(' · ')}
-                        >
-                          {/* Convenio y Contabilidad no entran por módulos: su
-                              alcance está por definir, y decir «sin módulos»
-                              sonaría a que les falta algo. */}
-                          {fila.acceso.rol === 'convenio' || fila.acceso.rol === 'contabilidad'
-                            ? 'Función transversal'
-                            : fila.acceso.modulos.length === 0
-                              ? 'Sin módulos'
-                              : fila.acceso.modulos.map((m) => m.module_nombre).join(' · ')}
+                        {/* Su acceso de HOY: un rol por aplicación y su función. */}
+                        <p className="truncate text-xs font-medium" title={fila.acceso.resumen}>
+                          {fila.acceso.resumen}
                         </p>
                       </td>
                       <td className="px-4 py-3">
@@ -294,7 +269,7 @@ export function UsuariosPage() {
         </p>
       )}
 
-      {!miFamilia && <CoordinadoresPorAplicacion />}
+      {!miFamilia && <AccesosPorAplicacion />}
     </div>
   )
 }
@@ -302,79 +277,85 @@ export function UsuariosPage() {
 const FECHA = new Intl.DateTimeFormat('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })
 
 /**
- * Quién coordina cada aplicación HOY y quién la coordinó antes (14/10/2026).
- * Es la trazabilidad del traspaso: cuando un coordinador se va y la app pasa a
- * otro, su tramo queda aquí con su fecha de salida, y lo que hizo sigue a su
- * nombre en la auditoría.
+ * Por aplicación: quién la coordina, audita o atiende HOY y quién lo hizo
+ * antes (14/10/2026). Es la trazabilidad: quitar un rol o desactivar a alguien
+ * cierra su tramo con fecha, y lo que hizo sigue a su nombre en la auditoría.
  */
-function CoordinadoresPorAplicacion() {
-  const coordinaciones = useQuery({ queryKey: ['coordinaciones'], queryFn: listarCoordinaciones })
+function AccesosPorAplicacion() {
+  const historial = useQuery({ queryKey: ['historial-por-aplicacion'], queryFn: historialPorAplicacion })
   const [abierta, setAbierta] = useState<string | null>(null)
-  if (!coordinaciones.data || coordinaciones.data.length === 0) return null
+  if (!historial.data || historial.data.length === 0) return null
   return (
-    <section className="mt-10" aria-labelledby="titulo-coordinaciones">
-      <h2 id="titulo-coordinaciones" className="font-display text-lg font-semibold tracking-tight">
-        Coordinadores por aplicación
+    <section className="mt-10" aria-labelledby="titulo-por-aplicacion">
+      <h2 id="titulo-por-aplicacion" className="font-display text-lg font-semibold tracking-tight">
+        Personal por aplicación
       </h2>
       <p className="mt-1 text-sm text-tenue-fg">
-        Quién coordina cada aplicación hoy y quién la coordinó antes. Puede haber varios por
-        aplicación; al desactivar o cambiar a un coordinador su tramo se cierra, pero queda aquí.
+        Quién coordina, audita o atiende cada aplicación hoy, y quién lo hizo antes. Nada se borra.
       </p>
       <ul className="mt-4 divide-y divide-borde overflow-hidden rounded-md border border-borde bg-superficie">
-        {coordinaciones.data.map((app) => {
+        {historial.data.map((app) => {
           const vigentes = app.tramos.filter((t) => t.vigente)
-          const anteriores = app.tramos.filter((t) => !t.vigente)
-          const verHistorial = abierta === app.module_code
+          const porRol = new Map<string, string[]>()
+          for (const t of vigentes) porRol.set(t.rol_etiqueta, [...(porRol.get(t.rol_etiqueta) ?? []), t.nombre])
+          const ver = abierta === app.module_code
           return (
             <li key={app.module_code} className="p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-display text-sm font-semibold">{app.module_nombre}</p>
-                  <p className="mt-1 text-sm">
-                    {vigentes.length
-                      ? vigentes.map((t) => t.nombre).join(' · ')
-                      : <span className="text-tenue-fg">Sin coordinador</span>}
-                  </p>
+                  {porRol.size === 0 ? (
+                    <p className="mt-1 text-sm text-tenue-fg">Nadie con acceso vigente</p>
+                  ) : (
+                    [...porRol.entries()].map(([rol, nombres]) => (
+                      <p key={rol} className="mt-1 text-sm">
+                        <span className="text-tenue-fg">{rol}: </span>
+                        {nombres.join(' · ')}
+                      </p>
+                    ))
+                  )}
                 </div>
-                {anteriores.length > 0 || vigentes.length > 0 ? (
-                  <button
-                    type="button"
-                    className="text-xs text-marca underline-offset-4 hover:underline"
-                    onClick={() => setAbierta(verHistorial ? null : app.module_code)}
-                    aria-expanded={verHistorial}
-                  >
-                    {verHistorial ? 'Ocultar historial' : `Historial (${app.tramos.length})`}
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className="text-xs text-marca underline-offset-4 hover:underline"
+                  onClick={() => setAbierta(ver ? null : app.module_code)}
+                  aria-expanded={ver}
+                >
+                  {ver ? 'Ocultar historial' : `Historial (${app.tramos.length})`}
+                </button>
               </div>
-              {verHistorial && (
-                <table className="mt-3 w-full text-left text-xs">
-                  <thead className="text-tenue-fg">
-                    <tr>
-                      <th className="py-1.5 pr-3 font-medium">Coordinador</th>
-                      <th className="py-1.5 pr-3 font-medium">Desde</th>
-                      <th className="py-1.5 pr-3 font-medium">Hasta</th>
-                      <th className="py-1.5 pr-3 font-medium">Se lo dio</th>
-                      <th className="py-1.5 font-medium">Se lo quitó</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {app.tramos.map((t) => (
-                      <tr key={`${t.user_id}-${t.desde}`} className="border-t border-borde">
-                        <td className="py-1.5 pr-3">
-                          {t.nombre}
-                          {t.email ? <span className="block text-tenue-fg">{t.email}</span> : null}
-                        </td>
-                        <td className="py-1.5 pr-3 tabular">{FECHA.format(new Date(t.desde))}</td>
-                        <td className="py-1.5 pr-3 tabular">
-                          {t.hasta ? FECHA.format(new Date(t.hasta)) : <span className="text-exito">vigente</span>}
-                        </td>
-                        <td className="py-1.5 pr-3">{t.otorgado_por ?? '—'}</td>
-                        <td className="py-1.5">{t.retirado_por ?? '—'}</td>
+              {ver && (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="text-tenue-fg">
+                      <tr>
+                        <th className="py-1.5 pr-3 font-medium">Persona</th>
+                        <th className="py-1.5 pr-3 font-medium">Rol</th>
+                        <th className="py-1.5 pr-3 font-medium">Desde</th>
+                        <th className="py-1.5 pr-3 font-medium">Hasta</th>
+                        <th className="py-1.5 pr-3 font-medium">Se lo dio</th>
+                        <th className="py-1.5 font-medium">Se lo quitó</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {app.tramos.map((t, i) => (
+                        <tr key={`${t.user_id}-${t.desde}-${i}`} className="border-t border-borde">
+                          <td className="py-1.5 pr-3">
+                            {t.nombre}
+                            {t.email ? <span className="block text-tenue-fg">{t.email}</span> : null}
+                          </td>
+                          <td className="py-1.5 pr-3">{t.rol_etiqueta}</td>
+                          <td className="py-1.5 pr-3 tabular">{FECHA.format(new Date(t.desde))}</td>
+                          <td className="py-1.5 pr-3 tabular">
+                            {t.hasta ? FECHA.format(new Date(t.hasta)) : <span className="text-exito">vigente</span>}
+                          </td>
+                          <td className="py-1.5 pr-3">{t.otorgado_por ?? '—'}</td>
+                          <td className="py-1.5">{t.retirado_por ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </li>
           )

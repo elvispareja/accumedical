@@ -14,7 +14,6 @@ import {
   useTiposDocumento,
 } from '@/shared/catalogos/hooks'
 import { Boton } from '@/shared/components/ui/button'
-import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Select } from '@/shared/components/ui/select'
@@ -38,9 +37,11 @@ import {
   ETIQUETA_GRUPO,
   actualizarUsuarioPlataforma,
   crearUsuarioPlataforma,
+  historialDeUsuario,
   obtenerUsuarioPlataforma,
+  type FuncionPlataforma,
   type GrupoPlataforma,
-  type RolPlataforma,
+  type RolEnApp,
 } from '@/shared/usuarios/api'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
@@ -53,36 +54,21 @@ function useListado(): string {
   return `${useAreaDeLaRuta()}/usuarios`
 }
 
-const ROLES: { valor: RolPlataforma; etiqueta: string; ayuda: string }[] = [
-  {
-    valor: 'coordinador',
-    etiqueta: 'Coordinador',
-    ayuda: 'Coordina las aplicaciones que se le marquen. Puede haber varios por aplicación.',
-  },
-  {
-    valor: 'auditor',
-    etiqueta: 'Auditor',
-    ayuda: 'Audita las aplicaciones que se le marquen.',
-  },
-  {
-    valor: 'call_center',
-    etiqueta: 'Call center',
-    ayuda: 'Hoy, lo mismo que el coordinador. Solo en las apps que lo admiten (Calificación de Riesgo).',
-  },
-  {
-    valor: 'convenio',
-    etiqueta: 'Convenio',
-    ayuda: 'Lleva la red de convenios. Uno solo.',
-  },
-  {
-    valor: 'contabilidad',
-    etiqueta: 'Contabilidad',
-    ayuda: 'Su sección está por definir. Uno solo.',
-  },
+/** Los roles que se dan POR APLICACIÓN (14/10/2026: uno en cada app, o ninguno). */
+const ROLES_APP: { valor: RolEnApp; etiqueta: string }[] = [
+  { valor: 'auditor', etiqueta: 'Auditor' },
+  { valor: 'coordinador', etiqueta: 'Coordinador' },
+  // Hoy hace lo mismo que el coordinador; solo donde la app lo admite.
+  { valor: 'call_center', etiqueta: 'Call center' },
 ]
 
-/** Los transversales: no se les marca familia ni módulos. */
-const FUNCIONES: RolPlataforma[] = ['convenio', 'contabilidad']
+/** Las funciones transversales: una persona a la vez en cada una. */
+const FUNCIONES: { valor: FuncionPlataforma; etiqueta: string; ayuda: string }[] = [
+  { valor: 'convenio', etiqueta: 'Convenio', ayuda: 'Lleva la red de convenios.' },
+  { valor: 'contabilidad', etiqueta: 'Contabilidad', ayuda: 'Su sección está por definir.' },
+]
+
+const FECHA = new Intl.DateTimeFormat('es-EC', { day: '2-digit', month: 'short', year: 'numeric' })
 
 interface Formulario extends NombrePersona {
   email: string
@@ -153,10 +139,9 @@ export function UsuarioFormPage() {
   const toast = useToast()
 
   const [form, setForm] = useState<Formulario>(VACIO)
-  // Un rol por persona: coordina o audita las aplicaciones marcadas (desde el
-  // 14/10/2026 el coordinador ya no es de una familia), o lleva una función.
-  const [rol, setRol] = useState<RolPlataforma>('auditor')
-  const [modulosMarcados, setModulosMarcados] = useState<Set<string>>(new Set())
+  // Un rol EN CADA aplicación (o ninguno) y, aparte, una función transversal.
+  const [asignaciones, setAsignaciones] = useState<Record<string, RolEnApp>>({})
+  const [funcion, setFuncion] = useState<FuncionPlataforma | ''>('')
 
   // Un coordinador de familia solo da de alta AUDITORES de su familia: ni otro
   // rol, ni un módulo de la familia de al lado. El servidor impone lo mismo
@@ -174,22 +159,33 @@ export function UsuarioFormPage() {
   // Los módulos agrupados por familia: el auditor los marca uno a uno y, al
   // coordinador, la familia entera se le enseña como lo que va a abarcar.
   const porFamilia = useMemo(() => {
-    const mapa = new Map<GrupoPlataforma, { codigo: string; nombre: string }[]>()
+    const mapa = new Map<
+      GrupoPlataforma,
+      { codigo: string; nombre: string; conCallCenter: boolean }[]
+    >()
     if (miFamilia) {
       mapa.set(
         miFamilia,
-        (sesion?.modulos ?? []).map((m) => ({ codigo: m.codigo, nombre: m.nombre })),
+        (sesion?.modulos ?? []).map((m) => ({ codigo: m.codigo, nombre: m.nombre, conCallCenter: false })),
       )
       return mapa
     }
     for (const m of modulos.data ?? []) {
       if (m.grupo !== 'suscripcion' && m.grupo !== 'siniestro') continue
-      // El call center solo se puede dar en las apps que tienen ese rol.
-      if (rol === 'call_center' && !m.con_call_center) continue
-      mapa.set(m.grupo, [...(mapa.get(m.grupo) ?? []), { codigo: m.codigo, nombre: m.nombre }])
+      mapa.set(m.grupo, [
+        ...(mapa.get(m.grupo) ?? []),
+        { codigo: m.codigo, nombre: m.nombre, conCallCenter: Boolean(m.con_call_center) },
+      ])
     }
     return mapa
-  }, [modulos.data, miFamilia, sesion?.modulos, rol])
+  }, [modulos.data, miFamilia, sesion?.modulos])
+
+  // La trayectoria de la persona (solo al editar): cada rol que tuvo, dónde y cuándo.
+  const historial = useQuery({
+    queryKey: ['historial-usuario', id],
+    queryFn: () => historialDeUsuario(id!),
+    enabled: editando,
+  })
 
   // Las familias que se pintan: la suya, o las dos si es el administrador.
   const familias: GrupoPlataforma[] = miFamilia ? [miFamilia] : ['suscripcion', 'siniestro']
@@ -212,14 +208,10 @@ export function UsuarioFormPage() {
       ciudad_codigo: detalle.data.ciudad_codigo ?? '',
     })
     const acceso = detalle.data.acceso
-    setRol(acceso.rol)
-    // Coordinador y auditor: las aplicaciones marcadas. Un coordinador de
-    // familia que aún no se convirtió trae aquí las de su familia.
-    setModulosMarcados(
-      acceso.rol === 'auditor' || acceso.rol === 'coordinador' || acceso.rol === 'call_center'
-        ? new Set(acceso.modulos.map((m) => m.module_code))
-        : new Set(),
+    setAsignaciones(
+      Object.fromEntries(acceso.aplicaciones.map((a) => [a.module_code, a.rol as RolEnApp])),
     )
+    setFuncion(acceso.funcion ?? '')
   }, [detalle.data])
 
   function cambiar(campo: keyof Formulario, valor: string) {
@@ -242,9 +234,15 @@ export function UsuarioFormPage() {
         telefono: form.telefono.trim() || null,
         provincia_codigo: form.provincia_codigo || null,
         ciudad_codigo: form.ciudad_codigo || null,
-        // Coordinador y auditor mandan sus aplicaciones; las funciones
-        // transversales, nada. Nunca dos cosas a la vez.
-        acceso: FUNCIONES.includes(rol) ? { rol } : { rol, modulos: [...modulosMarcados] },
+        // Cada app con su rol, y la función si la tiene. Lo que se quite se
+        // REVOCA en el servidor (su tramo se cierra en el historial).
+        acceso: {
+          aplicaciones: Object.entries(asignaciones).map(([module_code, rol]) => ({
+            module_code,
+            rol,
+          })),
+          funcion: funcion || null,
+        },
       }
       return id ? actualizarUsuarioPlataforma(id, cuerpo) : crearUsuarioPlataforma(cuerpo)
     },
@@ -274,14 +272,8 @@ export function UsuarioFormPage() {
     if (problemaDocumento) return toast.error(problemaDocumento)
     const problemaTelefono = problemaConTelefono(form.telefono)
     if (problemaTelefono) return toast.error(problemaTelefono)
-    if (rol === 'coordinador' && modulosMarcados.size === 0) {
-      return toast.error('Marca al menos una aplicación: un coordinador sin ellas no coordina nada')
-    }
-    if (rol === 'call_center' && modulosMarcados.size === 0) {
-      return toast.error('Marca la aplicación del call center (hoy, Calificación de Riesgo)')
-    }
-    if (rol === 'auditor' && modulosMarcados.size === 0) {
-      return toast.error('Marca al menos una aplicación: un auditor sin ellas no entra a nada')
+    if (Object.keys(asignaciones).length === 0 && !funcion) {
+      return toast.error('Dale al menos un rol en una aplicación, o una función (Convenio o Contabilidad)')
     }
     guardar.mutate()
   }
@@ -464,103 +456,131 @@ export function UsuarioFormPage() {
         </Bloque>
 
         <Bloque
-          titulo={miFamilia ? 'Módulos que audita' : 'Rol y alcance'}
-          descripcion={
-            miFamilia
-              ? `Marca a qué módulos de ${ETIQUETA_GRUPO[miFamilia]} entra. Solo puedes dar de alta auditores de tu familia.`
-              : 'Coordinador y auditor entran a las aplicaciones que se les marquen; una aplicación puede tener varios coordinadores, y queda registro de quién la coordinó y cuándo. Convenio y Contabilidad son transversales, uno de cada.'
-          }
+          titulo="Aplicaciones y rol"
+          descripcion="Un rol en cada aplicación, o ninguno: puede auditar una y coordinar otra. Puede haber varios coordinadores, auditores y call center por aplicación. Quitar un rol no borra nada: su tramo se cierra en el historial."
           retraso={0.05}
         >
-          {/* El coordinador no elige rol: solo crea auditores, así que la
-              rejilla de roles no se pinta en vez de pintarse inservible. */}
-          <div className={cn('grid gap-3 sm:grid-cols-2', miFamilia && 'hidden')}>
-            {ROLES.map((opcion) => (
-              <button
-                key={opcion.valor}
-                type="button"
-                onClick={() => {
-                  setRol(opcion.valor)
-                  // El call center solo cabe en las apps que lo admiten: lo demás
-                  // marcado se suelta, en vez de quedar oculto y rechazarse al guardar.
-                  if (opcion.valor === 'call_center') {
-                    const admiten = new Set(
-                      (modulos.data ?? []).filter((m) => m.con_call_center).map((m) => m.codigo),
-                    )
-                    setModulosMarcados((previo) => new Set([...previo].filter((c) => admiten.has(c))))
-                  }
-                }}
-                aria-pressed={rol === opcion.valor}
-                className={cn(
-                  'rounded-md border p-4 text-left transition-colors duration-150',
-                  rol === opcion.valor
-                    ? 'border-marca/50 bg-marca-suave/40'
-                    : 'border-borde hover:bg-tenue/50',
-                )}
-              >
-                <span className="flex items-center gap-2 font-display text-sm font-medium">
-                  <span
-                    className={cn(
-                      'size-2 rounded-full',
-                      rol === opcion.valor ? 'bg-marca' : 'bg-borde',
-                    )}
-                    aria-hidden="true"
-                  />
-                  {opcion.etiqueta}
-                </span>
-                <span className="mt-1 block text-xs text-tenue-fg">{opcion.ayuda}</span>
-              </button>
-            ))}
-          </div>
-
-          {FUNCIONES.includes(rol) ? (
-            // Transversal: no se le marca nada. Qué ve, por definir.
-            <div className="mt-5 rounded-md border border-borde bg-tenue/40 p-4">
-              <p className="text-sm">
-                {rol === 'convenio'
-                  ? 'Lleva la red de convenios.'
-                  : 'Función de contabilidad.'}{' '}
-                No se le marcan módulos ni familias.
-              </p>
-              <p className="mt-1.5 text-xs text-tenue-fg">
-                A qué pantallas entra está por definir: el rol ya se puede asignar y, en
-                cuanto se decida, se le abre la puerta sin tocar su ficha.
-              </p>
-            </div>
-          ) : (
-            <div className="mt-5 space-y-5">
-              {familias.map((clave) => {
-                const suyos = porFamilia.get(clave) ?? []
-                if (suyos.length === 0) return null
-                return (
-                  <div key={clave}>
-                    <p className="mb-2.5 font-display text-xs font-semibold uppercase tracking-[0.09em] text-tenue-fg">
-                      {ETIQUETA_GRUPO[clave]}
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {suyos.map((m) => (
-                        <Checkbox
-                          key={m.codigo}
-                          id={`modulo-${m.codigo}`}
-                          checked={modulosMarcados.has(m.codigo)}
-                          onChange={(marcado) =>
-                            setModulosMarcados((previo) => {
-                              const siguiente = new Set(previo)
-                              if (marcado) siguiente.add(m.codigo)
-                              else siguiente.delete(m.codigo)
-                              return siguiente
-                            })
-                          }
-                          titulo={m.nombre}
-                        />
-                      ))}
-                    </div>
+          <div className="space-y-5">
+            {familias.map((clave) => {
+              const suyos = porFamilia.get(clave) ?? []
+              if (suyos.length === 0) return null
+              return (
+                <div key={clave}>
+                  <p className="mb-2.5 font-display text-xs font-semibold uppercase tracking-[0.09em] text-tenue-fg">
+                    {ETIQUETA_GRUPO[clave]}
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {suyos.map((m) => (
+                      <div
+                        key={m.codigo}
+                        className={cn(
+                          'flex items-center justify-between gap-3 rounded-md border p-3',
+                          asignaciones[m.codigo] ? 'border-marca/40 bg-marca-suave/40' : 'border-borde',
+                        )}
+                      >
+                        <Label htmlFor={`rol-${m.codigo}`} className="min-w-0 truncate">
+                          {m.nombre}
+                        </Label>
+                        <div className="w-44 shrink-0">
+                          <Select
+                            id={`rol-${m.codigo}`}
+                            value={asignaciones[m.codigo] ?? ''}
+                            onChange={(e) =>
+                              setAsignaciones((previo) => {
+                                const siguiente = { ...previo }
+                                if (e.target.value) siguiente[m.codigo] = e.target.value as RolEnApp
+                                else delete siguiente[m.codigo]
+                                return siguiente
+                              })
+                            }
+                          >
+                            <option value="">Sin acceso</option>
+                            {ROLES_APP.filter((r) => r.valor !== 'call_center' || m.conCallCenter).map(
+                              (r) => (
+                                <option key={r.valor} value={r.valor}>
+                                  {r.etiqueta}
+                                </option>
+                              ),
+                            )}
+                          </Select>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                )
-              })}
-            </div>
-          )}
+                </div>
+              )
+            })}
+          </div>
         </Bloque>
+
+        <Bloque
+          titulo="Función transversal"
+          descripcion="Aparte de sus aplicaciones. Cada función la lleva una sola persona a la vez: para nombrar a otra, desactiva o quita la función a quien la tiene."
+          retraso={0.08}
+        >
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[{ valor: '' as const, etiqueta: 'Ninguna', ayuda: 'Solo sus aplicaciones.' }, ...FUNCIONES].map(
+              (opcion) => (
+                <button
+                  key={opcion.valor || 'ninguna'}
+                  type="button"
+                  onClick={() => setFuncion(opcion.valor)}
+                  aria-pressed={funcion === opcion.valor}
+                  className={cn(
+                    'rounded-md border p-4 text-left transition-colors duration-150',
+                    funcion === opcion.valor
+                      ? 'border-marca/50 bg-marca-suave/40'
+                      : 'border-borde hover:bg-tenue/50',
+                  )}
+                >
+                  <span className="font-display text-sm font-medium">{opcion.etiqueta}</span>
+                  <span className="mt-1 block text-xs text-tenue-fg">{opcion.ayuda}</span>
+                </button>
+              ),
+            )}
+          </div>
+        </Bloque>
+
+        {editando && (
+          <Bloque
+            titulo="Historial de accesos"
+            descripcion="Cada rol que tuvo, dónde, desde y hasta cuándo, y quién se lo dio o se lo quitó. Nada se borra: lo que hizo con cada rol sigue a su nombre."
+            retraso={0.1}
+          >
+            {!historial.data || historial.data.length === 0 ? (
+              <p className="text-sm text-tenue-fg">Sin movimientos todavía.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="text-tenue-fg">
+                    <tr>
+                      <th className="py-1.5 pr-3 font-medium">Dónde</th>
+                      <th className="py-1.5 pr-3 font-medium">Rol</th>
+                      <th className="py-1.5 pr-3 font-medium">Desde</th>
+                      <th className="py-1.5 pr-3 font-medium">Hasta</th>
+                      <th className="py-1.5 pr-3 font-medium">Se lo dio</th>
+                      <th className="py-1.5 font-medium">Se lo quitó</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historial.data.map((t, i) => (
+                      <tr key={`${t.donde}-${t.desde}-${i}`} className="border-t border-borde">
+                        <td className="py-1.5 pr-3">{t.donde}</td>
+                        <td className="py-1.5 pr-3">{t.rol_etiqueta}</td>
+                        <td className="py-1.5 pr-3 tabular">{FECHA.format(new Date(t.desde))}</td>
+                        <td className="py-1.5 pr-3 tabular">
+                          {t.hasta ? FECHA.format(new Date(t.hasta)) : <span className="text-exito">vigente</span>}
+                        </td>
+                        <td className="py-1.5 pr-3">{t.otorgado_por ?? '—'}</td>
+                        <td className="py-1.5">{t.retirado_por ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Bloque>
+        )}
       </form>
     </div>
   )

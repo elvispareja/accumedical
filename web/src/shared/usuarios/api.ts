@@ -1,46 +1,52 @@
 import { api } from '@/core/api/client'
 
-// El personal de la plataforma: usuarios del propio administrador —coordinadores
-// y médicos auditores—, sin aseguradora. Cada persona tiene UN rol:
+// El personal de la plataforma: usuarios del propio administrador, sin
+// aseguradora. Desde el 14/10/2026 cada persona tiene UN ROL EN CADA
+// APLICACIÓN (o ninguno) y, aparte, puede llevar UNA función transversal:
 //
-//   coordinador → una familia entera (toda Suscripción o todo Siniestro), y solo
-//                 puede haber uno por familia.
-//   auditor     → los módulos que se le marquen, uno a uno.
-
-//   convenio     → lleva la red de convenios. Uno solo.
-//   contabilidad → su sección está por definir. Uno solo.
+//   por aplicación → auditor · coordinador (varios por app) · call center
+//                    (solo donde la app lo admite).
+//   función        → convenio · contabilidad (una persona a la vez en cada una).
 //
-// Los dos últimos son transversales: no marcan familia ni módulos.
-export type RolPlataforma = 'coordinador' | 'auditor' | 'call_center' | 'convenio' | 'contabilidad'
+// Ejemplo: Mario es coordinador de Calificación y además Convenio; un auditor
+// de Concurrencia puede coordinar Vida. Quitar algo NUNCA lo borra: su tramo
+// se cierra en el historial de accesos.
+export type RolEnApp = 'auditor' | 'coordinador' | 'call_center'
+export type FuncionPlataforma = 'convenio' | 'contabilidad'
 export type GrupoPlataforma = 'suscripcion' | 'siniestro'
-
 export const ETIQUETA_GRUPO: Record<GrupoPlataforma, string> = {
   suscripcion: 'Suscripción',
   siniestro: 'Siniestro',
 }
+export const ETIQUETA_ROL: Record<string, string> = {
+  auditor: 'Auditor',
+  coordinador: 'Coordinador',
+  call_center: 'Call center',
+  operador: 'Operador',
+  consulta: 'Consulta',
+  convenio: 'Convenio',
+  contabilidad: 'Contabilidad',
+}
 
-/** Un módulo al que entra el usuario, ya resuelto por el servidor. */
-export interface ModuloAlcanzado {
+/** Una aplicación a la que entra HOY, con su rol. */
+export interface AsignacionApp {
   module_code: string
   module_nombre: string
+  rol: string
 }
 
-/**
- * A qué entra, ya resuelto. Para el coordinador, `modulos` son los que su
- * familia abarca HOY: los calcula el servidor, así que un módulo nuevo aparece
- * solo, sin reeditar a nadie.
- */
+/** A qué entra HOY, ya resuelto por el servidor. */
 export interface AccesoPlataforma {
-  rol: RolPlataforma
-  grupo: GrupoPlataforma | null
-  modulos: ModuloAlcanzado[]
+  aplicaciones: AsignacionApp[]
+  funcion: FuncionPlataforma | null
+  /** «Coordinador de Calificación de Riesgo · Convenio». */
+  resumen: string
 }
 
-/** Lo que el formulario envía: la familia si coordina, los módulos si audita. */
+/** Lo que el formulario envía: cada app con su rol, y la función si la tiene. */
 export interface AccesoPlataformaCuerpo {
-  rol: RolPlataforma
-  grupo?: GrupoPlataforma | null
-  modulos?: string[]
+  aplicaciones: { module_code: string; rol: RolEnApp }[]
+  funcion: FuncionPlataforma | null
 }
 
 export interface UsuarioPlataforma {
@@ -87,11 +93,13 @@ export interface UsuarioPlataformaCuerpo {
   acceso: AccesoPlataformaCuerpo
 }
 
-/** Un tramo de coordinación: quién coordinó una aplicación, desde y hasta cuándo. */
-export interface TramoCoordinacion {
+/** Un tramo del historial: qué rol tuvo alguien, dónde, desde y hasta cuándo. */
+export interface Tramo {
   user_id: string
   nombre: string
   email: string | null
+  rol: string
+  rol_etiqueta: string
   desde: string
   hasta: string | null
   vigente: boolean
@@ -99,15 +107,26 @@ export interface TramoCoordinacion {
   retirado_por: string | null
 }
 
-export interface CoordinacionDeApp {
+export interface HistorialDeApp {
   module_code: string
   module_nombre: string
-  tramos: TramoCoordinacion[]
+  tramos: Tramo[]
 }
 
-/** Quién coordina cada aplicación hoy y quién la coordinó antes (la trazabilidad). */
-export async function listarCoordinaciones() {
-  const { data } = await api.get<CoordinacionDeApp[]>('/shared/usuarios/coordinaciones')
+export interface TramoDeUsuario extends Tramo {
+  ambito: 'aplicacion' | 'funcion' | 'compania'
+  donde: string
+}
+
+/** Por aplicación: quién la coordina, audita o atiende hoy, y quién antes. */
+export async function historialPorAplicacion() {
+  const { data } = await api.get<HistorialDeApp[]>('/shared/usuarios/historial-por-aplicacion')
+  return data
+}
+
+/** La trayectoria de una persona: cada rol que tuvo, dónde y cuándo. */
+export async function historialDeUsuario(id: string) {
+  const { data } = await api.get<TramoDeUsuario[]>(`/shared/usuarios/${id}/historial`)
   return data
 }
 

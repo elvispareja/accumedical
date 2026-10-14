@@ -664,11 +664,23 @@ def pacientes_registrados(
 
 def operadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[Any]:
     """
-    Los operadores de MI aseguradora, para que el supervisor filtre el historial
-    por quien creo cada caso. Tambien los inactivos: sus casos viejos siguen
-    existiendo y alguien tiene que poder revisarlos.
+    Para el filtro «Operador» del supervisor de MI aseguradora: los operadores
+    de hoy MÁS todo aquel que creó algún caso de la compañía, aunque ya no opere,
+    lo hayan desactivado o haya cambiado de rol (14/10/2026: en medicina no se
+    borra nada y lo que hizo cada persona sigue a su nombre).
     """
-    return nucleo.operadores_de_la_compania(db, aseguradora_id)
+    vigentes = nucleo.operadores_de_la_compania(db, aseguradora_id)
+    conocidos = {u.id for u in vigentes}
+    autores = [
+        i for i in db.scalars(
+            select(Visita.created_by)
+            .where(Visita.aseguradora_id == aseguradora_id, Visita.created_by.is_not(None))
+            .distinct()
+        )
+        if i not in conocidos
+    ]
+    todos = list(vigentes) + list(nucleo.usuarios_por_ids(db, autores))
+    return sorted(todos, key=lambda u: (personas.de_fila(u), str(u.id)))
 
 
 def coordenadas_de_destinos(

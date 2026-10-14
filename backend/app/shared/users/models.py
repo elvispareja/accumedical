@@ -312,26 +312,28 @@ class UserGrupoAccess(Base):
     )
 
 
-class CoordinacionHistorial(Base):
+class HistorialAcceso(Base):
     """
-    Quién coordinó cada aplicación y cuándo (14/10/2026): la TRAZABILIDAD que
-    pidió el cliente para cuando un coordinador se va y se le pasa la app a
-    otro. Una fila por tramo: `desde` al dársele la coordinación (o al
-    reactivarlo), `hasta` al quitársela (o al desactivarlo). Solo se añaden
-    filas o se cierra la abierta; nunca se borra.
+    La TRAZABILIDAD de los accesos (14/10/2026): qué rol tuvo cada persona, en
+    qué aplicación, función o compañía, desde y hasta cuándo, y quién se lo dio
+    o se lo quitó. En medicina no se borra nada: quitar un rol o desactivar a
+    alguien CIERRA su tramo (`hasta`), nunca borra filas; lo que hizo sigue a su
+    nombre en `audit_log` y en las tablas de cada app.
 
-    Lo que cada coordinador HIZO sigue en `audit_log` y en las tablas de cada
-    módulo con su usuario: esto responde «¿quién era el coordinador entonces?».
+    `clave` dice de qué es el tramo: «app:concurrencia», «funcion:convenio»,
+    «compania:<uuid>» (coordinador de una aseguradora). Un solo tramo abierto
+    por persona y clave.
     """
 
-    __tablename__ = "coordinacion_historial"
+    __tablename__ = "historial_accesos"
     __table_args__ = (
-        Index("ix_coordinacion_historial_module_code", "module_code"),
-        # Un solo tramo ABIERTO por persona y aplicación.
+        CheckConstraint("ambito IN ('aplicacion', 'funcion', 'compania')", name="ambito"),
+        Index("ix_historial_accesos_module_code", "module_code"),
+        Index("ix_historial_accesos_user_id", "user_id"),
         Index(
-            "uq_coordinacion_historial_abierto",
+            "uq_historial_accesos_abierto",
             "user_id",
-            "module_code",
+            "clave",
             unique=True,
             postgresql_where="hasta IS NULL",
         ),
@@ -341,9 +343,17 @@ class CoordinacionHistorial(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
-    module_code: Mapped[str] = mapped_column(
-        String(30), ForeignKey("modules.code", ondelete="RESTRICT"), nullable=False
+    ambito: Mapped[str] = mapped_column(String(20), nullable=False)
+    clave: Mapped[str] = mapped_column(String(80), nullable=False)
+    module_code: Mapped[str | None] = mapped_column(
+        String(30), ForeignKey("modules.code", ondelete="RESTRICT")
     )
+    funcion: Mapped[str | None] = mapped_column(String(20))
+    aseguradora_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("aseguradoras.id", ondelete="RESTRICT")
+    )
+    #: auditor, coordinador, call_center, operador, consulta, convenio, contabilidad.
+    rol: Mapped[str] = mapped_column(String(20), nullable=False)
     desde: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
     hasta: Mapped[dt.datetime | None] = mapped_column(TS)
     otorgado_por: Mapped[uuid.UUID | None] = mapped_column(

@@ -475,6 +475,22 @@ def usuario(db: DbSession, usuario_id: uuid.UUID | None) -> Any | None:
     return _usar("usuario", lambda: db.get(User, usuario_id), central)
 
 
+def usuarios_por_ids(db: DbSession, ids: list[uuid.UUID]) -> list[Any]:
+    """Varias personas por id, TAMBIÉN las desactivadas o dadas de baja (historiales)."""
+    if not ids:
+        return []
+    from app.shared.users.models import User
+
+    def local() -> list[Any]:
+        return list(db.scalars(select(User).where(User.id.in_(ids))))
+
+    def central() -> list[Any]:
+        filas = _post("/api/usuarios/lote", {"ids": sorted(str(i) for i in ids)})
+        return [_usuario_ns(u) for u in filas]
+
+    return _usar("usuarios_lote", local, central)
+
+
 def operadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[Any]:
     """Operadores de Concurrencia de esa compañía, también los inactivos (sus casos siguen)."""
     from app.shared.users.models import Role, User, UserModuleAccess

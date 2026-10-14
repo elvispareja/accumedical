@@ -207,6 +207,7 @@ def fijar_acceso(
             coordinador.revoked_at = None
             coordinador.revoked_by = None
             coordinador.granted_by = autor
+        _historial(db, usuario, autor)
         return
 
     # Operador: deja de coordinar, si coordinaba, y se le fijan sus accesos.
@@ -217,6 +218,7 @@ def fijar_acceso(
         db.flush()  # libera el puesto antes de que otro lo tome
 
     fijar_accesos(db, usuario, acceso["accesos"], autor)
+    _historial(db, usuario, autor)
 
 
 def fijar_accesos(
@@ -458,6 +460,14 @@ def crear_desde_contacto(
 
     fijar_acceso(db, usuario, acceso, autor)
     return usuario, invitaciones.emitir(db, usuario, autor)
+
+
+def _historial(db: DbSession, usuario: User, autor: uuid.UUID | None) -> None:
+    """Trazabilidad: el historial de accesos al día tras cada cambio."""
+    from app.shared.users import service as plataforma
+
+    db.flush()
+    plataforma.sincronizar_historial(db, usuario, autor)
 
 
 def tiene_usuario(db: DbSession, contacto_ids: list[uuid.UUID]) -> set[uuid.UUID]:

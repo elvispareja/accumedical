@@ -192,7 +192,9 @@ def _resumen_supervision(fila) -> VisitaSupervisionResumen:
         auditor_id=str(visita.auditor_id) if visita.auditor_id else None,
         # `concat_ws` sobre un LEFT JOIN sin fila da cadena vacía, no NULL: sin
         # auditor derivado el campo tiene que viajar nulo.
-        auditor_nombre=auditor_nombre or None,
+        # Con auditor pero sin nombre (alguien que ya no aparece en el
+        # directorio): nunca «Sin asignar», que mentiría sobre quién auditó.
+        auditor_nombre=auditor_nombre or ("(usuario retirado)" if visita.auditor_id else None),
         tiene_informe=bool(visita.informe),
     )
 

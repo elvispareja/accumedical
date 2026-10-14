@@ -79,10 +79,12 @@ def listar(
     return [_salida(db, u) for u in service.listar(db, ctx.grupo)]
 
 
-class TramoCoordinacion(BaseModel):
+class Tramo(BaseModel):
     user_id: str
     nombre: str
     email: str | None
+    rol: str
+    rol_etiqueta: str
     desde: dt.datetime
     hasta: dt.datetime | None
     vigente: bool
@@ -90,22 +92,38 @@ class TramoCoordinacion(BaseModel):
     retirado_por: str | None
 
 
-class CoordinacionDeApp(BaseModel):
+class HistorialDeApp(BaseModel):
     module_code: str
     module_nombre: str
-    tramos: list[TramoCoordinacion]
+    tramos: list[Tramo]
 
 
-@router.get("/coordinaciones", response_model=list[CoordinacionDeApp])
-def coordinaciones(
+class TramoDeUsuario(Tramo):
+    ambito: str
+    donde: str
+
+
+@router.get("/historial-por-aplicacion", response_model=list[HistorialDeApp])
+def historial_por_aplicacion(
     ctx: AuthContext = Depends(require_coordinacion),
     db: DbSession = Depends(get_db),
-) -> list[CoordinacionDeApp]:
+) -> list[HistorialDeApp]:
     """
-    Quién coordina cada aplicación HOY y quién la coordinó antes, con desde,
-    hasta y quién dio o quitó la coordinación. La trazabilidad del traspaso.
+    Por aplicación: quién la coordina, audita o atiende hoy y quién lo hizo
+    antes, con desde, hasta y quién dio o quitó el acceso. Nada se borra.
     """
-    return [CoordinacionDeApp(**c) for c in service.coordinaciones(db)]
+    return [HistorialDeApp(**h) for h in service.historial_por_aplicacion(db)]
+
+
+@router.get("/{user_id}/historial", response_model=list[TramoDeUsuario])
+def historial_de_usuario(
+    user_id: uuid.UUID,
+    ctx: AuthContext = Depends(require_coordinacion),
+    db: DbSession = Depends(get_db),
+) -> list[TramoDeUsuario]:
+    """La trayectoria de una persona: cada rol que tuvo, dónde y cuándo."""
+    service.obtener(db, user_id, ctx.grupo)
+    return [TramoDeUsuario(**t) for t in service.historial_de_usuario(db, user_id)]
 
 
 @router.get("/{user_id}", response_model=UsuarioPlataformaSalida)
@@ -141,9 +159,8 @@ def crear(
         detalle={
             "plataforma": True,
             "acceso": {
-                "rol": acceso["rol"],
-                "grupo": acceso.get("grupo"),
-                "modulos": acceso.get("modulos") or [],
+                "aplicaciones": acceso.get("aplicaciones") or [],
+                "funcion": acceso.get("funcion"),
             },
         },
     )
@@ -179,9 +196,8 @@ def actualizar(
     if acceso is not None:
         service.fijar_acceso(db, usuario, acceso, ctx.user.id)
         detalle["acceso"] = {
-            "rol": acceso["rol"],
-            "grupo": acceso.get("grupo"),
-            "modulos": acceso.get("modulos") or [],
+            "aplicaciones": acceso.get("aplicaciones") or [],
+            "funcion": acceso.get("funcion"),
         }
     if is_active is not None and is_active != usuario.is_active:
         if is_active:
@@ -193,8 +209,10 @@ def actualizar(
             )
         usuario.is_active = is_active
         detalle["is_active"] = is_active
-        # Trazabilidad: desactivar cierra sus tramos de coordinación; reactivar
-        # los abre de nuevo.
+        # Trazabilidad: desactivar libera su función (para nombrar al reemplazo)
+        # y cierra todos sus tramos; reactivar abre de nuevo los de sus apps.
+        if not is_active:
+            service.liberar_puestos(db, usuario, ctx.user.id)
         db.flush()
         service.sincronizar_historial(db, usuario, ctx.user.id)
         # Desactivar mata TODAS sus sesiones vivas, no solo impide entrar de nuevo.

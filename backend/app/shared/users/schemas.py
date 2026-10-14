@@ -22,54 +22,43 @@ from app.shared import identificacion, personas
 # `operador` y `consulta` siguen sembrados, pero son de los usuarios de
 # aseguradora. El code del coordinador sigue siendo `supervisor` en la base
 # (identidad congelada); «Coordinador» es su nombre visible.
-ROLES = ("coordinador", "auditor", "convenio", "contabilidad")
-GRUPOS = ("suscripcion", "siniestro")
-# Las que viven en `user_funcion`, cada una con una sola persona.
+# Las que viven en `user_funcion`, cada una con UNA sola persona a la vez.
 FUNCIONES = ("convenio", "contabilidad")
 
-# «call_center» (14/10/2026): por app, hoy solo Calificación de Riesgo.
-RolPlataforma = Literal["coordinador", "auditor", "call_center", "convenio", "contabilidad"]
-GrupoPlataforma = Literal["suscripcion", "siniestro"]
+# Desde el 14/10/2026 cada persona tiene un rol EN CADA aplicación (o ninguno)
+# y, aparte, puede llevar una función transversal. Ejemplo: Mario es
+# coordinador de Calificación y además Convenio; un auditor de Concurrencia
+# puede ser coordinador de Vida. «call_center» solo donde la app lo admite.
+RolEnApp = Literal["auditor", "coordinador", "call_center"]
+FuncionPlataforma = Literal["convenio", "contabilidad"]
+
+
+class AsignacionApp(BaseModel):
+    """Su rol en UNA aplicación."""
+
+    module_code: Annotated[str, Field(min_length=1, max_length=30)]
+    rol: RolEnApp
 
 
 class AccesoPlataforma(BaseModel):
     """
-    A qué entra el personal propio. Un rol por persona, no uno por módulo: o
-    coordina una familia entera, o audita los módulos que se le marquen.
+    A qué entra el personal propio: sus aplicaciones, cada una con su rol, y su
+    función transversal si la tiene. Quitar algo NUNCA lo borra: la fila queda
+    inactiva y su tramo se cierra en `historial_accesos`.
     """
 
-    rol: RolPlataforma
-    # Coordinador: la familia que abarca. Auditor: los módulos marcados.
-    grupo: GrupoPlataforma | None = None
-    modulos: list[Annotated[str, Field(min_length=1, max_length=30)]] = Field(
-        default_factory=list, max_length=50
-    )
+    aplicaciones: list[AsignacionApp] = Field(default_factory=list, max_length=50)
+    funcion: FuncionPlataforma | None = None
 
     @model_validator(mode="after")
     def _coherente(self):
-        if self.rol == "coordinador":
-            # Desde el 14/10/2026 el coordinador es de cada APLICACIÓN (una o
-            # varias) y puede haber varios por aplicación; ya no de una familia.
-            if self.grupo is not None:
-                raise ValueError(
-                    "El coordinador ya no se asigna por familia: "
-                    "marca las aplicaciones que coordina"
-                )
-            if not self.modulos:
-                raise ValueError(
-                    "Marca al menos una aplicación: un coordinador sin ellas no coordina nada"
-                )
-        elif self.rol in ("auditor", "call_center"):
-            if self.grupo is not None:
-                raise ValueError("La familia es del coordinador; el auditor entra por módulos")
-            if not self.modulos:
-                raise ValueError("Marca al menos un módulo: un auditor sin módulos no entra a nada")
-        else:
-            # Convenio y Contabilidad son transversales: no marcan nada.
-            if self.grupo is not None or self.modulos:
-                raise ValueError(
-                    "Esta función no se concede por módulos ni por familia: no marques ninguno"
-                )
+        codigos = [a.module_code for a in self.aplicaciones]
+        if len(set(codigos)) != len(codigos):
+            raise ValueError("Una aplicación solo puede tener un rol por persona")
+        if not self.aplicaciones and self.funcion is None:
+            raise ValueError(
+                "Marca al menos una aplicación con su rol, o una función (Convenio o Contabilidad)"
+            )
         return self
 
 
@@ -146,23 +135,21 @@ class UsuarioPlataformaActualizar(BaseModel):
     _telefono = field_validator("telefono")(identificacion.normalizar_telefono)
 
 
-class ModuloAlcanzado(BaseModel):
-    """Un módulo al que entra el usuario, para enseñarlo en el listado."""
+class AsignacionSalida(BaseModel):
+    """Una aplicación a la que entra HOY, con su rol."""
 
     module_code: str
     module_nombre: str
+    rol: str
 
 
 class AccesoPlataformaSalida(BaseModel):
-    """
-    A qué entra, ya resuelto: el coordinador trae su familia y, además, los
-    módulos que esa familia abarca HOY —calculados, no guardados—, para que la
-    pantalla pueda enseñarlos sin recalcularlos por su cuenta.
-    """
+    """A qué entra HOY: sus aplicaciones con su rol, y su función si tiene."""
 
-    rol: RolPlataforma
-    grupo: GrupoPlataforma | None
-    modulos: list[ModuloAlcanzado]
+    aplicaciones: list[AsignacionSalida]
+    funcion: str | None
+    #: «Coordinador de Calificación de Riesgo · Convenio», para el listado.
+    resumen: str
 
 
 class UsuarioPlataformaSalida(BaseModel):

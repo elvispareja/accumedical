@@ -60,6 +60,7 @@ from app.shared.auth import service as auth_service
 from app.shared.catalogos.models import Module
 from app.shared.central import archivos as archivos_central
 from app.shared.central import redes as redes_central
+from app.shared.users import service as plataforma_usuarios
 
 # Las dependencias se crean UNA vez y se reutilizan —en el router y en los
 # endpoints que necesitan el `AuthContext`—: FastAPI cachea por identidad, así
@@ -996,6 +997,11 @@ def actualizar_usuario(
             detalle["sesiones_revocadas"] = auth_service.revocar_sesiones_de_usuario(
                 db, usuario.id, "usuario_desactivado"
             )
+            # Libera su puesto de coordinador de la compañía para el reemplazo.
+            plataforma_usuarios.liberar_puestos(db, usuario, ctx.user.id)
+        # Trazabilidad (historial_accesos): nada se borra, los tramos se cierran.
+        db.flush()
+        plataforma_usuarios.sincronizar_historial(db, usuario, ctx.user.id)
 
     if detalle:
         usuario.updated_by = ctx.user.id
