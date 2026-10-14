@@ -1194,6 +1194,9 @@ def usuarios_de_la_aseguradora(
     for u in nucleo.usuarios_por_ids(db, sorted(set(tramos) | intervinieron | vigentes)):
         if u.aseguradora_id != aseguradora_id:
             continue
+        # Las cuentas dadas de baja (las de pruebas) solo si tocaron algún caso.
+        if u.deleted_at is not None and u.id not in intervinieron:
+            continue
         suyos = tramos.get(u.id, [])
         abiertos = [t for t in suyos if t.hasta is None]
         activo = bool(u.is_active) and u.deleted_at is None
@@ -1222,10 +1225,29 @@ def tramos_en_concurrencia(db: DbSession) -> dict[uuid.UUID, list[Any]]:
 
 
 def aseguradoras_con_casos(db: DbSession) -> list[uuid.UUID]:
-    """Las compañías que alguna vez tuvieron un caso, aunque hoy no tengan el módulo."""
-    return list(
+    """
+    Las compañías que alguna vez tuvieron un caso o gente en Concurrencia,
+    aunque hoy no tengan el módulo: sus ex operadores tienen que poder
+    filtrarse igual (en medicina no se borra nada).
+    """
+    from app.shared.users.models import HistorialAcceso
+
+    con_casos = set(
         db.scalars(select(Visita.aseguradora_id).where(Visita.deleted_at.is_(None)).distinct())
     )
+    con_gente = set(
+        db.scalars(
+            select(User.aseguradora_id)
+            .join(HistorialAcceso, HistorialAcceso.user_id == User.id)
+            .where(
+                HistorialAcceso.module_code == nucleo.MODULO,
+                User.aseguradora_id.is_not(None),
+                User.deleted_at.is_(None),
+            )
+            .distinct()
+        )
+    )
+    return sorted(con_casos | con_gente, key=str)
 
 
 def listar_del_auditor(db: DbSession, user_id: uuid.UUID) -> list[tuple[Any, ...]]:
