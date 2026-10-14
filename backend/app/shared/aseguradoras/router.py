@@ -995,7 +995,7 @@ def actualizar_usuario(
         # Desactivar mata TODAS sus sesiones vivas, no solo impide entrar de nuevo.
         if not datos.is_active:
             detalle["sesiones_revocadas"] = auth_service.revocar_sesiones_de_usuario(
-                db, usuario.id, "usuario_desactivado"
+                db, usuario.id, "user_deactivated"
             )
             # Libera su puesto de coordinador de la compañía para el reemplazo.
             plataforma_usuarios.liberar_puestos(db, usuario, ctx.user.id)
