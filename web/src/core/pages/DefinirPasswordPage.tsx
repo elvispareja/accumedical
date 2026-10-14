@@ -1,8 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, Eye, EyeOff, ShieldCheck, X } from 'lucide-react'
+import { Check, CircleCheck, Eye, EyeOff, ShieldCheck, X } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 
 import { definirPassword, leerInvitacion } from '@/core/auth/invitacion'
 import { Marca } from '@/core/components/Marca'
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
+import { Modal } from '@/shared/components/ui/modal'
 import { useToast } from '@/shared/components/ui/toast'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
@@ -35,20 +36,28 @@ function Requisito({ cumple, texto }: { cumple: boolean; texto: string }) {
 }
 
 /**
- * Pantalla pública a la que lleva el enlace de la invitación. No abre sesión al
- * terminar: quien acaba de crear su contraseña entra por el login como todo el
- * mundo, y así el camino de entrada sigue siendo uno solo.
+ * Pantalla pública a la que lleva el enlace de la invitación o de
+ * restablecimiento. No abre sesión al terminar.
+ *
+ * **Al guardar, un aviso de «lista» y la pestaña se cierra** (14/10/2026,
+ * pedido del usuario): la página vive en admin.pymes.ec, y llevar desde aquí al
+ * login de admin hacía pensar a quien solo usa Concurrencia o Calificación que
+ * esa era su dirección. Cada uno entra por su app de siempre.
  */
 export function DefinirPasswordPage() {
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
-  const navegar = useNavigate()
   const toast = useToast()
   const sinMovimiento = useReducedMotion()
 
   const [password, setPassword] = useState('')
   const [repetida, setRepetida] = useState('')
   const [visible, setVisible] = useState(false)
+  // `creada`: el aviso abierto. `sinCerrar`: el navegador no dejó cerrar la
+  // pestaña (solo se cierran solas las que abrió un script; las que abre el
+  // correo, según el navegador, no) — entonces se pide cerrarla a mano.
+  const [creada, setCreada] = useState(false)
+  const [sinCerrar, setSinCerrar] = useState(false)
 
   const invitacion = useQuery({
     queryKey: ['invitacion', token],
@@ -71,11 +80,19 @@ export function DefinirPasswordPage() {
   const guardar = useMutation({
     mutationFn: () => definirPassword(token, password),
     onSuccess: () => {
-      toast.exito('Contraseña creada. Ya puedes entrar.')
-      navegar('/login', { replace: true })
+      setPassword('')
+      setRepetida('')
+      setCreada(true)
     },
     onError: (error) => toast.error(mensajeDeError(error, 'No se pudo crear la contraseña')),
   })
+
+  function terminar() {
+    setCreada(false)
+    window.close()
+    // Si sigue abierta medio segundo después, el navegador no la dejó cerrar.
+    window.setTimeout(() => setSinCerrar(true), 500)
+  }
 
   function enviar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
@@ -95,7 +112,17 @@ export function DefinirPasswordPage() {
       >
         <ShieldCheck className="size-6 text-marca" aria-hidden="true" />
 
-        {invalido ? (
+        {sinCerrar ? (
+          <>
+            <h1 className="mt-4 font-display text-xl font-semibold tracking-tight">
+              Tu contraseña quedó guardada
+            </h1>
+            <p className="mt-2 text-sm text-tenue-fg">
+              Ya puedes cerrar esta pestaña y entrar por tu aplicación de Accumedical de siempre,
+              con tu correo y la contraseña nueva.
+            </p>
+          </>
+        ) : invalido ? (
           <>
             <h1 className="mt-4 font-display text-xl font-semibold tracking-tight">
               Este enlace ya no sirve
@@ -104,12 +131,6 @@ export function DefinirPasswordPage() {
               Estos enlaces caducan y solo se pueden usar una vez. Pide uno nuevo a
               quien administra la plataforma.
             </p>
-            <Link
-              to="/login"
-              className="mt-5 inline-block rounded text-sm font-medium text-marca hover:underline"
-            >
-              Ir al inicio de sesión
-            </Link>
           </>
         ) : invitacion.isPending ? (
           <div className="mt-4 space-y-3" role="status" aria-label="Comprobando el enlace">
@@ -187,6 +208,26 @@ export function DefinirPasswordPage() {
           </>
         )}
       </motion.div>
+
+      <Modal
+        abierto={creada}
+        onCerrar={terminar}
+        titulo="Contraseña guardada"
+        pie={
+          <Boton type="button" onClick={terminar} autoFocus>
+            OK
+          </Boton>
+        }
+      >
+        <div className="flex gap-3">
+          <CircleCheck className="size-6 shrink-0 text-exito" aria-hidden="true" />
+          <p className="text-sm text-tenue-fg">
+            Se guardó correctamente. Es la misma contraseña para todas las aplicaciones de
+            Accumedical a las que tienes acceso: entra por la tuya de siempre con tu correo y
+            esta contraseña. Al pulsar OK se cierra esta pestaña.
+          </p>
+        </div>
+      </Modal>
     </main>
   )
 }
