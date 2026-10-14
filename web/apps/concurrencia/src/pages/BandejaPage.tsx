@@ -24,7 +24,8 @@ import {
   sePuedeEditar,
   Ventana,
 } from '@concurrencia/components/visitas'
-import { listarVisitas } from '@concurrencia/api'
+import { listarOperadores, listarVisitas } from '@concurrencia/api'
+import { FechaConEtiqueta } from '@concurrencia/components/filtros'
 import { Boton } from '@/shared/components/ui/button'
 import { MenuAcciones } from '@/shared/components/ui/menu'
 import { Input } from '@/shared/components/ui/input'
@@ -45,18 +46,17 @@ export interface FiltrosDeEntrada {
  * esta pantalla no puede ver lo de otra compañía ni por error.
  *
  * Vive de dos maneras: como página propia (el operador entra directo aquí) y
- * `empotrada` dentro del panel del supervisor, como pestaña, sin cabecera
- * propia y con los filtros que le pasa el cuadro pulsado.
+ * `empotrada` dentro del panel del supervisor, sin cabecera propia y con los
+ * filtros que le pasa el cuadro pulsado. Empotrada suma el selector
+ * **Operador** (14/10/2026: reemplaza a la antigua pestaña «Operadores»), con
+ * los de hoy y los que ya no están.
  */
 export function BandejaPage({
   empotrada = false,
   filtrosIniciales,
-  creadoPor,
 }: {
   empotrada?: boolean
   filtrosIniciales?: FiltrosDeEntrada
-  /** Fija la lista a los casos creados por ese operador (tab Operadores). */
-  creadoPor?: string
 } = {}) {
   const navegar = useNavigate()
   const sinMovimiento = useReducedMotion()
@@ -85,6 +85,14 @@ export function BandejaPage({
   const [desde, setDesde] = useState(() => fecha('desde'))
   const [hasta, setHasta] = useState(() => fecha('hasta'))
   const [pagina, setPagina] = useState(1)
+  // Solo en el panel del supervisor: los casos que creó ese operador.
+  const [creadoPor, setCreadoPor] = useState('')
+  const operadores = useQuery({
+    queryKey: ['concurrencia-operadores'],
+    queryFn: listarOperadores,
+    enabled: empotrada,
+    staleTime: 60_000,
+  })
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -102,7 +110,7 @@ export function BandejaPage({
         estado,
         desde,
         hasta,
-        creado_por: creadoPor,
+        creado_por: creadoPor || undefined,
         page: pagina,
         page_size: POR_PAGINA,
       }),
@@ -111,7 +119,7 @@ export function BandejaPage({
 
   const datos = consulta.data
   const totalPaginas = datos ? Math.max(1, Math.ceil(datos.total / datos.page_size)) : 1
-  const hayFiltros = Boolean(busquedaAplicada || estado || desde || hasta)
+  const hayFiltros = Boolean(busquedaAplicada || estado || desde || hasta || creadoPor)
 
   return (
     <div>
@@ -138,10 +146,11 @@ export function BandejaPage({
         </header>
       )}
 
-      {/* ── Filtros ── */}
+      {/* ── Filtros ── Arriba el buscador y las fechas; debajo el estado y,
+          en el panel del supervisor, el operador. */}
       <div
         className={cn(
-          'grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_11rem_10.5rem_10.5rem]',
+          'grid gap-3 sm:grid-cols-[minmax(0,1fr)_13rem_13rem]',
           empotrada ? 'mt-0' : 'mt-7',
         )}
       >
@@ -159,6 +168,33 @@ export function BandejaPage({
             className="pl-9"
           />
         </div>
+        <FechaConEtiqueta etiqueta="Desde">
+          <Input
+            type="date"
+            value={desde}
+            onChange={(e) => {
+              setDesde(e.target.value)
+              setPagina(1)
+            }}
+            aria-label="Desde esta fecha"
+            className="pl-16"
+          />
+        </FechaConEtiqueta>
+        <FechaConEtiqueta etiqueta="Hasta">
+          <Input
+            type="date"
+            value={hasta}
+            min={desde || undefined}
+            onChange={(e) => {
+              setHasta(e.target.value)
+              setPagina(1)
+            }}
+            aria-label="Hasta esta fecha"
+            className="pl-16"
+          />
+        </FechaConEtiqueta>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <Select
           value={estado}
           onChange={(e) => {
@@ -174,29 +210,30 @@ export function BandejaPage({
             </option>
           ))}
         </Select>
-        <div>
-          <Input
-            type="date"
-            value={desde}
+        {empotrada && (
+          <Select
+            value={creadoPor}
             onChange={(e) => {
-              setDesde(e.target.value)
+              setCreadoPor(e.target.value)
               setPagina(1)
             }}
-            aria-label="Desde esta fecha"
-          />
-        </div>
-        <div>
-          <Input
-            type="date"
-            value={hasta}
-            min={desde || undefined}
-            onChange={(e) => {
-              setHasta(e.target.value)
-              setPagina(1)
-            }}
-            aria-label="Hasta esta fecha"
-          />
-        </div>
+            disabled={operadores.isPending || operadores.isError}
+            aria-label="Filtrar por operador"
+          >
+            <option value="">
+              {operadores.isPending
+                ? 'Cargando operadores…'
+                : operadores.isError
+                  ? 'No se pudieron cargar los operadores'
+                  : 'Todos los operadores'}
+            </option>
+            {operadores.data?.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.activo ? o.nombre_completo : `${o.nombre_completo} · ya no está`}
+              </option>
+            ))}
+          </Select>
+        )}
       </div>
 
       {/* ── Tabla ── */}

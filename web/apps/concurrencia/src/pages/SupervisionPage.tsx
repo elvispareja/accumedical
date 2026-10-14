@@ -26,6 +26,7 @@ import {
   type AuditorElegible,
   type VisitaSupervision,
 } from '@concurrencia/api'
+import { FechaConEtiqueta } from '@concurrencia/components/filtros'
 import {
   CuadrosDeVisitas,
   type FiltroDeCuadro,
@@ -268,7 +269,7 @@ export function SupervisionPage() {
             className="pl-9"
           />
         </div>
-        <ConEtiqueta etiqueta="Desde">
+        <FechaConEtiqueta etiqueta="Desde">
           <Input
             type="date"
             value={desde}
@@ -279,8 +280,8 @@ export function SupervisionPage() {
             aria-label="Desde esta fecha"
             className="pl-16"
           />
-        </ConEtiqueta>
-        <ConEtiqueta etiqueta="Hasta">
+        </FechaConEtiqueta>
+        <FechaConEtiqueta etiqueta="Hasta">
           <Input
             type="date"
             value={hasta}
@@ -292,7 +293,7 @@ export function SupervisionPage() {
             aria-label="Hasta esta fecha"
             className="pl-16"
           />
-        </ConEtiqueta>
+        </FechaConEtiqueta>
       </div>
 
       {/* La trazabilidad, en tres selectores que se combinan: nuestro
@@ -531,18 +532,6 @@ export function SupervisionPage() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-/** Una fecha con su nombre dentro de la caja: «Desde», «Hasta». */
-function ConEtiqueta({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
-  return (
-    <div className="relative">
-      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-tenue-fg">
-        {etiqueta}
-      </span>
-      {children}
     </div>
   )
 }
