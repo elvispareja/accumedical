@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import Select, and_, func, or_, select, update
+from sqlalchemy import Select, String, and_, cast, func, or_, select, union, update
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import aliased
@@ -951,6 +951,8 @@ def listar_supervision(
     desde: dt.date | None = None,
     hasta: dt.date | None = None,
     documento: tuple[str, str] | None = None,
+    aseguradora_id: uuid.UUID | None = None,
+    persona_id: uuid.UUID | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[tuple[Any, ...]], int]:
@@ -979,6 +981,11 @@ def listar_supervision(
         # Hasta el final de ese día: una visita que empieza a las 16:00 del día
         # filtrado tiene que salir.
         consulta = consulta.where(Visita.desde < hasta + dt.timedelta(days=1))
+    if aseguradora_id is not None:
+        consulta = consulta.where(Visita.aseguradora_id == aseguradora_id)
+    # Los casos en los que intervino alguien del personal, esté o no todavía.
+    if persona_id is not None:
+        consulta = consulta.where(Visita.id.in_(_visitas_de_la_persona(persona_id)))
     # Los casos de UNA persona: lo que pide la ficha del paciente.
     if documento is not None:
         consulta = consulta.where(
@@ -998,6 +1005,103 @@ def listar_supervision(
         .limit(page_size)
     ).all()
     return _completar(db, filas), total
+
+
+def _visitas_de_la_persona(persona_id: uuid.UUID):  # noqa: ANN202
+    """
+    **La trazabilidad del personal** (14/10/2026): los casos en los que una
+    persona intervino de cualquier forma —los creó, los derivó, los auditó, los
+    tuvo asignados y se los quitaron, dictó notas o subió fotos—. Sale de las
+    propias filas y de `audit_log`, que no se borran: quien ya no está en
+    Concurrencia sigue encontrando sus casos.
+    """
+    from app.shared.audit.models import AuditLog
+
+    texto = str(persona_id)
+    auditados = select(AuditLog.entidad_id).where(
+        AuditLog.entidad == "conc_visitas",
+        or_(
+            AuditLog.user_id == persona_id,
+            AuditLog.detalle["antes"]["auditor_id"].astext == texto,
+            AuditLog.detalle["despues"]["auditor_id"].astext == texto,
+        ),
+    )
+    return union(
+        select(Visita.id).where(
+            or_(
+                Visita.created_by == persona_id,
+                Visita.updated_by == persona_id,
+                Visita.auditor_id == persona_id,
+                cast(Visita.id, String).in_(auditados),
+            )
+        ),
+        select(VisitaNota.visita_id).where(VisitaNota.created_by == persona_id),
+        select(VisitaFoto.visita_id).where(VisitaFoto.created_by == persona_id),
+    )
+
+
+def ids_del_personal(db: DbSession) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
+    """
+    Quién está o estuvo en Concurrencia: `(con_tramo, intervinieron)`. Lo
+    primero sale del historial de accesos (D57); lo segundo, de los casos —quien
+    los creó, derivó, auditó o tuvo asignados—, por si alguno es anterior al
+    historial. Quién de ellos es de una compañía lo descarta quien llama.
+    """
+    from app.shared.audit.models import AuditLog
+    from app.shared.users.models import HistorialAcceso
+
+    con_tramo: set[uuid.UUID] = set(
+        db.scalars(
+            select(HistorialAcceso.user_id).where(
+                HistorialAcceso.module_code == nucleo.MODULO,
+                HistorialAcceso.ambito == "aplicacion",
+            )
+        )
+    )
+    intervinieron: set[uuid.UUID] = set()
+    for fila in db.execute(select(Visita.created_by, Visita.updated_by, Visita.auditor_id)):
+        intervinieron.update(i for i in fila if i)
+    for tabla in (VisitaNota, VisitaFoto):
+        intervinieron.update(i for i in db.scalars(select(tabla.created_by).distinct()) if i)
+    intervinieron.update(
+        i
+        for i in db.scalars(
+            select(AuditLog.user_id).where(AuditLog.entidad == "conc_visitas").distinct()
+        )
+        if i
+    )
+    for detalle in db.scalars(
+        select(AuditLog.detalle).where(AuditLog.accion == "visita_derivada")
+    ):
+        for lado in ("antes", "despues"):
+            valor = ((detalle or {}).get(lado) or {}).get("auditor_id")
+            if valor:
+                intervinieron.add(uuid.UUID(valor))
+    return con_tramo, intervinieron
+
+
+def tramos_en_concurrencia(db: DbSession) -> dict[uuid.UUID, list[Any]]:
+    """Los tramos de cada persona en Concurrencia, del más reciente al más viejo."""
+    from app.shared.users.models import HistorialAcceso
+
+    tramos: dict[uuid.UUID, list[Any]] = {}
+    for t in db.scalars(
+        select(HistorialAcceso)
+        .where(
+            HistorialAcceso.module_code == nucleo.MODULO,
+            HistorialAcceso.ambito == "aplicacion",
+        )
+        .order_by(HistorialAcceso.desde.desc())
+    ):
+        tramos.setdefault(t.user_id, []).append(t)
+    return tramos
+
+
+def aseguradoras_con_casos(db: DbSession) -> list[uuid.UUID]:
+    """Las compañías que alguna vez tuvieron un caso, aunque hoy no tengan el módulo."""
+    return list(
+        db.scalars(select(Visita.aseguradora_id).where(Visita.deleted_at.is_(None)).distinct())
+    )
 
 
 def listar_del_auditor(db: DbSession, user_id: uuid.UUID) -> list[tuple[Any, ...]]:

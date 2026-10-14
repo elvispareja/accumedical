@@ -34,6 +34,7 @@ from app.modules.concurrencia import (
     firma,
     informes,
     notificaciones,
+    nucleo,
     permissions,
     service,
     transcripcion,
@@ -50,6 +51,7 @@ from app.modules.concurrencia.schemas import (
     CorreoPorDefecto,
     CorreoVisita,
     DashboardOut,
+    FiltrosSupervision,
     FotoOut,
     InformeOut,
     NotaCrear,
@@ -61,6 +63,7 @@ from app.modules.concurrencia.schemas import (
     PaginaSupervision,
     PaginaVisitas,
     PanelAuditorOut,
+    PersonaDelFiltro,
     PrestadorElegible,
     ProrrogaOut,
     ProrrogaRequest,
@@ -1206,6 +1209,10 @@ def listar_supervision(
     # ninguno: media identificación no identifica a nadie.
     paciente_tipo_documento: str | None = Query(default=None, max_length=10),
     paciente_numero_documento: str | None = Query(default=None, max_length=20),
+    # Trazabilidad: los casos de UNA compañía y/o en los que intervino UNA
+    # persona del personal, aunque ya no esté en Concurrencia.
+    aseguradora_id: uuid.UUID | None = Query(default=None),
+    persona_id: uuid.UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=service.MAX_PAGE_SIZE),
     ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
@@ -1231,6 +1238,8 @@ def listar_supervision(
         desde=desde,
         hasta=hasta,
         documento=documento,
+        aseguradora_id=aseguradora_id,
+        persona_id=persona_id,
         page=page,
         page_size=page_size,
     )
@@ -1239,6 +1248,72 @@ def listar_supervision(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get("/supervision/filtros", response_model=FiltrosSupervision)
+def filtros_supervision(
+    ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
+    db: DbSession = Depends(get_db),
+) -> FiltrosSupervision:
+    """
+    Los selectores de trazabilidad de la bandeja: **todo el personal que está o
+    estuvo en Concurrencia** (coordinadores, auditores, call center y el
+    administrador si intervino), y las compañías con Concurrencia o con casos.
+    En medicina no se borra nada: quien se fue sigue en la lista, marcado.
+    """
+    _solo_supervision(ctx)
+    from app.shared.users.service import ETIQUETA_ROL
+
+    tramos = service.tramos_en_concurrencia(db)
+    con_tramo, intervinieron = service.ids_del_personal(db)
+    personal: list[PersonaDelFiltro] = []
+    for u in nucleo.usuarios_por_ids(db, sorted(con_tramo | intervinieron)):
+        # El personal de las compañías no entra: para eso está el filtro de aseguradora.
+        if u.aseguradora_id is not None:
+            continue
+        # Las cuentas dadas de baja (las de las pruebas automáticas) solo salen
+        # si tocaron algún caso; un desactivado sale siempre.
+        if u.deleted_at is not None and u.id not in intervinieron:
+            continue
+        suyos = tramos.get(u.id, [])
+        activo = bool(u.is_active) and u.deleted_at is None
+        abiertos = [t for t in suyos if t.hasta is None]
+        vigente = activo and (bool(abiertos) or bool(u.is_superadmin))
+        roles = list(dict.fromkeys(ETIQUETA_ROL.get(t.rol, t.rol) for t in (abiertos or suyos)))
+        if u.is_superadmin:
+            roles.insert(0, "Administrador")
+        if vigente:
+            detalle = " · ".join(roles) or "Personal"
+        else:
+            ultimo = max((t.hasta for t in suyos if t.hasta), default=None)
+            cuando = f" hasta {ultimo:%d/%m/%Y}" if ultimo else ""
+            detalle = f"{' · '.join(roles) or 'Personal'} · ya no está{cuando}"
+        personal.append(
+            PersonaDelFiltro(
+                id=str(u.id),
+                nombre_completo=personas.de_fila(u),
+                detalle=detalle,
+                vigente=vigente,
+            )
+        )
+    personal.sort(key=lambda p: (not p.vigente, p.nombre_completo))
+
+    aseguradoras = {
+        a.id: a.nombre_comercial or a.razon_social
+        for a in service.aseguradoras_con_concurrencia(db)
+    }
+    for aseguradora_id in service.aseguradoras_con_casos(db):
+        if aseguradora_id not in aseguradoras:
+            a = nucleo.aseguradora(db, aseguradora_id)
+            if a is not None:
+                aseguradoras[aseguradora_id] = a.nombre_comercial or a.razon_social
+    return FiltrosSupervision(
+        personal=personal,
+        aseguradoras=sorted(
+            (AseguradoraElegible(id=str(i), nombre=n) for i, n in aseguradoras.items()),
+            key=lambda a: a.nombre,
+        ),
     )
 
 

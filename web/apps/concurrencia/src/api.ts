@@ -340,6 +340,25 @@ export interface AuditorElegible {
   provincia_nombre: string | null
 }
 
+/** Alguien del personal que está o estuvo en Concurrencia. */
+export interface PersonaDelFiltro {
+  id: string
+  nombre_completo: string
+  /** «Coordinador», «Auditor · ya no está hasta 18/09/2026»… */
+  detalle: string
+  vigente: boolean
+}
+
+export interface FiltrosSupervision {
+  personal: PersonaDelFiltro[]
+  aseguradoras: { id: string; nombre: string }[]
+}
+
+export async function obtenerFiltrosSupervision() {
+  const { data } = await api.get<FiltrosSupervision>('/concurrencia/supervision/filtros')
+  return data
+}
+
 export async function listarSupervision(filtros: {
   search?: string
   estado?: string
@@ -350,6 +369,9 @@ export async function listarSupervision(filtros: {
   /** Los casos de UNA persona: los dos juntos o ninguno. */
   paciente_tipo_documento?: string
   paciente_numero_documento?: string
+  /** Trazabilidad: los casos de una compañía y/o en los que intervino una persona. */
+  aseguradora_id?: string
+  persona_id?: string
   page: number
   page_size: number
 }) {
@@ -362,6 +384,8 @@ export async function listarSupervision(filtros: {
       hasta: filtros.hasta || undefined,
       paciente_tipo_documento: filtros.paciente_tipo_documento || undefined,
       paciente_numero_documento: filtros.paciente_numero_documento || undefined,
+      aseguradora_id: filtros.aseguradora_id || undefined,
+      persona_id: filtros.persona_id || undefined,
       page: filtros.page,
       page_size: filtros.page_size,
     },

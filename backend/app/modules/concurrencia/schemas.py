@@ -414,6 +414,25 @@ class AuditorElegible(BaseModel):
     provincia_nombre: str | None
 
 
+class PersonaDelFiltro(BaseModel):
+    """
+    Alguien del personal que está o estuvo en Concurrencia, para filtrar los
+    casos en los que intervino. `detalle` dice con qué rol y si sigue.
+    """
+
+    id: str
+    nombre_completo: str
+    detalle: str
+    vigente: bool
+
+
+class FiltrosSupervision(BaseModel):
+    """Lo que ofrecen los selectores de la bandeja de supervisión."""
+
+    personal: list[PersonaDelFiltro]
+    aseguradoras: list[AseguradoraElegible]
+
+
 class AsignarAuditorRequest(BaseModel):
     """`null` deja el caso sin asignar; un id lo deriva a ese auditor."""
 

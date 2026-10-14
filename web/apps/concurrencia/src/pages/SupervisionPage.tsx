@@ -21,6 +21,7 @@ import {
   listarAuditores,
   listarSupervision,
   obtenerDashboardSupervision,
+  obtenerFiltrosSupervision,
   type AuditorElegible,
   type VisitaSupervision,
 } from '@concurrencia/api'
@@ -36,6 +37,7 @@ import { Boton } from '@/shared/components/ui/button'
 import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
 import { Modal } from '@/shared/components/ui/modal'
+import { Select } from '@/shared/components/ui/select'
 import { useToast } from '@/shared/components/ui/toast'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
@@ -53,8 +55,10 @@ function mensajeDeError(error: unknown, porDefecto: string): string {
  *
  * Arriba, **los mismos cuadros que ve el supervisor de una compañía de lo suyo**
  * —es el mismo componente, no una copia—, aquí con las cifras de todas; pulsar
- * uno no navega, acota la lista de abajo. Y los filtros son cuatro: búsqueda,
- * estado, **rango de fechas** y solo los que están sin asignar.
+ * uno no navega, acota la lista de abajo. Y los filtros: búsqueda, estado,
+ * **rango de fechas**, solo los que están sin asignar y, para la
+ * trazabilidad, **la aseguradora y la persona del personal** —esté o no
+ * todavía en Concurrencia— que intervino en el caso.
  *
  * La misma pantalla sirve al coordinador de plataforma y al administrador
  * global, que entra al módulo como él (D45).
@@ -73,6 +77,8 @@ export function SupervisionPage() {
   // toque cualquier día del rango, no solo el que empiece dentro.
   const [desde, setDesde] = useState('')
   const [hasta, setHasta] = useState('')
+  const [aseguradoraId, setAseguradoraId] = useState('')
+  const [personaId, setPersonaId] = useState('')
   const [asignando, setAsignando] = useState<VisitaSupervision | null>(null)
   const [pagina, setPagina] = useState(1)
 
@@ -99,7 +105,10 @@ export function SupervisionPage() {
   }, [busqueda])
 
   const consulta = useQuery({
-    queryKey: ['supervision', { busquedaAplicada, estado, soloSinAsignar, desde, hasta, pagina }],
+    queryKey: [
+      'supervision',
+      { busquedaAplicada, estado, soloSinAsignar, desde, hasta, aseguradoraId, personaId, pagina },
+    ],
     queryFn: () =>
       listarSupervision({
         search: busquedaAplicada,
@@ -107,6 +116,8 @@ export function SupervisionPage() {
         sin_asignar: soloSinAsignar,
         desde,
         hasta,
+        aseguradora_id: aseguradoraId,
+        persona_id: personaId,
         page: pagina,
         page_size: POR_PAGINA,
       }),
@@ -123,6 +134,11 @@ export function SupervisionPage() {
     refetchInterval: 60_000,
   })
   const auditores = useQuery({ queryKey: ['auditores'], queryFn: listarAuditores })
+  const filtros = useQuery({
+    queryKey: ['supervision-filtros'],
+    queryFn: obtenerFiltrosSupervision,
+  })
+  const personal = filtros.data?.personal ?? []
 
   const derivar = useMutation({
     mutationFn: ({ visita, auditorId }: { visita: VisitaSupervision; auditorId: string | null }) =>
@@ -153,12 +169,16 @@ export function SupervisionPage() {
     setEstado(filtro.estado ?? '')
     setDesde(filtro.desde ?? '')
     setHasta(filtro.hasta ?? '')
+    setAseguradoraId('')
+    setPersonaId('')
     setPagina(1)
   }
 
   const datos = consulta.data
   const totalPaginas = datos ? Math.max(1, Math.ceil(datos.total / datos.page_size)) : 1
-  const hayFiltros = Boolean(busquedaAplicada || estado || soloSinAsignar || desde || hasta)
+  const hayFiltros = Boolean(
+    busquedaAplicada || estado || soloSinAsignar || desde || hasta || aseguradoraId || personaId,
+  )
   const sinAuditores = auditores.data?.length === 0
 
   return (
@@ -205,7 +225,7 @@ export function SupervisionPage() {
 
       {/* ── Filtros ── El estado se elige pulsando un cuadro de arriba: sin
           selector propio (pedido del usuario), así no hay dos controles para lo mismo. */}
-      <div className="mt-6 grid items-center gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_10.5rem_10.5rem_auto]">
+      <div className="mt-6 grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_10.5rem_10.5rem]">
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
@@ -239,6 +259,59 @@ export function SupervisionPage() {
           }}
           aria-label="Hasta esta fecha"
         />
+      </div>
+
+      {/* La trazabilidad: quién intervino —aunque ya no esté en Concurrencia—
+          y de qué compañía. Los dos se combinan: «los casos de LA UNIÓN en los
+          que estuvo tal auditor». */}
+      <div className="mt-3 grid items-center gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_14rem]">
+        <Select
+          value={personaId}
+          onChange={(e) => {
+            setPersonaId(e.target.value)
+            setPagina(1)
+          }}
+          aria-label="Personal que intervino"
+        >
+          <option value="">Todo el personal</option>
+          {personal.some((p) => p.vigente) && (
+            <optgroup label="En Concurrencia">
+              {personal
+                .filter((p) => p.vigente)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {`${p.nombre_completo} · ${p.detalle}`}
+                  </option>
+                ))}
+            </optgroup>
+          )}
+          {personal.some((p) => !p.vigente) && (
+            <optgroup label="Ya no están">
+              {personal
+                .filter((p) => !p.vigente)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {`${p.nombre_completo} · ${p.detalle}`}
+                  </option>
+                ))}
+            </optgroup>
+          )}
+        </Select>
+        <Select
+          value={aseguradoraId}
+          onChange={(e) => {
+            setAseguradoraId(e.target.value)
+            setPagina(1)
+          }}
+          aria-label="Aseguradora"
+        >
+          <option value="">Todas las aseguradoras</option>
+          {(filtros.data?.aseguradoras ?? []).map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.nombre}
+            </option>
+          ))}
+        </Select>
         <Checkbox
           id="sin-asignar"
           checked={soloSinAsignar}
