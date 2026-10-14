@@ -25,6 +25,7 @@ const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const ROL_ETIQUETA: Record<string, string> = {
   coordinador: 'Coordinador',
   auditor: 'Auditor',
+  call_center: 'Call center',
   convenio: 'Convenio',
   contabilidad: 'Contabilidad',
 }

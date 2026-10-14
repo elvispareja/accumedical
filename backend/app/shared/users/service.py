@@ -304,7 +304,7 @@ def fijar_acceso(
     _validar_modulos(db, modulos)
     _revocar(grupos_existentes.values(), autor)
 
-    codigo_rol = ROL_COORDINADOR if rol == "coordinador" else "auditor"
+    codigo_rol = {"coordinador": ROL_COORDINADOR, "call_center": "call_center"}.get(rol, "auditor")
     rol_auditor = {
         module_code: role_id
         for role_id, module_code in db.execute(
@@ -580,6 +580,26 @@ def acceso_de(db: DbSession, user_id: uuid.UUID) -> dict[str, Any]:
             "rol": "coordinador",
             "grupo": None,
             "modulos": [{"module_code": c, "module_nombre": n} for c, n in coordina],
+        }
+
+    # Call center (14/10/2026): sus apps son las filas vivas con ese rol.
+    call_center = db.execute(
+        select(UserModuleAccess.module_code, Module.nombre)
+        .join(Module, Module.code == UserModuleAccess.module_code)
+        .join(Role, Role.id == UserModuleAccess.role_id)
+        .where(
+            UserModuleAccess.user_id == user_id,
+            UserModuleAccess.activo.is_(True),
+            Module.activo.is_(True),
+            Role.code == "call_center",
+        )
+        .order_by(Module.orden, Module.nombre)
+    ).all()
+    if call_center:
+        return {
+            "rol": "call_center",
+            "grupo": None,
+            "modulos": [{"module_code": c, "module_nombre": n} for c, n in call_center],
         }
 
     # Coordinador de FAMILIA que aún no se convirtió (esquema anterior).

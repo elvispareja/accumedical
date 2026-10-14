@@ -65,6 +65,11 @@ const ROLES: { valor: RolPlataforma; etiqueta: string; ayuda: string }[] = [
     ayuda: 'Audita las aplicaciones que se le marquen.',
   },
   {
+    valor: 'call_center',
+    etiqueta: 'Call center',
+    ayuda: 'Hoy, lo mismo que el coordinador. Solo en las apps que lo admiten (Calificación de Riesgo).',
+  },
+  {
     valor: 'convenio',
     etiqueta: 'Convenio',
     ayuda: 'Lleva la red de convenios. Uno solo.',
@@ -179,10 +184,12 @@ export function UsuarioFormPage() {
     }
     for (const m of modulos.data ?? []) {
       if (m.grupo !== 'suscripcion' && m.grupo !== 'siniestro') continue
+      // El call center solo se puede dar en las apps que tienen ese rol.
+      if (rol === 'call_center' && !m.con_call_center) continue
       mapa.set(m.grupo, [...(mapa.get(m.grupo) ?? []), { codigo: m.codigo, nombre: m.nombre }])
     }
     return mapa
-  }, [modulos.data, miFamilia, sesion?.modulos])
+  }, [modulos.data, miFamilia, sesion?.modulos, rol])
 
   // Las familias que se pintan: la suya, o las dos si es el administrador.
   const familias: GrupoPlataforma[] = miFamilia ? [miFamilia] : ['suscripcion', 'siniestro']
@@ -209,7 +216,7 @@ export function UsuarioFormPage() {
     // Coordinador y auditor: las aplicaciones marcadas. Un coordinador de
     // familia que aún no se convirtió trae aquí las de su familia.
     setModulosMarcados(
-      acceso.rol === 'auditor' || acceso.rol === 'coordinador'
+      acceso.rol === 'auditor' || acceso.rol === 'coordinador' || acceso.rol === 'call_center'
         ? new Set(acceso.modulos.map((m) => m.module_code))
         : new Set(),
     )
@@ -269,6 +276,9 @@ export function UsuarioFormPage() {
     if (problemaTelefono) return toast.error(problemaTelefono)
     if (rol === 'coordinador' && modulosMarcados.size === 0) {
       return toast.error('Marca al menos una aplicación: un coordinador sin ellas no coordina nada')
+    }
+    if (rol === 'call_center' && modulosMarcados.size === 0) {
+      return toast.error('Marca la aplicación del call center (hoy, Calificación de Riesgo)')
     }
     if (rol === 'auditor' && modulosMarcados.size === 0) {
       return toast.error('Marca al menos una aplicación: un auditor sin ellas no entra a nada')
@@ -469,7 +479,17 @@ export function UsuarioFormPage() {
               <button
                 key={opcion.valor}
                 type="button"
-                onClick={() => setRol(opcion.valor)}
+                onClick={() => {
+                  setRol(opcion.valor)
+                  // El call center solo cabe en las apps que lo admiten: lo demás
+                  // marcado se suelta, en vez de quedar oculto y rechazarse al guardar.
+                  if (opcion.valor === 'call_center') {
+                    const admiten = new Set(
+                      (modulos.data ?? []).filter((m) => m.con_call_center).map((m) => m.codigo),
+                    )
+                    setModulosMarcados((previo) => new Set([...previo].filter((c) => admiten.has(c))))
+                  }
+                }}
                 aria-pressed={rol === opcion.valor}
                 className={cn(
                   'rounded-md border p-4 text-left transition-colors duration-150',

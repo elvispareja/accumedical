@@ -27,7 +27,8 @@ GRUPOS = ("suscripcion", "siniestro")
 # Las que viven en `user_funcion`, cada una con una sola persona.
 FUNCIONES = ("convenio", "contabilidad")
 
-RolPlataforma = Literal["coordinador", "auditor", "convenio", "contabilidad"]
+# «call_center» (14/10/2026): por app, hoy solo Calificación de Riesgo.
+RolPlataforma = Literal["coordinador", "auditor", "call_center", "convenio", "contabilidad"]
 GrupoPlataforma = Literal["suscripcion", "siniestro"]
 
 
@@ -58,7 +59,7 @@ class AccesoPlataforma(BaseModel):
                 raise ValueError(
                     "Marca al menos una aplicación: un coordinador sin ellas no coordina nada"
                 )
-        elif self.rol == "auditor":
+        elif self.rol in ("auditor", "call_center"):
             if self.grupo is not None:
                 raise ValueError("La familia es del coordinador; el auditor entra por módulos")
             if not self.modulos:

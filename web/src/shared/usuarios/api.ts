@@ -11,7 +11,7 @@ import { api } from '@/core/api/client'
 //   contabilidad → su sección está por definir. Uno solo.
 //
 // Los dos últimos son transversales: no marcan familia ni módulos.
-export type RolPlataforma = 'coordinador' | 'auditor' | 'convenio' | 'contabilidad'
+export type RolPlataforma = 'coordinador' | 'auditor' | 'call_center' | 'convenio' | 'contabilidad'
 export type GrupoPlataforma = 'suscripcion' | 'siniestro'
 
 export const ETIQUETA_GRUPO: Record<GrupoPlataforma, string> = {

@@ -13,6 +13,8 @@ export interface ModuloCatalogo extends OpcionCatalogo {
   grupo: 'suscripcion' | 'siniestro' | null
   /** La rama dentro de la familia (el subtítulo): «siniestros_hospitalarios»… */
   subgrupo: string | null
+  /** Si admite el rol «Call center» (14/10/2026; hoy solo Calificación de Riesgo). */
+  con_call_center?: boolean
 }
 
 export interface TipoPrestadorCatalogo extends OpcionCatalogo {

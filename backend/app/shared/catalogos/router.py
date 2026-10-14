@@ -9,6 +9,7 @@ from app.core.db import get_db
 from app.core.security.deps import AuthContext, get_current_user, require_funcion
 from app.shared.aseguradoras.service import COBERTURAS
 from app.shared.catalogos.models import Ciudad, Module, Provincia, TipoDocumento, TipoPrestador
+from app.shared.users.models import Role
 
 router = APIRouter(prefix="/shared/catalogos", tags=["catalogos"])
 
@@ -66,6 +67,8 @@ class ModuloCatalogo(BaseModel):
     grupo: str | None = None
     # La rama dentro de la familia («siniestros_hospitalarios»…): el subtítulo.
     subgrupo: str | None = None
+    # Si se le puede dar el rol «call_center» (14/10/2026; hoy solo Calificación).
+    con_call_center: bool = False
 
 
 @router.get("/modulos", response_model=list[ModuloCatalogo])
@@ -89,10 +92,15 @@ def listar_modulos(
         .where(Module.activo.is_(True))
         .order_by(Module.orden, Module.nombre)
     ).all()
+    con_call_center = set(
+        db.scalars(
+            select(Role.module_code).where(Role.code == "call_center", Role.activo.is_(True))
+        )
+    )
     return [
         ModuloCatalogo(
             codigo=f[0], slug=f[1], nombre=f[2], color_acento=f[3], orden=f[4],
-            grupo=f[5], subgrupo=f[6],
+            grupo=f[5], subgrupo=f[6], con_call_center=f[0] in con_call_center,
         )
         for f in filas
     ]
