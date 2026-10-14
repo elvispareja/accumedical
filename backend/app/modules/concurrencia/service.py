@@ -690,8 +690,9 @@ def operadores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> list[
             )
         )
     )
-    todos = dict(actuales)
-    for u in nucleo.usuarios_por_ids(db, sorted(otros - set(actuales))):
+    activados = cuentas_activadas(db, otros | set(actuales))
+    todos = {i: u for i, u in actuales.items() if i in activados}
+    for u in nucleo.usuarios_por_ids(db, sorted((otros - set(actuales)) & activados)):
         # Del historial salen operadores de todas las compañías: solo los suyos.
         # Las cuentas dadas de baja (las de pruebas) solo si crearon algún caso.
         if u.aseguradora_id == aseguradora_id and (u.deleted_at is None or u.id in autores):
@@ -1077,6 +1078,35 @@ def _visitas_de_la_persona(  # noqa: ANN202
     )
 
 
+def cuentas_activadas(db: DbSession, ids: set[uuid.UUID]) -> set[uuid.UUID]:
+    """
+    De esas personas, las que ya **activaron su cuenta**: pusieron su
+    contraseña por primera vez desde el enlace, o entraron alguna vez
+    (14/10/2026, pedido del usuario: en los selectores solo aparece quien ya
+    colocó su contraseña; un invitado que nunca la puso no existe todavía para
+    filtrar ni para derivarle casos).
+    """
+    if not ids:
+        return set()
+    from app.shared.audit.models import AuditLog
+
+    textos = [str(i) for i in ids]
+    con_password = {
+        uuid.UUID(i)
+        for i in db.scalars(
+            select(AuditLog.entidad_id).where(
+                AuditLog.accion == "password_definida",
+                AuditLog.entidad == "users",
+                AuditLog.entidad_id.in_(textos),
+            )
+        )
+    }
+    entraron = set(
+        db.scalars(select(User.id).where(User.id.in_(ids), User.last_login_at.is_not(None)))
+    )
+    return con_password | entraron
+
+
 #: Los estados en que un caso sigue abierto: quien participa en uno así no se
 #: puede desactivar ni perder Concurrencia (14/10/2026). Cancelado, culminado
 #: y no auditado ya no esperan nada de nadie.
@@ -1190,8 +1220,9 @@ def usuarios_de_la_aseguradora(
         tramos.setdefault(t.user_id, []).append(t)
     vigentes = {u.id for u in nucleo.operadores_de_la_compania(db, aseguradora_id)}
     _con_tramo, intervinieron = ids_del_personal(db, aseguradora_id)
+    activados = cuentas_activadas(db, set(tramos) | intervinieron | vigentes)
     filas: list[tuple[Any, bool, str]] = []
-    for u in nucleo.usuarios_por_ids(db, sorted(set(tramos) | intervinieron | vigentes)):
+    for u in nucleo.usuarios_por_ids(db, sorted(activados)):
         if u.aseguradora_id != aseguradora_id:
             continue
         # Las cuentas dadas de baja (las de pruebas) solo si tocaron algún caso.
@@ -1291,7 +1322,10 @@ def auditores_disponibles(db: DbSession) -> list[tuple[Any, ...]]:
     con su ciudad y provincia: la pantalla ofrece primero a los de la misma
     ciudad del destino, luego a los de la provincia y al final al resto.
     """
-    return nucleo.auditores_disponibles(db)
+    filas = nucleo.auditores_disponibles(db)
+    # A quien todavía no activó su cuenta no se le puede derivar: no podría entrar.
+    activados = cuentas_activadas(db, {f[0].id for f in filas})
+    return [f for f in filas if f[0].id in activados]
 
 
 def asignar_auditor(

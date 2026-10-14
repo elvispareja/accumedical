@@ -229,7 +229,7 @@ export function BandejaPage({
             </option>
             {operadores.data?.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.activo ? o.nombre_completo : `${o.nombre_completo} · ya no está`}
+                {o.activo ? o.nombre_completo : `${o.nombre_completo} · desvinculado`}
               </option>
             ))}
           </Select>

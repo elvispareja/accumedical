@@ -547,7 +547,7 @@ function gruposDePersonas(
 ) {
   return [
     { titulo: vigentes, filas: lista.filter((p) => p.vigente) },
-    { titulo: 'Ya no están', filas: lista.filter((p) => !p.vigente) },
+    { titulo: 'Desvinculados', filas: lista.filter((p) => !p.vigente) },
   ]
     .filter((g) => g.filas.length > 0)
     .map((g) => (

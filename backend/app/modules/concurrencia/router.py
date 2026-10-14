@@ -1271,8 +1271,10 @@ def filtros_supervision(
 
     tramos = service.tramos_en_concurrencia(db)
     con_tramo, intervinieron = service.ids_del_personal(db)
+    # Solo quien ya activó su cuenta (puso su contraseña o entró alguna vez).
+    activados = service.cuentas_activadas(db, con_tramo | intervinieron)
     personal: list[PersonaDelFiltro] = []
-    for u in nucleo.usuarios_por_ids(db, sorted(con_tramo | intervinieron)):
+    for u in nucleo.usuarios_por_ids(db, sorted(activados)):
         # El personal de las compañías no entra: para eso está el filtro de aseguradora.
         if u.aseguradora_id is not None:
             continue
@@ -1292,7 +1294,7 @@ def filtros_supervision(
         else:
             ultimo = max((t.hasta for t in suyos if t.hasta), default=None)
             cuando = f" hasta {ultimo:%d/%m/%Y}" if ultimo else ""
-            detalle = f"{' · '.join(roles) or 'Personal'} · ya no está{cuando}"
+            detalle = f"{' · '.join(roles) or 'Personal'} · desvinculado{cuando}"
         personal.append(
             PersonaDelFiltro(
                 id=str(u.id),
@@ -1339,7 +1341,7 @@ def usuarios_de_aseguradora_supervision(
         PersonaDelFiltro(
             id=str(u.id),
             nombre_completo=personas.de_fila(u),
-            detalle=rol if vigente else f"{rol} · ya no está",
+            detalle=rol if vigente else f"{rol} · desvinculado",
             vigente=vigente,
         )
         for u, vigente, rol in service.usuarios_de_la_aseguradora(db, aseguradora_id)
