@@ -57,7 +57,7 @@ export function FichaPage() {
   const nombreDelModulo = p?.modulos.find((m) => m.codigo === modulo)?.nombre
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8">
+    <div className="px-4 py-8 sm:px-8">
       <Boton variante="fantasma" tamano="sm" onClick={() => navegar('/dashboard')}>
         <ArrowLeft aria-hidden="true" />
         Pacientes

@@ -46,7 +46,7 @@ export function ListaPage() {
   const paginas = datos ? Math.max(1, Math.ceil(datos.total / datos.page_size)) : 1
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
+    <div className="px-4 py-8 sm:px-8">
       <p className="font-display text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-tenue-fg">
         Registro de Accumedical
       </p>
