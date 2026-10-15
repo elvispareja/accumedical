@@ -141,6 +141,8 @@ class CasoPaciente(BaseModel):
     # Ruta del caso en su app, SOLO si quien mira puede entrar a esa app como
     # coordinador (o es el superadministrador). Nulo = no se ofrece «Ver caso».
     ruta_caso: str | None = None
+    # Quién intervino: «Auditor · NICOLAS CAMACHO», «Coordinador · …» (Concurrencia).
+    participantes: list[dict[str, str]] = []
 
 
 class ResumenModulo(BaseModel):
@@ -241,6 +243,23 @@ def _casos(eventos: list[Evento], abre: set[str] | None) -> list[CasoPaciente]:
     return sorted(casos.values(), key=lambda c: c.fecha, reverse=True)
 
 
+def _con_participantes(db: DbSession, casos: list[CasoPaciente]) -> list[CasoPaciente]:
+    """Suma a cada caso quién lo auditó y quién lo coordinó, cuando su app lo sabe."""
+    de_concurrencia = [
+        c.codigo for c in casos if c.aplicacion_codigo == "concurrencia" and c.codigo
+    ]
+    if de_concurrencia:
+        from app.modules.concurrencia.service import participantes_por_codigo
+
+        gente = participantes_por_codigo(db, de_concurrencia)
+        for c in casos:
+            if c.aplicacion_codigo == "concurrencia" and c.codigo in gente:
+                c.participantes = [
+                    {"rol": rol, "nombre": nombre} for rol, nombre in gente[c.codigo]
+                ]
+    return casos
+
+
 def _ficha(ctx: AuthContext, db: DbSession, persona_id: uuid.UUID) -> Paciente:
     _, persona = _central(ctx, "GET", f"/api/personas/{persona_id}")
     _, pagina = _central(ctx, "GET", f"/api/personas/{persona_id}/eventos?limit=100")
@@ -313,7 +332,7 @@ def _ficha(ctx: AuthContext, db: DbSession, persona_id: uuid.UUID) -> Paciente:
         provincia_nombre=provincia.nombre if provincia else None,
         ciudad_nombre=ciudad.nombre if ciudad else None,
         eventos=eventos,
-        casos=_casos(eventos, _modulos_que_abre(db, ctx)),
+        casos=_con_participantes(db, _casos(eventos, _modulos_que_abre(db, ctx))),
         modulos=[
             ResumenModulo(
                 codigo=codigo,

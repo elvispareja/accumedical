@@ -185,7 +185,7 @@ export function FichaPage() {
                 ]
                 return (
                   <li key={c.clave} className="rounded-md border border-borde bg-superficie p-4">
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-medium">{TIPOS[c.tipo_evento] ?? c.tipo_evento}</p>
                         <p className="mt-0.5 text-xs text-tenue-fg">
@@ -193,6 +193,16 @@ export function FichaPage() {
                           {c.aseguradora_nombre ? ` · ${c.aseguradora_nombre}` : ''}
                           {c.codigo ? ` · ${c.codigo}` : ''}
                         </p>
+                        {c.participantes.length > 0 && (
+                          <p className="mt-1 text-xs text-tenue-fg">
+                            {c.participantes.map((x, i) => (
+                              <span key={x.rol}>
+                                {i > 0 ? ' · ' : ''}
+                                {x.rol}: <span className="text-tinta">{x.nombre}</span>
+                              </span>
+                            ))}
+                          </p>
+                        )}
                         {c.informe && (
                           <p className="mt-1 text-xs text-tenue-fg">
                             Informe final · entrega {c.informe.numero_entrega ?? '—'}
@@ -203,7 +213,11 @@ export function FichaPage() {
                         )}
                       </div>
                       {opciones.length > 0 && (
-                        <MenuAcciones etiqueta={`Acciones de ${c.codigo ?? 'este caso'}`} opciones={opciones} />
+                        <MenuAcciones
+                          etiqueta={`Acciones de ${c.codigo ?? 'este caso'}`}
+                          opciones={opciones}
+                          grande
+                        />
                       )}
                     </div>
                   </li>

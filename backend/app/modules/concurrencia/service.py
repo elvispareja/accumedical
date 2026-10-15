@@ -1135,6 +1135,51 @@ def casos_abiertos_de(db: DbSession, persona_id: uuid.UUID) -> list[str]:
 pendientes.registrar(nucleo.MODULO, casos_abiertos_de)
 
 
+def participantes_por_codigo(db: DbSession, codigos: list[str]) -> dict[str, list[tuple[str, str]]]:
+    """
+    Para la ficha del paciente (15/10/2026): quién AUDITÓ cada caso y qué
+    COORDINADOR se lo derivó. `{codigo: [("Auditor", nombre), ("Coordinador",
+    nombre)]}`. El coordinador es quien hizo la última derivación hacia el
+    auditor que quedó, según `audit_log`. Incluye a quien ya está desvinculado.
+    """
+    if not codigos:
+        return {}
+    from app.shared.audit.models import AuditLog
+
+    visitas = list(
+        db.scalars(
+            select(Visita).where(Visita.codigo_interno.in_(codigos), Visita.deleted_at.is_(None))
+        )
+    )
+    quien_derivo: dict[uuid.UUID, uuid.UUID] = {}
+    for v in visitas:
+        if v.auditor_id is None:
+            continue
+        actor = db.scalar(
+            select(AuditLog.user_id)
+            .where(
+                AuditLog.accion == "visita_derivada",
+                AuditLog.entidad_id == str(v.id),
+                AuditLog.detalle["despues"]["auditor_id"].astext == str(v.auditor_id),
+            )
+            .order_by(AuditLog.id.desc())
+            .limit(1)
+        )
+        if actor:
+            quien_derivo[v.id] = actor
+    ids = {v.auditor_id for v in visitas if v.auditor_id} | set(quien_derivo.values())
+    nombres = {u.id: personas.de_fila(u) for u in nucleo.usuarios_por_ids(db, sorted(ids))}
+    salida: dict[str, list[tuple[str, str]]] = {}
+    for v in visitas:
+        filas: list[tuple[str, str]] = []
+        if v.auditor_id and v.auditor_id in nombres:
+            filas.append(("Auditor", nombres[v.auditor_id]))
+        if v.id in quien_derivo and quien_derivo[v.id] in nombres:
+            filas.append(("Coordinador", nombres[quien_derivo[v.id]]))
+        salida[v.codigo_interno] = filas
+    return salida
+
+
 def ids_del_personal(
     db: DbSession, aseguradora_id: uuid.UUID | None = None
 ) -> tuple[set[uuid.UUID], set[uuid.UUID]]:

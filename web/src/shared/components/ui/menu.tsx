@@ -36,10 +36,13 @@ export interface OpcionDeMenu {
 export function MenuAcciones({
   etiqueta,
   opciones,
+  grande = false,
 }: {
   /** Para quién es: «Acciones de CONC-0011». Lo lee quien no ve la pantalla. */
   etiqueta: string
   opciones: OpcionDeMenu[]
+  /** Botón más grande y trazo más grueso: para tarjetas, donde es la única acción visible. */
+  grande?: boolean
 }) {
   const sinMovimiento = useReducedMotion()
   const boton = useRef<HTMLButtonElement>(null)
@@ -115,12 +118,17 @@ export function MenuAcciones({
         aria-label={etiqueta}
         title={etiqueta}
         className={cn(
-          'grid size-9 place-items-center rounded text-tenue-fg',
+          'grid place-items-center rounded text-tenue-fg',
+          grande ? 'size-11' : 'size-9',
           'transition-colors duration-150 hover:bg-tenue hover:text-tinta',
           abierto && 'bg-tenue text-tinta',
         )}
       >
-        <MoreVertical className="size-4" aria-hidden="true" />
+        <MoreVertical
+          className={grande ? 'size-6' : 'size-4'}
+          strokeWidth={grande ? 3 : 2}
+          aria-hidden="true"
+        />
       </button>
 
       {createPortal(

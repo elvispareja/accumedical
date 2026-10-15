@@ -66,6 +66,8 @@ export interface CasoPaciente {
   informe: EventoPaciente['documento']
   /** Solo si quien mira puede entrar a esa app como coordinador (o es superadmin). */
   ruta_caso: string | null
+  /** Quién intervino: Auditor, Coordinador… (hoy, Concurrencia). */
+  participantes: { rol: string; nombre: string }[]
 }
 
 export interface Paciente {
