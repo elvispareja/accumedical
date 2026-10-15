@@ -10,6 +10,7 @@ import {
   type EventoPaciente,
   type IdentidadPaciente,
   type Paciente,
+  type ResumenModulo,
 } from '@pacientes/api'
 import { fecha, nombreCompleto } from '@pacientes/pages/ListaPage'
 import { destinoDeModuloEnOtraPestana } from '@/core/dominios'
@@ -25,6 +26,7 @@ import { useToast } from '@/shared/components/ui/toast'
 const TIPOS: Record<string, string> = {
   visita_concurrencia: 'Visita de concurrencia',
   informe_concurrencia: 'Informe final entregado',
+  caso_calificacion_riesgo: 'Caso de Calificación de Riesgo finalizado',
 }
 
 function detalleError(error: unknown, porDefecto: string): string {
@@ -48,7 +50,11 @@ export function FichaPage() {
   })
   const [editando, setEditando] = useState(false)
   const [informeDe, setInformeDe] = useState<EventoPaciente | null>(null)
+  // El cuadro pulsado: filtra el historial a ese módulo. Vacío = todo.
+  const [modulo, setModulo] = useState('')
   const p = consulta.data
+  const eventos = p ? (modulo ? p.eventos.filter((e) => e.aplicacion_codigo === modulo) : p.eventos) : []
+  const nombreDelModulo = p?.modulos.find((m) => m.codigo === modulo)?.nombre
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8">
@@ -98,14 +104,47 @@ export function FichaPage() {
             <Dato titulo="Última corrección" valor={fecha(p.updated_at)} />
           </dl>
 
-          <h2 className="mt-8 font-display text-base font-semibold">Historial en las auditorías</h2>
-          {p.eventos.length === 0 ? (
+          {/* Un cuadro por módulo de Accumedical con los casos de esta persona
+              que FINALIZARON en él (15/10/2026). Como los de Concurrencia, cada
+              uno es también un filtro: pulsarlo deja el historial en ese módulo. */}
+          <section className="mt-8" aria-label="Casos finalizados por módulo">
+            <h2 className="font-display text-base font-semibold">Casos finalizados por módulo</h2>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {p.modulos.map((m) => (
+                <CuadroModulo
+                  key={m.codigo}
+                  modulo={m}
+                  activo={modulo === m.codigo}
+                  alPulsar={() => setModulo((actual) => (actual === m.codigo ? '' : m.codigo))}
+                />
+              ))}
+            </div>
+          </section>
+
+          <div className="mt-8 flex flex-wrap items-baseline justify-between gap-3">
+            <h2 className="font-display text-base font-semibold">
+              Historial en las auditorías
+              {nombreDelModulo ? <span className="font-normal text-tenue-fg"> · {nombreDelModulo}</span> : null}
+            </h2>
+            {modulo && (
+              <button
+                type="button"
+                onClick={() => setModulo('')}
+                className="text-sm font-medium text-marca transition-opacity duration-150 hover:opacity-80"
+              >
+                Ver todos los módulos
+              </button>
+            )}
+          </div>
+          {eventos.length === 0 ? (
             <p className="mt-3 text-sm text-tenue-fg">
-              Todavía sin movimientos: aparecen cuando un caso suyo culmina o se entrega su informe.
+              {modulo
+                ? 'Sin movimientos en este módulo.'
+                : 'Todavía sin movimientos: aparecen cuando un caso suyo culmina o se entrega su informe.'}
             </p>
           ) : (
             <ol className="mt-3 space-y-3">
-              {p.eventos.map((e) => (
+              {eventos.map((e) => (
                 <li key={e.id} className="rounded-md border border-borde bg-superficie p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -338,5 +377,47 @@ function PedirInforme({ evento, onCerrar }: { evento: EventoPaciente | null; onC
         maxLength={300}
       />
     </Modal>
+  )
+}
+
+/**
+ * Un cuadro de la ficha: el módulo con su color y cuántos casos de la persona
+ * finalizaron en él. Pulsarlo filtra el historial; pulsarlo otra vez lo quita.
+ * El color sale del token del módulo (`--modulo-<código>`), el mismo de toda
+ * la plataforma: un punto junto al nombre, nunca el número entero coloreado.
+ */
+function CuadroModulo({
+  modulo,
+  activo,
+  alPulsar,
+}: {
+  modulo: ResumenModulo
+  activo: boolean
+  alPulsar: () => void
+}) {
+  const color = `hsl(var(--modulo-${modulo.codigo.replace(/_/g, '-')}))`
+  return (
+    <button
+      type="button"
+      onClick={alPulsar}
+      aria-pressed={activo}
+      aria-label={`${modulo.nombre}: ${modulo.finalizados} finalizados. Filtrar el historial`}
+      className={[
+        'rounded-md border bg-superficie px-4 py-4 text-left transition-colors duration-150',
+        'hover:bg-tenue/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marca',
+        activo ? 'border-marca ring-1 ring-marca' : 'border-borde hover:border-tenue-fg/40',
+      ].join(' ')}
+    >
+      <span className="flex items-center gap-1.5 font-display text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-tenue-fg">
+        <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+        <span className="truncate">{modulo.nombre}</span>
+      </span>
+      <span className="tabular mt-2 block font-display text-3xl font-semibold tracking-tight">
+        {modulo.finalizados}
+      </span>
+      <span className="mt-0.5 block text-xs text-tenue-fg">
+        {modulo.finalizados === 1 ? 'caso finalizado' : 'casos finalizados'}
+      </span>
+    </button>
   )
 }

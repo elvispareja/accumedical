@@ -110,6 +110,25 @@ class Evento(BaseModel):
     documento: dict[str, Any] | None
 
 
+#: Qué evento de cada app cuenta como un caso FINALIZADO de la persona
+#: (15/10/2026). Concurrencia: cada visita culminada. Calificación de Riesgo:
+#: cada caso cerrado (lo publica al finalizar). Las apps que aún no publican
+#: eventos salen en cero hasta que lo hagan.
+FINALIZACION: dict[str, frozenset[str]] = {
+    "concurrencia": frozenset({"visita_concurrencia"}),
+    "calificacion_riesgo": frozenset({"caso_calificacion_riesgo"}),
+}
+
+
+class ResumenModulo(BaseModel):
+    """Un cuadro de la ficha: un módulo y cuántos casos de la persona finalizaron en él."""
+
+    codigo: str
+    nombre: str
+    color_acento: str
+    finalizados: int
+
+
 class Paciente(BaseModel):
     id: uuid.UUID
     tipo_documento_codigo: str
@@ -132,6 +151,8 @@ class Paciente(BaseModel):
     created_at: dt.datetime
     updated_at: dt.datetime
     eventos: list[Evento]
+    # Un cuadro por cada módulo activo de Accumedical, con sus finalizados.
+    modulos: list[ResumenModulo] = []
 
 
 def _ruta_caso(e: dict[str, Any]) -> str | None:
@@ -144,6 +165,13 @@ def _ficha(ctx: AuthContext, db: DbSession, persona_id: uuid.UUID) -> Paciente:
     _, persona = _central(ctx, "GET", f"/api/personas/{persona_id}")
     _, pagina = _central(ctx, "GET", f"/api/personas/{persona_id}/eventos?limit=100")
     apps = dict(db.execute(select(Module.code, Module.nombre)).all())
+    modulos = list(
+        db.execute(
+            select(Module.code, Module.nombre, Module.color_acento)
+            .where(Module.activo.is_(True))
+            .order_by(Module.orden, Module.nombre)
+        ).all()
+    )
     ids = {uuid.UUID(e["aseguradora_id"]) for e in pagina["items"] if e.get("aseguradora_id")}
     # Nombres de las compañías desde el espejo local (sus fichas son de la central).
     asegs = (
@@ -201,10 +229,24 @@ def _ficha(ctx: AuthContext, db: DbSession, persona_id: uuid.UUID) -> Paciente:
     ciudad = db.get(Ciudad, codigo_ciudad) if codigo_ciudad else None
     return Paciente(
         **{k: persona.get(k) for k in Paciente.model_fields
-           if k not in ("eventos", "provincia_nombre", "ciudad_nombre")},
+           if k not in ("eventos", "modulos", "provincia_nombre", "ciudad_nombre")},
         provincia_nombre=provincia.nombre if provincia else None,
         ciudad_nombre=ciudad.nombre if ciudad else None,
         eventos=eventos,
+        modulos=[
+            ResumenModulo(
+                codigo=codigo,
+                nombre=nombre,
+                color_acento=color,
+                finalizados=sum(
+                    1
+                    for e in pagina["items"]
+                    if e["aplicacion_codigo"] == codigo
+                    and e["tipo_evento"] in FINALIZACION.get(codigo, frozenset())
+                ),
+            )
+            for codigo, nombre, color in modulos
+        ],
     )
 
 

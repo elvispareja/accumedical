@@ -41,6 +41,14 @@ export interface EventoPaciente {
   } | null
 }
 
+/** Un cuadro de la ficha: un módulo y cuántos casos de la persona finalizaron en él. */
+export interface ResumenModulo {
+  codigo: string
+  nombre: string
+  color_acento: string
+  finalizados: number
+}
+
 export interface Paciente {
   id: string
   tipo_documento_codigo: string
@@ -62,6 +70,8 @@ export interface Paciente {
   created_at: string
   updated_at: string
   eventos: EventoPaciente[]
+  /** Un cuadro por módulo activo de Accumedical, con sus casos finalizados. */
+  modulos: ResumenModulo[]
 }
 
 export interface IdentidadPaciente {
