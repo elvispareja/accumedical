@@ -7,7 +7,6 @@ import {
   corregirPaciente,
   obtenerPaciente,
   pedirInforme,
-  type EventoPaciente,
   type IdentidadPaciente,
   type Paciente,
   type ResumenModulo,
@@ -17,6 +16,7 @@ import { destinoDeModuloEnOtraPestana } from '@/core/dominios'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
+import { MenuAcciones, type OpcionDeMenu } from '@/shared/components/ui/menu'
 import { Modal } from '@/shared/components/ui/modal'
 import { Select } from '@/shared/components/ui/select'
 import { useCiudades, useProvincias } from '@/shared/catalogos/hooks'
@@ -49,11 +49,31 @@ export function FichaPage() {
     enabled: Boolean(id),
   })
   const [editando, setEditando] = useState(false)
-  const [informeDe, setInformeDe] = useState<EventoPaciente | null>(null)
+  const toast = useToast()
   // El cuadro pulsado: filtra el historial a ese módulo. Vacío = todo.
   const [modulo, setModulo] = useState('')
   const p = consulta.data
-  const eventos = p ? (modulo ? p.eventos.filter((e) => e.aplicacion_codigo === modulo) : p.eventos) : []
+  const casos = p ? (modulo ? p.casos.filter((c) => c.aplicacion_codigo === modulo) : p.casos) : []
+
+  /**
+   * «Ver informe»: se abre directo, sin pedir motivo (15/10/2026), en el visor
+   * de PDF del navegador, desde donde se puede descargar. La pestaña se abre YA,
+   * en el mismo clic —abrirla después de esperar al servidor la bloquearía el
+   * navegador como ventana emergente— y luego se le pone el enlace.
+   */
+  function verInforme(eventoId: string) {
+    const pestana = window.open('about:blank', '_blank')
+    if (pestana) pestana.opener = null
+    pedirInforme(eventoId)
+      .then((r) => {
+        if (pestana) pestana.location.href = r.url
+        else window.open(r.url, '_blank', 'noopener')
+      })
+      .catch((error: unknown) => {
+        pestana?.close()
+        toast.error(detalleError(error, 'No pudimos abrir el informe'))
+      })
+  }
   const nombreDelModulo = p?.modulos.find((m) => m.codigo === modulo)?.nombre
 
   return (
@@ -136,7 +156,7 @@ export function FichaPage() {
               </button>
             )}
           </div>
-          {eventos.length === 0 ? (
+          {casos.length === 0 ? (
             <p className="mt-3 text-sm text-tenue-fg">
               {modulo
                 ? 'Sin movimientos en este módulo.'
@@ -144,52 +164,55 @@ export function FichaPage() {
             </p>
           ) : (
             <ol className="mt-3 space-y-3">
-              {eventos.map((e) => (
-                <li key={e.id} className="rounded-md border border-borde bg-superficie p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium">{TIPOS[e.tipo_evento] ?? e.tipo_evento}</p>
-                      <p className="mt-0.5 text-xs text-tenue-fg">
-                        {e.aplicacion_nombre} · {fecha(e.fecha_evento)}
-                        {e.aseguradora_nombre ? ` · ${e.aseguradora_nombre}` : ''}
-                        {typeof e.resumen.codigo === 'string' ? ` · ${e.resumen.codigo}` : ''}
-                        {e.documento?.visita_codigo ? ` · ${e.documento.visita_codigo}` : ''}
-                      </p>
-                      {e.documento && (
-                        <p className="mt-1 text-xs text-tenue-fg">
-                          Entrega {e.documento.numero_entrega ?? '—'}
-                          {e.documento.firmado ? ` · firmado por ${e.documento.firmante ?? '—'}` : ' · sin firma electrónica'}
+              {casos.map((c) => {
+                // Las acciones ya llegan decididas: «Ver informe» si lo hay (lo ve
+                // todo el personal) y «Ver caso» solo si quien mira puede entrar a
+                // esa app como coordinador o es el superadministrador.
+                const opciones: OpcionDeMenu[] = [
+                  ...(c.informe_evento_id
+                    ? [{ etiqueta: 'Ver informe', icono: FileSignature, onSelect: () => verInforme(c.informe_evento_id!) }]
+                    : []),
+                  ...(c.ruta_caso
+                    ? [
+                        {
+                          etiqueta: 'Ver caso',
+                          icono: ExternalLink,
+                          onSelect: () =>
+                            window.open(destinoDeModuloEnOtraPestana(c.ruta_caso!) ?? c.ruta_caso!, '_blank', 'noopener'),
+                        },
+                      ]
+                    : []),
+                ]
+                return (
+                  <li key={c.clave} className="rounded-md border border-borde bg-superficie p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium">{TIPOS[c.tipo_evento] ?? c.tipo_evento}</p>
+                        <p className="mt-0.5 text-xs text-tenue-fg">
+                          {c.aplicacion_nombre} · {fecha(c.fecha)}
+                          {c.aseguradora_nombre ? ` · ${c.aseguradora_nombre}` : ''}
+                          {c.codigo ? ` · ${c.codigo}` : ''}
                         </p>
+                        {c.informe && (
+                          <p className="mt-1 text-xs text-tenue-fg">
+                            Informe final · entrega {c.informe.numero_entrega ?? '—'}
+                            {c.informe.firmado
+                              ? ` · firmado por ${c.informe.firmante ?? '—'}`
+                              : ' · sin firma electrónica'}
+                          </p>
+                        )}
+                      </div>
+                      {opciones.length > 0 && (
+                        <MenuAcciones etiqueta={`Acciones de ${c.codigo ?? 'este caso'}`} opciones={opciones} />
                       )}
                     </div>
-                    <div className="flex shrink-0 gap-2">
-                      {e.ruta_caso && (
-                        <Boton
-                          variante="contorno"
-                          tamano="sm"
-                          onClick={() =>
-                            window.open(destinoDeModuloEnOtraPestana(e.ruta_caso!) ?? e.ruta_caso!, '_blank', 'noopener')
-                          }
-                        >
-                          <ExternalLink aria-hidden="true" />
-                          Abrir caso
-                        </Boton>
-                      )}
-                      {e.documento && (
-                        <Boton variante="contorno" tamano="sm" onClick={() => setInformeDe(e)}>
-                          <FileSignature aria-hidden="true" />
-                          Ver informe
-                        </Boton>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
+                  </li>
+                )
+              })}
             </ol>
           )}
 
           <CorregirIdentidad paciente={p} abierto={editando} onCerrar={() => setEditando(false)} />
-          <PedirInforme evento={informeDe} onCerrar={() => setInformeDe(null)} />
         </>
       )}
     </div>
@@ -333,49 +356,6 @@ function CorregirIdentidad({ paciente, abierto, onCerrar }: { paciente: Paciente
         </div>
         <div className="sm:col-span-2">{campo('direccion', 'Dirección del domicilio')}</div>
       </div>
-    </Modal>
-  )
-}
-
-function PedirInforme({ evento, onCerrar }: { evento: EventoPaciente | null; onCerrar: () => void }) {
-  const toast = useToast()
-  const [motivo, setMotivo] = useState('')
-  const pedir = useMutation({
-    mutationFn: () => pedirInforme(evento!.id, motivo.trim()),
-    onSuccess: (r) => {
-      // El enlace vale UNA vez y unos minutos: se abre ya, en otra pestaña.
-      window.open(r.url, '_blank', 'noopener')
-      setMotivo('')
-      onCerrar()
-    },
-    onError: (error) => toast.error(detalleError(error, 'No pudimos obtener el informe')),
-  })
-  return (
-    <Modal
-      abierto={evento !== null}
-      onCerrar={onCerrar}
-      titulo="Ver el informe final firmado"
-      descripcion="El informe sigue en su auditoría. Se abre con un enlace de un solo uso, y queda registrado quién lo pidió y para qué."
-      pie={
-        <>
-          <Boton variante="fantasma" onClick={onCerrar}>
-            Cancelar
-          </Boton>
-          <Boton onClick={() => pedir.mutate()} cargando={pedir.isPending} disabled={motivo.trim().length < 10}>
-            Abrir informe
-          </Boton>
-        </>
-      }
-    >
-      <Label htmlFor="motivo-informe">Motivo (mínimo 10 caracteres)</Label>
-      <Input
-        id="motivo-informe"
-        value={motivo}
-        onChange={(e) => setMotivo(e.target.value)}
-        placeholder="Ej.: revisión del caso para la auditoría de vida"
-        mayusculas={false}
-        maxLength={300}
-      />
     </Modal>
   )
 }

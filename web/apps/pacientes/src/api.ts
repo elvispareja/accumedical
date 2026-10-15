@@ -49,6 +49,25 @@ export interface ResumenModulo {
   finalizados: number
 }
 
+/**
+ * Un caso de la persona en una app, en UN renglón: la visita o el cierre y su
+ * informe final. Lo que se puede hacer ya viene decidido por el servidor.
+ */
+export interface CasoPaciente {
+  clave: string
+  aplicacion_codigo: string
+  aplicacion_nombre: string
+  tipo_evento: string
+  codigo: string | null
+  fecha: string
+  aseguradora_nombre: string | null
+  /** El informe final más reciente: lo ve todo el personal. */
+  informe_evento_id: string | null
+  informe: EventoPaciente['documento']
+  /** Solo si quien mira puede entrar a esa app como coordinador (o es superadmin). */
+  ruta_caso: string | null
+}
+
 export interface Paciente {
   id: string
   tipo_documento_codigo: string
@@ -72,6 +91,8 @@ export interface Paciente {
   eventos: EventoPaciente[]
   /** Un cuadro por módulo activo de Accumedical, con sus casos finalizados. */
   modulos: ResumenModulo[]
+  /** Los eventos agrupados por caso, con sus acciones. */
+  casos: CasoPaciente[]
 }
 
 export interface IdentidadPaciente {
@@ -106,10 +127,15 @@ export async function corregirPaciente(id: string, datos: IdentidadPaciente) {
   return data
 }
 
-export async function pedirInforme(eventoId: string, motivo: string) {
+/**
+ * El enlace de un solo uso al informe final. Desde la ficha se abre sin pedir
+ * motivo (15/10/2026): el servidor registra uno fijo y la consulta queda
+ * auditada igual.
+ */
+export async function pedirInforme(eventoId: string) {
   const { data } = await api.post<{ url: string; expira_at: string }>(
     `/pacientes/eventos/${eventoId}/informe`,
-    { motivo },
+    {},
   )
   return data
 }

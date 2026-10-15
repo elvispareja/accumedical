@@ -120,6 +120,29 @@ FINALIZACION: dict[str, frozenset[str]] = {
 }
 
 
+class CasoPaciente(BaseModel):
+    """
+    Un caso de la persona en una app, con TODO lo suyo en un solo renglón
+    (15/10/2026): la visita o el cierre y su informe final. Lo que se puede hacer
+    con él viaja ya decidido por el servidor según quién mira.
+    """
+
+    clave: str
+    aplicacion_codigo: str
+    aplicacion_nombre: str
+    # El evento que da nombre al caso: «visita_concurrencia», «caso_calificacion_riesgo»…
+    tipo_evento: str
+    codigo: str | None
+    fecha: dt.datetime
+    aseguradora_nombre: str | None
+    # El informe final más reciente del caso, si lo hay. Lo ve todo el personal.
+    informe_evento_id: uuid.UUID | None = None
+    informe: dict[str, Any] | None = None
+    # Ruta del caso en su app, SOLO si quien mira puede entrar a esa app como
+    # coordinador (o es el superadministrador). Nulo = no se ofrece «Ver caso».
+    ruta_caso: str | None = None
+
+
 class ResumenModulo(BaseModel):
     """Un cuadro de la ficha: un módulo y cuántos casos de la persona finalizaron en él."""
 
@@ -153,12 +176,69 @@ class Paciente(BaseModel):
     eventos: list[Evento]
     # Un cuadro por cada módulo activo de Accumedical, con sus finalizados.
     modulos: list[ResumenModulo] = []
+    # Los eventos agrupados por caso, con lo que quien mira puede hacer.
+    casos: list[CasoPaciente] = []
 
 
 def _ruta_caso(e: dict[str, Any]) -> str | None:
     if e["tipo_evento"] == "visita_concurrencia" and e.get("referencia_externa"):
         return f"/concurrencia/supervision/{e['referencia_externa']}"
     return None
+
+
+#: Quién puede ABRIR un caso en su app desde la ficha: el coordinador de ese
+#: módulo (y el call center, que hoy es igual al coordinador, D56). Un auditor o
+#: un coordinador de OTRO módulo solo ve el informe.
+_ROLES_QUE_ABREN = frozenset({"coordinador", "call_center"})
+
+
+def _modulos_que_abre(db: DbSession, ctx: AuthContext) -> set[str] | None:
+    """Los módulos cuyos casos puede abrir quien mira. None = todos (superadministrador)."""
+    if ctx.user.is_superadmin:
+        return None
+    from app.shared.users.service import accesos_vigentes
+
+    return {
+        a["module_code"]
+        for a in accesos_vigentes(db, ctx.user.id).values()
+        if a.get("ambito") == "aplicacion" and a.get("rol") in _ROLES_QUE_ABREN
+    }
+
+
+def _casos(eventos: list[Evento], abre: set[str] | None) -> list[CasoPaciente]:
+    """
+    Junta los eventos de un mismo caso —la visita y sus informes— en un renglón.
+    El código del caso los une: `resumen.codigo` o, en un informe, el código de
+    la visita. Un evento sin código queda solo.
+    """
+    casos: dict[tuple[str, str], CasoPaciente] = {}
+    for e in sorted(eventos, key=lambda x: x.fecha_evento):
+        codigo = e.resumen.get("codigo") if isinstance(e.resumen.get("codigo"), str) else None
+        if not codigo and e.documento:
+            codigo = e.documento.get("visita_codigo")
+        clave = (e.aplicacion_codigo, codigo or str(e.id))
+        caso = casos.get(clave)
+        if caso is None:
+            caso = casos[clave] = CasoPaciente(
+                clave=f"{clave[0]}:{clave[1]}",
+                aplicacion_codigo=e.aplicacion_codigo,
+                aplicacion_nombre=e.aplicacion_nombre,
+                tipo_evento=e.tipo_evento,
+                codigo=codigo,
+                fecha=e.fecha_evento,
+                aseguradora_nombre=e.aseguradora_nombre,
+            )
+        if e.documento:
+            # El más reciente manda: es la última entrega del informe.
+            caso.informe_evento_id = e.id
+            caso.informe = e.documento
+        else:
+            caso.tipo_evento = e.tipo_evento
+            caso.fecha = e.fecha_evento
+            caso.aseguradora_nombre = caso.aseguradora_nombre or e.aseguradora_nombre
+        if e.ruta_caso and (abre is None or e.aplicacion_codigo in abre):
+            caso.ruta_caso = e.ruta_caso
+    return sorted(casos.values(), key=lambda c: c.fecha, reverse=True)
 
 
 def _ficha(ctx: AuthContext, db: DbSession, persona_id: uuid.UUID) -> Paciente:
@@ -229,10 +309,11 @@ def _ficha(ctx: AuthContext, db: DbSession, persona_id: uuid.UUID) -> Paciente:
     ciudad = db.get(Ciudad, codigo_ciudad) if codigo_ciudad else None
     return Paciente(
         **{k: persona.get(k) for k in Paciente.model_fields
-           if k not in ("eventos", "modulos", "provincia_nombre", "ciudad_nombre")},
+           if k not in ("eventos", "modulos", "casos", "provincia_nombre", "ciudad_nombre")},
         provincia_nombre=provincia.nombre if provincia else None,
         ciudad_nombre=ciudad.nombre if ciudad else None,
         eventos=eventos,
+        casos=_casos(eventos, _modulos_que_abre(db, ctx)),
         modulos=[
             ResumenModulo(
                 codigo=codigo,
@@ -303,10 +384,16 @@ def corregir(
     return _ficha(ctx, db, persona_id)
 
 
+#: El motivo que se registra cuando el informe se abre desde la ficha (15/10/2026:
+#: el usuario pidió que se vea libremente, sin preguntar para qué). La central
+#: exige uno de al menos 10 caracteres; la consulta queda auditada igual.
+MOTIVO_FICHA = "Consulta del informe desde la ficha del paciente"
+
+
 class InformePedir(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    motivo: str = Field(min_length=10, max_length=300)
+    motivo: str | None = Field(default=None, min_length=10, max_length=300)
 
 
 class EnlaceInforme(BaseModel):
@@ -327,7 +414,8 @@ def pedir_informe(
     El informe final firmado de un caso, con el enlace de UN SOLO USO que emite
     la central (D3): el documento sigue en su app y se abre allí, una vez.
     """
-    _, r = _central(ctx, "POST", f"/api/eventos/{evento_id}/acceso", {"motivo": datos.motivo})
+    motivo = datos.motivo or MOTIVO_FICHA
+    _, r = _central(ctx, "POST", f"/api/eventos/{evento_id}/acceso", {"motivo": motivo})
     audit.registrar(
         db,
         accion="informe_pedido",
@@ -336,7 +424,7 @@ def pedir_informe(
         session_id=ctx.sesion.id,
         entidad="eventos_persona",
         entidad_id=str(evento_id),
-        detalle={"motivo": datos.motivo},
+        detalle={"motivo": motivo},
     )
     db.commit()
     return EnlaceInforme(url=r["url"], expira_at=r["expira_at"])
