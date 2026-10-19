@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Bell,
+  BookOpen,
   Briefcase,
   Building2,
   SlidersHorizontal,
@@ -45,6 +46,7 @@ const ENTRADAS: EntradaLateral[] = [
   // un error. Es del administrador.
   // Su propia app (D49): se abre en pestaña nueva en pacientes.pymes.ec.
   { a: '/pacientes/dashboard', etiqueta: 'Pacientes Accumedical', icono: Briefcase },
+  { a: '/admin/cie10', etiqueta: 'CIE-10', icono: BookOpen },
 ]
 
 // Las dos familias comerciales, en el orden en que se presentan. Una sin

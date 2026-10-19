@@ -26,6 +26,7 @@ import { PrestadorFormPage } from '@/shared/prestadores/pages/PrestadorFormPage'
 import { PrestadoresMapaPage } from '@/shared/prestadores/pages/PrestadoresMapaPage'
 import { PrestadoresPage } from '@/shared/prestadores/pages/PrestadoresPage'
 import { TiposPrestadorPage } from '@/shared/parametros/pages/TiposPrestadorPage'
+import { Cie10Page } from '@/shared/cie10/pages/Cie10Page'
 import { UsuarioFormPage } from '@/shared/usuarios/pages/UsuarioFormPage'
 import { UsuariosPage } from '@/shared/usuarios/pages/UsuariosPage'
 
@@ -96,6 +97,8 @@ export const router = createBrowserRouter([
           // tiene que poder nombrar su tipo.
           { path: 'parametros', element: <Navigate to="/admin/parametros/tipos-prestador" replace /> },
           { path: 'parametros/tipos-prestador', element: <TiposPrestadorPage /> },
+          // El catálogo CIE-10 de la central, para consultar (19/10/2026).
+          { path: 'cie10', element: <Cie10Page /> },
           // La lista entera de la campana. Sin rol: cada quien ve la suya.
           { path: 'notificaciones', element: <NotificacionesPage /> },
           { path: 'configuracion', element: <ConfiguracionPage /> },
