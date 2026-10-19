@@ -190,7 +190,6 @@ export function ContactosPanel({
               // El correo del contacto es dato del expediente y va como el resto.
               // La columna es `citext`, así que entrar con minúsculas sigue
               // funcionando: quien inicie sesión no tiene que respetar el caso.
-              mayusculas
               spellCheck={false}
               value={contacto.email}
               onChange={(e) => onCambiar(contacto._key, 'email', e.target.value)}

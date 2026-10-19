@@ -54,6 +54,13 @@ class ContactoEntrada(BaseModel):
     )
     _telefono = field_validator("telefono")(identificacion.normalizar_telefono)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def _correo_en_minusculas(cls, v):  # noqa: ANN001, ANN206
+        # 19/10/2026: el correo es el usuario con el que se entra; va en
+        # minúsculas siempre, como se escriba (lo pidió el cliente).
+        return v.strip().lower() if isinstance(v, str) else v
+
 
 class ContactoSalida(BaseModel):
     id: str
@@ -94,6 +101,13 @@ class SedeEntrada(BaseModel):
     estado: EstadoSede = "activa"
 
     _telefono = field_validator("telefono")(identificacion.normalizar_telefono)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _correo_en_minusculas(cls, v):  # noqa: ANN001, ANN206
+        # 19/10/2026: el correo es el usuario con el que se entra; va en
+        # minúsculas siempre, como se escriba (lo pidió el cliente).
+        return v.strip().lower() if isinstance(v, str) else v
 
 
 class SedeSalida(BaseModel):

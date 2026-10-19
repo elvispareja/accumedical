@@ -359,7 +359,6 @@ export function UsuarioFormPage() {
                 id="email"
                 type="email"
                 inputMode="email"
-                mayusculas
                 spellCheck={false}
                 value={form.email}
                 onChange={(e) => cambiar('email', e.target.value)}

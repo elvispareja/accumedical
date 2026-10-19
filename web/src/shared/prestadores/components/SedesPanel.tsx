@@ -224,7 +224,6 @@ function TarjetaSede({
               id={`sede-email-${sede._key}`}
               type="email"
               inputMode="email"
-              mayusculas
               spellCheck={false}
               value={sede.email}
               onChange={(e) => onCambiar(sede._key, { email: e.target.value })}
