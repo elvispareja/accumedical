@@ -32,7 +32,7 @@ const ROLES: { valor: Rol; etiqueta: string; ayuda: string }[] = [
     // «Supervisor» y «Ejecutivo» del lado de la aseguradora (19/10/2026). El
     // valor sigue siendo el de siempre: solo cambia cómo se llama.
     etiqueta: 'Supervisor',
-    ayuda: 'Abarca todo lo que la compañía tenga contratado. Uno solo.',
+    ayuda: 'Supervisa los módulos que se le marquen. Uno por módulo.',
   },
   {
     valor: 'operador',
@@ -54,20 +54,28 @@ function etiquetaRequerimiento(r: Requerimiento): string {
   return r.cobertura_nombre ? `${r.module_nombre} · ${r.cobertura_nombre}` : r.module_nombre
 }
 
-/** De las claves marcadas al cuerpo que espera la API. */
-function accesosDe(seleccion: Set<string>): Acceso[] {
+/**
+ * De las claves marcadas al cuerpo que espera la API. El rol de cada acceso lo
+ * fija igual el servidor según el de la persona (19/10/2026).
+ */
+function accesosDe(seleccion: Set<string>, rol: Rol): Acceso[] {
   return [...seleccion].map((clave) => {
     const [module_code, cobertura] = clave.split('|')
-    return { module_code: module_code!, cobertura_codigo: cobertura || null, rol: 'operador' }
+    return {
+      module_code: module_code!,
+      cobertura_codigo: cobertura || null,
+      rol: rol === 'coordinador' ? 'supervisor' : 'operador',
+    }
   })
 }
 
 /**
  * El rol de la persona y, si es operador, a qué requerimientos entra.
  *
- * El **coordinador** no marca nada: abarca todo lo que la aseguradora tenga
- * contratado, y solo puede haber uno por compañía. El **operador** sí marca sus
- * requerimientos, de los que la aseguradora tiene contratados.
+ * Los dos marcan (19/10/2026): el **Supervisor** los módulos que supervisa —uno
+ * por módulo en cada aseguradora, y puede ser de uno o de varios—; el
+ * **Ejecutivo** los requerimientos a los que entra. Siempre de lo que la
+ * aseguradora tiene contratado.
  */
 function Requerimientos({
   requerimientos,
@@ -130,24 +138,9 @@ function Requerimientos({
         ))}
       </div>
 
-      {rol === 'coordinador' ? (
-        // No se marca nada: lo que abarca es lo que la compañía tenga
-        // contratado, y se enseña para que se vea qué se está concediendo.
-        <div className="rounded-md border border-borde bg-tenue/40 p-4">
-          <p className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
-            Abarca toda la compañía
-          </p>
-          <p className="mt-1.5 text-sm">
-            {requerimientos.map(etiquetaRequerimiento).join(' · ')}
-          </p>
-          <p className="mt-2 text-xs text-tenue-fg">
-            Si la aseguradora contrata otro módulo, lo cubre solo; si lo destilda, lo pierde.
-          </p>
-        </div>
-      ) : (
         <div className="space-y-2">
           <p className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
-            A qué entra
+            {rol === 'coordinador' ? 'Qué supervisa' : 'A qué entra'}
           </p>
           {requerimientos.map((r) => {
             const clave = claveRequerimiento(r)
@@ -162,7 +155,6 @@ function Requerimientos({
             )
           })}
         </div>
-      )}
     </div>
   )
 }
@@ -215,7 +207,7 @@ function DialogoAlta({
     mutationFn: () =>
       crearUsuario(aseguradoraId, {
         contacto_id: contactoId,
-        acceso: { rol, accesos: rol === 'coordinador' ? [] : accesosDe(seleccion) },
+        acceso: { rol, accesos: accesosDe(seleccion, rol) },
       }),
     onSuccess: (usuario) => {
       queryClient.invalidateQueries({ queryKey: ['usuarios', aseguradoraId] })
@@ -227,7 +219,7 @@ function DialogoAlta({
 
   function enviar() {
     if (!contactoId) return toast.error('Elige el contacto que tendrá usuario')
-    if (rol === 'operador' && seleccion.size === 0) {
+    if (seleccion.size === 0) {
       return toast.error('Marca al menos un requerimiento: sin acceso no podría entrar a nada')
     }
     crear.mutate()
@@ -344,19 +336,14 @@ function DialogoAccesos({
   useEffect(() => {
     if (!usuario) return
     setRol(usuario.rol as Rol)
-    // Al coordinador no se le marcan requerimientos: los suyos son los de la
-    // compañía, y se recalculan solos.
-    setSeleccion(
-      usuario.rol === 'coordinador'
-        ? new Set()
-        : new Set(usuario.accesos.map((a) => claveRequerimiento(a))),
-    )
+    // Supervisor y ejecutivo traen sus marcas (19/10/2026).
+    setSeleccion(new Set(usuario.accesos.map((a) => claveRequerimiento(a))))
   }, [usuario])
 
   const guardar = useMutation({
     mutationFn: () =>
       actualizarUsuario(aseguradoraId, usuario!.id, {
-        acceso: { rol, accesos: rol === 'coordinador' ? [] : accesosDe(seleccion) },
+        acceso: { rol, accesos: accesosDe(seleccion, rol) },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['usuarios', aseguradoraId] })
@@ -381,7 +368,7 @@ function DialogoAccesos({
           <Boton
             type="button"
             onClick={() =>
-              rol === 'operador' && seleccion.size === 0
+              seleccion.size === 0
                 ? toast.error('Marca al menos un requerimiento')
                 : guardar.mutate()
             }
@@ -541,9 +528,6 @@ export function UsuariosPanel({
                   requerimiento. Debajo, a qué entra. */}
               <p className="mt-3 font-display text-xs font-medium">
                 {usuario.rol === 'coordinador' ? 'Supervisor' : 'Ejecutivo'}
-                {usuario.rol === 'coordinador' && (
-                  <span className="ml-1.5 font-normal text-tenue-fg">· toda la compañía</span>
-                )}
               </p>
               <ul className="mt-1.5 flex flex-wrap gap-1.5">
                 {usuario.accesos.map((a) => (

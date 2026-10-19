@@ -981,13 +981,14 @@ def actualizar_usuario(
     # los tiene (14/10/2026): primero deben culminar, cancelarse o no auditarse.
     if datos.is_active is False and usuario.is_active:
         pendientes.validar(db, usuario.id, accion="desactivar a este usuario")
-    # El coordinador de la compañía abarca todo y no tiene filas por app:
-    # hacerlo coordinador no le quita nada; dejar de serlo, sí.
-    if datos.acceso is not None and usuario.is_active and datos.acceso.rol == "operador":
+    # Supervisor y ejecutivo van por módulo (19/10/2026): quitarle un módulo
+    # donde tiene casos abiertos no se puede. El supervisor «de toda la
+    # compañía» de antes abarcaba todos los que tienen regla.
+    if datos.acceso is not None and usuario.is_active:
         nuevas = {a.module_code for a in datos.acceso.accesos}
         actuales = (
             pendientes.con_regla()
-            if usuarios_service.es_coordinador(db, usuario.id)
+            if usuarios_service.es_coordinador_de_compania(db, usuario.id)
             else pendientes.modulos_vigentes(db, usuario.id)
         )
         quitadas = actuales - nuevas
@@ -1002,11 +1003,17 @@ def actualizar_usuario(
             for a in datos.acceso.accesos
         ]
     if datos.is_active is not None and datos.is_active != usuario.is_active:
-        # Reactivar a un coordinador: si otro tomó el puesto mientras estaba
-        # desactivado, no caben dos y se corta aquí.
+        # Reactivar a un supervisor: si otro tomó alguno de sus módulos
+        # mientras estaba desactivado, no caben dos y se corta aquí.
         if datos.is_active and usuarios_service.es_coordinador(db, usuario.id):
-            usuarios_service.validar_coordinador_unico(
-                db, usuario.aseguradora_id, salvo_user_id=usuario.id
+            if usuarios_service.es_coordinador_de_compania(db, usuario.id):
+                usuarios_service.validar_coordinador_unico(
+                    db, usuario.aseguradora_id, salvo_user_id=usuario.id
+                )
+            usuarios_service.validar_supervisores_unicos(
+                db, usuario.aseguradora_id,
+                usuarios_service.modulos_supervisados(db, usuario.id),
+                salvo_user_id=usuario.id,
             )
         usuario.is_active = datos.is_active
         detalle["is_active"] = datos.is_active

@@ -25,14 +25,17 @@ from app.shared.users.models import (
     UserModuleAccess,
 )
 
-# Los usuarios de una compañía tienen UN rol:
+# Los usuarios de una compañía tienen UN rol (nombres visibles del 19/10/2026):
 #
-#   coordinador → la compañía entera: todos los módulos que ella tenga
-#                 contratados. Uno solo por aseguradora.
-#   operador    → los requerimientos que se le marquen. Los que hagan falta.
+#   coordinador → «SUPERVISOR» de los módulos que se le marquen. UNO por
+#                 módulo en cada aseguradora; una persona puede supervisar
+#                 uno o varios (pedido del cliente, 19/10/2026: «no es uno
+#                 general para todo»).
+#   operador    → «EJECUTIVO»: los requerimientos que se le marquen.
 #
-# El code del coordinador sigue siendo `supervisor` en la base: identidad
-# congelada, «Coordinador» es el nombre visible.
+# El code sigue siendo `supervisor` / `operador` en la base (identidad
+# congelada). El supervisor «de toda la compañía» (`user_aseguradora_coordinador`)
+# quedó solo para lo histórico: ya no se concede.
 ROLES = ("supervisor", "operador")
 ROL_COORDINADOR = "supervisor"
 # De más amplio a más estrecho. Gobierna qué rol recibe la fila de módulo cuando
@@ -116,6 +119,77 @@ def _validar_accesos(
             )
 
 
+def modulos_supervisados(db: DbSession, user_id: uuid.UUID) -> set[str]:
+    """Los módulos que esta persona supervisa HOY (filas vivas con rol supervisor)."""
+    return set(
+        db.scalars(
+            select(UserModuleAccess.module_code)
+            .join(Role, Role.id == UserModuleAccess.role_id)
+            .where(
+                UserModuleAccess.user_id == user_id,
+                UserModuleAccess.activo.is_(True),
+                Role.code == ROL_COORDINADOR,
+            )
+        ).all()
+    )
+
+
+def validar_supervisores_unicos(
+    db: DbSession, aseguradora_id: uuid.UUID, modulos: set[str], salvo_user_id: uuid.UUID | None
+) -> None:
+    """
+    UNO por módulo en cada aseguradora, entre los usuarios ACTIVOS (19/10/2026).
+    Si el puesto está ocupado, dice QUIÉN lo tiene y en qué módulo, para que se
+    lo pase a ejecutivo o lo desactive primero. Un supervisor «de toda la
+    compañía» de los de antes cuenta para todos los módulos contratados.
+    """
+    from app.shared.catalogos.models import Module
+
+    if not modulos:
+        return
+    condiciones = [User.aseguradora_id == aseguradora_id, User.deleted_at.is_(None), User.is_active.is_(True)]
+    if salvo_user_id is not None:
+        condiciones.append(User.id != salvo_user_id)
+    ocupado = db.execute(
+        select(User, UserModuleAccess.module_code)
+        .join(UserModuleAccess, UserModuleAccess.user_id == User.id)
+        .join(Role, Role.id == UserModuleAccess.role_id)
+        .where(
+            *condiciones,
+            UserModuleAccess.activo.is_(True),
+            UserModuleAccess.module_code.in_(modulos),
+            Role.code == ROL_COORDINADOR,
+        )
+        .order_by(UserModuleAccess.module_code)
+    ).first()
+    if ocupado is None:
+        legado = db.execute(
+            select(User, AseguradoraModulo.module_code)
+            .join(UserAseguradoraCoordinador, UserAseguradoraCoordinador.user_id == User.id)
+            .join(
+                AseguradoraModulo,
+                (AseguradoraModulo.aseguradora_id == UserAseguradoraCoordinador.aseguradora_id)
+                & AseguradoraModulo.activo.is_(True),
+            )
+            .where(
+                *condiciones,
+                UserAseguradoraCoordinador.activo.is_(True),
+                AseguradoraModulo.module_code.in_(modulos),
+            )
+        ).first()
+        ocupado = legado
+    if ocupado is not None:
+        persona, module_code = ocupado
+        nombre_modulo = db.scalar(select(Module.nombre).where(Module.code == module_code)) or module_code
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                f"{nombre_modulo} ya tiene supervisor en esta aseguradora: {personas.de_fila(persona)}. "
+                "Solo puede haber uno por módulo; pásalo a ejecutivo o desactívalo primero"
+            ),
+        )
+
+
 def validar_coordinador_unico(
     db: DbSession, aseguradora_id: uuid.UUID, salvo_user_id: uuid.UUID | None
 ) -> None:
@@ -149,8 +223,8 @@ def validar_coordinador_unico(
         )
 
 
-def es_coordinador(db: DbSession, user_id: uuid.UUID) -> bool:
-    """Si esta persona coordina su compañía. Para revalidar al reactivarla."""
+def es_coordinador_de_compania(db: DbSession, user_id: uuid.UUID) -> bool:
+    """El supervisor «de toda la compañía» de antes del 19/10/2026 (ya no se concede)."""
     return bool(
         db.scalar(
             select(UserAseguradoraCoordinador.id).where(
@@ -159,6 +233,11 @@ def es_coordinador(db: DbSession, user_id: uuid.UUID) -> bool:
             )
         )
     )
+
+
+def es_coordinador(db: DbSession, user_id: uuid.UUID) -> bool:
+    """Si esta persona es SUPERVISOR: de algún módulo, o de la compañía (lo de antes)."""
+    return es_coordinador_de_compania(db, user_id) or bool(modulos_supervisados(db, user_id))
 
 
 def _roles_por_modulo(db: DbSession) -> dict[tuple[str, str], uuid.UUID]:
@@ -174,50 +253,27 @@ def fijar_acceso(
     db: DbSession, usuario: User, acceso: dict[str, Any], autor: uuid.UUID
 ) -> None:
     """
-    Fija a qué entra el usuario de la compañía: o la **coordina** entera —uno
-    solo, y abarca todo lo que ella tenga contratado—, o **opera** los
-    requerimientos que se le marquen. Cambiar de rol revoca lo del otro camino.
+    Fija a qué entra el usuario de la compañía (19/10/2026): SUPERVISOR de los
+    módulos que se le marquen —uno por módulo— o EJECUTIVO de los requerimientos
+    que se le marquen. El rol de cada acceso lo pone el servidor según el rol
+    de la persona: nunca el cliente. Si era supervisor «de toda la compañía»
+    (lo de antes), ese puesto se cierra: ahora todo va por módulo.
     """
-    coordinador = db.scalar(
-        select(UserAseguradoraCoordinador).where(
-            UserAseguradoraCoordinador.user_id == usuario.id
+    rol_fila = ROL_COORDINADOR if acceso["rol"] == "coordinador" else "operador"
+    accesos = [{**a, "rol": rol_fila} for a in acceso.get("accesos") or []]
+    if rol_fila == ROL_COORDINADOR:
+        validar_supervisores_unicos(
+            db, usuario.aseguradora_id, {a["module_code"] for a in accesos}, salvo_user_id=usuario.id
         )
+    coordinador = db.scalar(
+        select(UserAseguradoraCoordinador).where(UserAseguradoraCoordinador.user_id == usuario.id)
     )
-
-    if acceso["rol"] == "coordinador":
-        validar_coordinador_unico(db, usuario.aseguradora_id, salvo_user_id=usuario.id)
-        # Sin filas por módulo: su alcance sale de la compañía.
-        for fila in db.scalars(
-            select(UserModuleAccess).where(UserModuleAccess.user_id == usuario.id)
-        ).all():
-            if fila.activo:
-                fila.activo = False
-                fila.revoked_at = func.now()
-                fila.revoked_by = autor
-        if coordinador is None:
-            db.add(
-                UserAseguradoraCoordinador(
-                    user_id=usuario.id,
-                    aseguradora_id=usuario.aseguradora_id,
-                    granted_by=autor,
-                )
-            )
-        elif not coordinador.activo:
-            coordinador.activo = True
-            coordinador.revoked_at = None
-            coordinador.revoked_by = None
-            coordinador.granted_by = autor
-        _historial(db, usuario, autor)
-        return
-
-    # Operador: deja de coordinar, si coordinaba, y se le fijan sus accesos.
     if coordinador is not None and coordinador.activo:
         coordinador.activo = False
         coordinador.revoked_at = func.now()
         coordinador.revoked_by = autor
-        db.flush()  # libera el puesto antes de que otro lo tome
-
-    fijar_accesos(db, usuario, acceso["accesos"], autor)
+        db.flush()  # libera el puesto antes de reconciliar
+    fijar_accesos(db, usuario, accesos, autor)
     _historial(db, usuario, autor)
 
 
@@ -375,7 +431,8 @@ def acceso_de(db: DbSession, usuario: User) -> dict[str, Any]:
     requerimientos se CALCULAN de lo que la aseguradora tiene contratado: por eso
     contratar un módulo se lo da sin reeditar su ficha.
     """
-    if es_coordinador(db, usuario.id):
+    if es_coordinador_de_compania(db, usuario.id):
+        # Lo de antes del 19/10/2026: su alcance era la compañía entera.
         return {
             "rol": "coordinador",
             "accesos": [
@@ -383,7 +440,9 @@ def acceso_de(db: DbSession, usuario: User) -> dict[str, Any]:
                 for hoja in requerimientos_de(db, usuario.aseguradora_id)
             ],
         }
-    return {"rol": "operador", "accesos": accesos_de(db, usuario.id)}
+    accesos = accesos_de(db, usuario.id)
+    supervisa = any(a["rol"] == ROL_COORDINADOR for a in accesos)
+    return {"rol": "coordinador" if supervisa else "operador", "accesos": accesos}
 
 
 def obtener(db: DbSession, aseguradora_id: uuid.UUID, user_id: uuid.UUID) -> User:

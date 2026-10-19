@@ -322,11 +322,13 @@ class AccesoSalida(BaseModel):
 
 class AccesoUsuario(BaseModel):
     """
-    A qué entra un usuario de la compañía. Un rol por persona:
+    A qué entra un usuario de la compañía. Un rol por persona (19/10/2026):
 
-    - **coordinador**: la compañía entera —todo lo que ella tenga contratado—,
-      y uno solo por aseguradora. No lleva lista: su alcance se calcula.
-    - **operador**: los requerimientos que se le marquen.
+    - **coordinador** («Supervisor»): supervisa los módulos que se le marquen;
+      uno por módulo en cada aseguradora.
+    - **operador** («Ejecutivo»): los requerimientos que se le marquen.
+
+    Los dos llevan su lista; el rol de cada acceso lo fija el servidor.
     """
 
     rol: Literal["coordinador", "operador"]
@@ -334,12 +336,7 @@ class AccesoUsuario(BaseModel):
 
     @model_validator(mode="after")
     def _coherente(self):
-        if self.rol == "coordinador":
-            if self.accesos:
-                raise ValueError(
-                    "El coordinador abarca la compañía entera: no se le marcan requerimientos"
-                )
-        elif not self.accesos:
+        if not self.accesos:
             raise ValueError("Marca al menos un requerimiento: sin ellos no entra a nada")
         return self
 
