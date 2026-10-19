@@ -68,6 +68,24 @@ export interface CasoPaciente {
   ruta_caso: string | null
   /** Quién intervino: Auditor, Coordinador… (hoy, Concurrencia). */
   participantes: { rol: string; nombre: string }[]
+  /**
+   * Los demás documentos del caso (19/10/2026): exámenes, laboratorios y
+   * especialidades de Calificación de Riesgo, y su veredicto firmado. Cada uno
+   * se abre con su propio enlace de un solo uso (`pedirInforme(evento_id)`).
+   */
+  documentos: DocumentoCaso[]
+}
+
+export interface DocumentoCaso {
+  evento_id: string
+  tipo: 'veredicto' | 'documento_caso' | string
+  nombre: string | null
+  servicio: string | null
+  categoria: string | null
+  firmado: boolean | null
+  firmante: string | null
+  entregado_at: string | null
+  tamano_bytes: number | null
 }
 
 export interface Paciente {

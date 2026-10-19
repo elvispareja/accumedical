@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ExternalLink, FileSignature, Pencil } from 'lucide-react'
+import { ArrowLeft, ExternalLink, FileSignature, FileText, Pencil } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
@@ -7,6 +7,7 @@ import {
   corregirPaciente,
   obtenerPaciente,
   pedirInforme,
+  type DocumentoCaso,
   type IdentidadPaciente,
   type Paciente,
   type ResumenModulo,
@@ -27,6 +28,7 @@ const TIPOS: Record<string, string> = {
   visita_concurrencia: 'Visita de concurrencia',
   informe_concurrencia: 'Informe final entregado',
   caso_calificacion_riesgo: 'Caso de Calificación de Riesgo finalizado',
+  documento_calificacion_riesgo: 'Documento de Calificación de Riesgo',
 }
 
 function detalleError(error: unknown, porDefecto: string): string {
@@ -71,7 +73,7 @@ export function FichaPage() {
       })
       .catch((error: unknown) => {
         pestana?.close()
-        toast.error(detalleError(error, 'No pudimos abrir el informe'))
+        toast.error(detalleError(error, 'No pudimos abrir el documento'))
       })
   }
   const nombreDelModulo = p?.modulos.find((m) => m.codigo === modulo)?.nombre
@@ -220,6 +222,7 @@ export function FichaPage() {
                         />
                       )}
                     </div>
+                    {c.documentos.length > 0 && <DocumentosDelCaso documentos={c.documentos} alAbrir={verInforme} />}
                   </li>
                 )
               })}
@@ -234,6 +237,56 @@ export function FichaPage() {
 }
 
 const SEXOS = { femenino: 'Femenino', masculino: 'Masculino' } as const
+
+/**
+ * Los documentos de un caso finalizado (19/10/2026): el veredicto firmado
+ * primero y luego los exámenes, laboratorios y especialidades. Lo clínico no
+ * viaja aquí: cada «Abrir» pide a la central un enlace de un solo uso y el
+ * documento se abre en la app dueña.
+ */
+function DocumentosDelCaso({
+  documentos,
+  alAbrir,
+}: {
+  documentos: DocumentoCaso[]
+  alAbrir: (eventoId: string) => void
+}) {
+  return (
+    <div className="mt-3 border-t border-borde pt-3">
+      <p className="text-xs font-medium text-tenue-fg">Documentos del caso</p>
+      <ul className="mt-2 divide-y divide-borde">
+        {documentos.map((d) => {
+          const veredicto = d.tipo === 'veredicto'
+          const Icono = veredicto ? FileSignature : FileText
+          return (
+            <li key={d.evento_id} className="flex items-center justify-between gap-3 py-2">
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  className={`grid size-8 shrink-0 place-items-center rounded-md ${veredicto ? 'bg-marca-suave text-marca' : 'bg-tenue text-tenue-fg'}`}
+                >
+                  <Icono className="size-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {veredicto ? 'Veredicto de la auditoría' : d.servicio ?? d.nombre ?? 'Documento'}
+                  </p>
+                  <p className="truncate text-xs text-tenue-fg">
+                    {veredicto
+                      ? `PDF firmado${d.firmante ? ` por ${d.firmante}` : ''}`
+                      : [d.categoria, d.nombre].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+              </div>
+              <Boton variante="contorno" tamano="sm" onClick={() => alAbrir(d.evento_id)}>
+                Abrir
+              </Boton>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
 
 function Dato({ titulo, valor }: { titulo: string; valor: string | null }) {
   return (

@@ -138,6 +138,10 @@ class CasoPaciente(BaseModel):
     # El informe final más reciente del caso, si lo hay. Lo ve todo el personal.
     informe_evento_id: uuid.UUID | None = None
     informe: dict[str, Any] | None = None
+    # Los DEMÁS documentos del caso (19/10/2026): los exámenes, laboratorios y
+    # especialidades de Calificación de Riesgo y su veredicto firmado. Cada uno
+    # se abre igual que el informe: con un enlace de un solo uso de la central.
+    documentos: list[dict[str, Any]] = []
     # Ruta del caso en su app, SOLO si quien mira puede entrar a esa app como
     # coordinador (o es el superadministrador). Nulo = no se ofrece «Ver caso».
     ruta_caso: str | None = None
@@ -230,16 +234,27 @@ def _casos(eventos: list[Evento], abre: set[str] | None) -> list[CasoPaciente]:
                 fecha=e.fecha_evento,
                 aseguradora_nombre=e.aseguradora_nombre,
             )
-        if e.documento:
+        if e.documento and e.documento.get("tipo") in (None, "informe_final"):
             # El más reciente manda: es la última entrega del informe.
             caso.informe_evento_id = e.id
             caso.informe = e.documento
+        elif e.documento:
+            caso.documentos.append({"evento_id": str(e.id), **e.documento})
         else:
             caso.tipo_evento = e.tipo_evento
             caso.fecha = e.fecha_evento
             caso.aseguradora_nombre = caso.aseguradora_nombre or e.aseguradora_nombre
         if e.ruta_caso and (abre is None or e.aplicacion_codigo in abre):
             caso.ruta_caso = e.ruta_caso
+    for c in casos.values():
+        # Del veredicto se muestra solo la versión MÁS RECIENTE: las anteriores
+        # siguen guardadas en su app y registradas en la central (nada se borra).
+        veredictos = [d for d in c.documentos if d.get("tipo") == "veredicto"]
+        if len(veredictos) > 1:
+            vigente = max(veredictos, key=lambda d: (d.get("version") or 1, d.get("entregado_at") or ""))
+            c.documentos = [d for d in c.documentos if d.get("tipo") != "veredicto" or d is vigente]
+        # El veredicto primero; luego por tipo de examen y nombre.
+        c.documentos.sort(key=lambda d: (d.get("tipo") != "veredicto", d.get("categoria") or "", d.get("nombre") or ""))
     return sorted(casos.values(), key=lambda c: c.fecha, reverse=True)
 
 
@@ -315,6 +330,11 @@ def _ficha(ctx: AuthContext, db: DbSession, persona_id: uuid.UUID) -> Paciente:
                             "entregado_at",
                             "tamano_bytes",
                             "visita_codigo",
+                            # Documentos de Calificación de Riesgo (19/10/2026).
+                            "nombre",
+                            "servicio",
+                            "categoria",
+                            "version",
                         )
                     }
                     if isinstance(documento, dict)
