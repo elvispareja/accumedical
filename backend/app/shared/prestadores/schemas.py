@@ -54,12 +54,13 @@ class ContactoEntrada(BaseModel):
     )
     _telefono = field_validator("telefono")(identificacion.normalizar_telefono)
 
-    @field_validator("email", mode="before")
+    @field_validator("email", mode="after")
     @classmethod
-    def _correo_en_minusculas(cls, v):  # noqa: ANN001, ANN206
-        # 19/10/2026: el correo es el usuario con el que se entra; va en
-        # minúsculas siempre, como se escriba (lo pidió el cliente).
-        return v.strip().lower() if isinstance(v, str) else v
+    def _correo_en_mayusculas(cls, v):  # noqa: ANN001, ANN206
+        # 19/10/2026 (regla del cliente): el correo va en MAYÚSCULAS, como el
+        # resto del expediente; la contraseña es lo único que queda libre. El
+        # login compara sin distinguir mayúsculas (CITEXT).
+        return v.strip().upper() if isinstance(v, str) else v
 
 
 class ContactoSalida(BaseModel):
@@ -102,12 +103,13 @@ class SedeEntrada(BaseModel):
 
     _telefono = field_validator("telefono")(identificacion.normalizar_telefono)
 
-    @field_validator("email", mode="before")
+    @field_validator("email", mode="after")
     @classmethod
-    def _correo_en_minusculas(cls, v):  # noqa: ANN001, ANN206
-        # 19/10/2026: el correo es el usuario con el que se entra; va en
-        # minúsculas siempre, como se escriba (lo pidió el cliente).
-        return v.strip().lower() if isinstance(v, str) else v
+    def _correo_en_mayusculas(cls, v):  # noqa: ANN001, ANN206
+        # 19/10/2026 (regla del cliente): el correo va en MAYÚSCULAS, como el
+        # resto del expediente; la contraseña es lo único que queda libre. El
+        # login compara sin distinguir mayúsculas (CITEXT).
+        return v.strip().upper() if isinstance(v, str) else v
 
 
 class SedeSalida(BaseModel):

@@ -223,6 +223,7 @@ function TarjetaSede({
             <Input
               id={`sede-email-${sede._key}`}
               type="email"
+              mayusculas
               inputMode="email"
               spellCheck={false}
               value={sede.email}

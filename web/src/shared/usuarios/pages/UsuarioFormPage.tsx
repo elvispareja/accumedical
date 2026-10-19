@@ -358,6 +358,7 @@ export function UsuarioFormPage() {
               <Input
                 id="email"
                 type="email"
+                mayusculas
                 inputMode="email"
                 spellCheck={false}
                 value={form.email}

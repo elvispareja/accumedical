@@ -220,6 +220,7 @@ export function LoginPage({ app }: { app?: string } = {}) {
                 type="email"
                 inputMode="email"
                 autoComplete="username"
+                mayusculas
                 autoCapitalize="none"
                 spellCheck={false}
                 required

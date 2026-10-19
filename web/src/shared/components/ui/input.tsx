@@ -10,9 +10,9 @@ interface PropsInput extends InputHTMLAttributes<HTMLInputElement> {
    *
    * Sin indicar nada se apaga en los tipos donde sería un error. Pasarlo
    * explícito manda sobre esa regla en los dos sentidos: `false` lo apaga en una
-   * caja de búsqueda. Los CORREOS no van en mayúsculas (19/10/2026, pedido del
-   * cliente): son el usuario con el que se entra, y el servidor los guarda en
-   * minúsculas. Lo único que no admite excepción son las credenciales.
+   * caja de búsqueda, y `true` lo enciende en el CORREO —también el del login—,
+   * que va en mayúsculas como el resto del expediente (regla del cliente, 19/10/2026).
+   * Lo único que no admite excepción son las CONTRASEÑAS: quedan como se escriban.
    */
   mayusculas?: boolean
 }

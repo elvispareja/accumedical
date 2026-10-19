@@ -186,6 +186,7 @@ export function ContactosPanel({
             <Input
               id={`email-${contacto._key}`}
               type="email"
+              mayusculas
               inputMode="email"
               // El correo del contacto es dato del expediente y va como el resto.
               // La columna es `citext`, así que entrar con minúsculas sigue
