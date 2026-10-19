@@ -255,6 +255,25 @@ ETIQUETA_ROL = {
     "contabilidad": "Contabilidad",
 }
 
+#: Del lado de la ASEGURADORA (19/10/2026, pedido del cliente): su coordinador se
+#: llama «Supervisor» y su operador «Ejecutivo». Solo cambia el nombre visible;
+#: los códigos (`coordinador`/`supervisor`, `operador`) y lo que autorizan, no.
+#: Del lado de Accumedical el coordinador sigue siendo «Coordinador».
+ETIQUETA_ROL_ASEGURADORA = {
+    "coordinador": "Supervisor",
+    "supervisor": "Supervisor",
+    "operador": "Ejecutivo",
+}
+
+
+def etiqueta_rol(rol: str | None, de_aseguradora: bool = False) -> str:
+    """El nombre visible de un rol, según si la persona es de una aseguradora."""
+    if not rol:
+        return ""
+    if de_aseguradora and rol in ETIQUETA_ROL_ASEGURADORA:
+        return ETIQUETA_ROL_ASEGURADORA[rol]
+    return ETIQUETA_ROL.get(rol, rol)
+
 
 def fijar_acceso(
     db: DbSession, usuario: User, acceso: dict[str, Any], autor: uuid.UUID
@@ -431,13 +450,15 @@ def _nombres(db: DbSession) -> dict[uuid.UUID, str]:
     }
 
 
-def _tramo(fila: HistorialAcceso, nombres: dict, correos: dict) -> dict[str, Any]:
+def _tramo(
+    fila: HistorialAcceso, nombres: dict, correos: dict, de_aseguradora: bool = False
+) -> dict[str, Any]:
     return {
         "user_id": str(fila.user_id),
         "nombre": nombres.get(fila.user_id, "—"),
         "email": correos.get(fila.user_id),
         "rol": fila.rol,
-        "rol_etiqueta": ETIQUETA_ROL.get(fila.rol, fila.rol),
+        "rol_etiqueta": etiqueta_rol(fila.rol, de_aseguradora),
         "desde": fila.desde,
         "hasta": fila.hasta,
         "vigente": fila.hasta is None,
@@ -475,16 +496,18 @@ def historial_de_usuario(db: DbSession, user_id: uuid.UUID) -> list[dict[str, An
     nombres = _nombres(db)
     correos = dict(db.execute(select(User.id, User.email)).all())
     modulos = dict(db.execute(select(Module.code, Module.nombre)).all())
+    persona = db.get(User, user_id)
+    de_aseguradora = persona is not None and persona.aseguradora_id is not None
     salida = []
     for fila in db.scalars(
         select(HistorialAcceso).where(HistorialAcceso.user_id == user_id)
         .order_by(HistorialAcceso.desde.desc())
     ):
-        tramo = _tramo(fila, nombres, correos)
+        tramo = _tramo(fila, nombres, correos, de_aseguradora)
         tramo["donde"] = (
             modulos.get(fila.module_code, fila.module_code) if fila.ambito == "aplicacion"
             else ETIQUETA_ROL.get(fila.funcion, fila.funcion) if fila.ambito == "funcion"
-            else "Coordinación de la compañía"
+            else "Supervisión de la compañía"
         )
         tramo["ambito"] = fila.ambito
         salida.append(tramo)
@@ -638,9 +661,11 @@ def acceso_de(db: DbSession, user_id: uuid.UUID) -> dict[str, Any]:
         ).all()
     ]
     funcion = funcion_de(db, user_id)
+    persona = db.get(User, user_id)
+    de_aseguradora = persona is not None and persona.aseguradora_id is not None
     partes: dict[str, list[str]] = {}
     for a in aplicaciones:
-        partes.setdefault(ETIQUETA_ROL.get(a["rol"], a["rol"]), []).append(a["module_nombre"])
+        partes.setdefault(etiqueta_rol(a["rol"], de_aseguradora), []).append(a["module_nombre"])
     resumen = [f"{rol} de {', '.join(apps)}" for rol, apps in partes.items()]
     if funcion:
         resumen.append(ETIQUETA_FUNCION.get(funcion, funcion))

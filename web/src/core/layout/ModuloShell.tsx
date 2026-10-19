@@ -89,7 +89,7 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
   if (!modulo) return null
 
   const otros = porAbecedario(sesion?.modulos ?? []).filter((m) => m.slug !== slug)
-  const rolVisible = nombreDeRol(modulo.rol)
+  const rolVisible = nombreDeRol(modulo.rol, Boolean(sesion?.aseguradora))
 
   // Quién es y dónde está: el mismo bloque en los dos armazones.
   const identidadDelModulo = (

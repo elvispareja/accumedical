@@ -332,7 +332,7 @@ def _firma_del_creador(
 ) -> tuple[str, str, str] | None:
     """
     La firma del membrete para el alta: quien creó el caso `(nombre, cargo,
-    correo de login)`. Un operador de compañía firma «Operador · {su
+    correo de login)`. Un ejecutivo de compañía firma «Ejecutivo · {su
     aseguradora}»; nuestro personal de plataforma (coordinador o admin),
     «Supervisor · Accumedical». Sin creador rastreable devuelve None y el
     correo firma la gerencia, como todos los demás.
@@ -343,7 +343,7 @@ def _firma_del_creador(
     if creador.aseguradora_id is None:
         cargo = "Supervisor · Accumedical"
     else:
-        cargo = f"Operador · {nombre_aseguradora}"
+        cargo = f"Ejecutivo · {nombre_aseguradora}"  # «Operador» hasta el 19/10/2026
     return personas.de_fila(creador), cargo, creador.email
 
 

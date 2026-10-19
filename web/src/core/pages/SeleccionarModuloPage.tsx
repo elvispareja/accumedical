@@ -118,7 +118,7 @@ export function SeleccionarModuloPage() {
                   type="button"
                   onClick={() => entrar.mutate(modulo.slug)}
                   disabled={entrar.isPending}
-                  aria-label={`Entrar a ${modulo.nombre} como ${nombreDeRol(modulo.rol)}`}
+                  aria-label={`Entrar a ${modulo.nombre} como ${nombreDeRol(modulo.rol, Boolean(sesion?.aseguradora))}`}
                   className={cn(
                     'group relative flex h-full w-full flex-col items-start gap-3 overflow-hidden rounded-md border p-5 text-left',
                     'border-borde bg-superficie transition-[border-color,box-shadow,transform] duration-150 ease-natural',
@@ -141,7 +141,7 @@ export function SeleccionarModuloPage() {
                       {modulo.nombre}
                     </span>
                     <span className="mt-0.5 block text-sm text-tenue-fg">
-                      {nombreDeRol(modulo.rol)}
+                      {nombreDeRol(modulo.rol, Boolean(sesion?.aseguradora))}
                     </span>
                   </span>
 

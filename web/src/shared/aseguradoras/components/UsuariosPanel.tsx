@@ -29,12 +29,14 @@ const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const ROLES: { valor: Rol; etiqueta: string; ayuda: string }[] = [
   {
     valor: 'coordinador',
-    etiqueta: 'Coordinador',
+    // «Supervisor» y «Ejecutivo» del lado de la aseguradora (19/10/2026). El
+    // valor sigue siendo el de siempre: solo cambia cómo se llama.
+    etiqueta: 'Supervisor',
     ayuda: 'Abarca todo lo que la compañía tenga contratado. Uno solo.',
   },
   {
     valor: 'operador',
-    etiqueta: 'Operador',
+    etiqueta: 'Ejecutivo',
     ayuda: 'Entra a los requerimientos que se le marquen.',
   },
 ]
@@ -538,7 +540,7 @@ export function UsuariosPanel({
               {/* El rol va una vez, arriba: es de la persona, no de cada
                   requerimiento. Debajo, a qué entra. */}
               <p className="mt-3 font-display text-xs font-medium">
-                {usuario.rol === 'coordinador' ? 'Coordinador' : 'Operador'}
+                {usuario.rol === 'coordinador' ? 'Supervisor' : 'Ejecutivo'}
                 {usuario.rol === 'coordinador' && (
                   <span className="ml-1.5 font-normal text-tenue-fg">· toda la compañía</span>
                 )}

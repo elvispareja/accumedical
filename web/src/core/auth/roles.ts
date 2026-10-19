@@ -15,7 +15,19 @@ const NOMBRE_VISIBLE: Record<string, string> = {
   operador: 'Operador',
 }
 
-export function nombreDeRol(code: string | undefined | null): string {
+/**
+ * Del lado de la ASEGURADORA (19/10/2026, pedido del cliente): su coordinador
+ * se llama «Supervisor» y su operador «Ejecutivo». Mismos códigos, mismo
+ * alcance; solo cambia el nombre. El coordinador de Accumedical sigue igual.
+ */
+const NOMBRE_EN_ASEGURADORA: Record<string, string> = {
+  supervisor: 'Supervisor',
+  coordinador: 'Supervisor',
+  operador: 'Ejecutivo',
+}
+
+export function nombreDeRol(code: string | undefined | null, deAseguradora = false): string {
   if (!code) return ''
+  if (deAseguradora && NOMBRE_EN_ASEGURADORA[code]) return NOMBRE_EN_ASEGURADORA[code]
   return NOMBRE_VISIBLE[code] ?? code
 }

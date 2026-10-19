@@ -220,7 +220,7 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
                 El plazo de llegada venció sin el auditor.{' '}
                 <strong className="font-medium">La compañía no ve este estado</strong>: para
                 ella el caso sigue pendiente. Con «Extender» le das al auditor más horas para
-                llegar; para moverlo de día, el operador lo reprograma desde su ficha.
+                llegar; para moverlo de día, el ejecutivo lo reprograma desde su ficha.
               </span>
             )}
           </div>

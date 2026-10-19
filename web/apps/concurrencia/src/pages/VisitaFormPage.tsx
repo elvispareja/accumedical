@@ -631,7 +631,7 @@ export function VisitaFormPage({
       : estadoActual === 'cancelada'
         ? 'solo lectura: el caso está cancelado'
         : soloSupervisa
-          ? 'solo lectura: las visitas las gestiona tu equipo operador'
+          ? 'solo lectura: las visitas las gestiona tu equipo de ejecutivos'
           : null
 
   // Se cancela mientras nadie haya llegado. Con el auditor dentro del hospital

@@ -218,14 +218,14 @@ export function BandejaPage({
               setPagina(1)
             }}
             disabled={operadores.isPending || operadores.isError}
-            aria-label="Filtrar por operador"
+            aria-label="Filtrar por ejecutivo"
           >
             <option value="">
               {operadores.isPending
-                ? 'Cargando operadores…'
+                ? 'Cargando ejecutivos…'
                 : operadores.isError
-                  ? 'No se pudieron cargar los operadores'
-                  : 'Todos los operadores'}
+                  ? 'No se pudieron cargar los ejecutivos'
+                  : 'Todos los ejecutivos'}
             </option>
             {operadores.data?.map((o) => (
               <option key={o.id} value={o.id}>
@@ -463,14 +463,14 @@ function Vacio({
         {hayFiltros
           ? 'Ninguna visita coincide'
           : deOperador
-            ? 'Este operador no tiene casos'
+            ? 'Este ejecutivo no tiene casos'
             : 'La bandeja está vacía'}
       </p>
       <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">
         {hayFiltros
           ? 'Prueba con otro término o quita los filtros.'
           : deOperador
-            ? 'Cuando este operador programe visitas, aparecerán aquí.'
+            ? 'Cuando este ejecutivo programe visitas, aparecerán aquí.'
             : onCrear
               ? 'Programa la primera visita del médico auditor a un prestador de tu red.'
               : 'Cuando tu equipo programe visitas, aparecerán aquí.'}

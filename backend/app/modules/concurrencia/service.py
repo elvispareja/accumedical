@@ -1246,7 +1246,7 @@ def usuarios_de_la_aseguradora(
     `(usuario, vigente, rol)`.
     """
     from app.shared.users.models import HistorialAcceso
-    from app.shared.users.service import ETIQUETA_ROL
+    from app.shared.users.service import etiqueta_rol
 
     tramos: dict[uuid.UUID, list[Any]] = {}
     for t in db.scalars(
@@ -1277,8 +1277,9 @@ def usuarios_de_la_aseguradora(
         abiertos = [t for t in suyos if t.hasta is None]
         activo = bool(u.is_active) and u.deleted_at is None
         vigente = activo and (bool(abiertos) or u.id in vigentes)
-        roles = [ETIQUETA_ROL.get(t.rol, t.rol) for t in (abiertos or suyos)]
-        rol = " · ".join(dict.fromkeys(roles)) or "Operador"
+        # Gente de la compañía: «Supervisor» / «Ejecutivo» (19/10/2026).
+        roles = [etiqueta_rol(t.rol, de_aseguradora=True) for t in (abiertos or suyos)]
+        rol = " · ".join(dict.fromkeys(roles)) or "Ejecutivo"
         filas.append((u, vigente, rol))
     return sorted(filas, key=lambda f: (not f[1], personas.de_fila(f[0]), str(f[0].id)))
 
