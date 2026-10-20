@@ -65,6 +65,8 @@ PUBLIC_PATHS = {
     # credenciales de sus usuarios: el token de la app ES la credencial, y nginx
     # cierra la ruta al público (solo red interna).
     "/api/v1/interno/credenciales",
+    # Y el logo de una aseguradora para su menú (20/10/2026), con el mismo candado.
+    "/api/v1/interno/aseguradoras/{aseguradora_id}/logo",
 }
 
 INTERVALO_PURGA_SEG = 3600

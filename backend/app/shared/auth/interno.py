@@ -15,6 +15,8 @@ pregunta aquí si es correcta y si tiene acceso a ella.
 
 from __future__ import annotations
 
+import uuid
+
 import hmac
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -100,3 +102,33 @@ def verificar_credenciales(
     )
     db.commit()
     return CredencialesOut(usuario_id=str(user.id), rol=modulo.rol)
+
+
+@router.get("/aseguradoras/{aseguradora_id}/logo")
+def logo_de_aseguradora(
+    aseguradora_id: uuid.UUID,
+    app: str = Depends(app_del_token),
+    db: DbSession = Depends(get_db),
+):
+    """
+    El logo de una aseguradora para una app de fuera (20/10/2026): Calificación de
+    Riesgo lo muestra en el menú lateral de los usuarios de esa compañía. Mismo
+    candado que las credenciales —token de la app y solo red interna— y solo si la
+    aseguradora tiene contratada ESA app. Sin logo, o sin contrato: 404.
+    """
+    from sqlalchemy import select
+
+    from app.shared.aseguradoras.logo import respuesta_logo
+    from app.shared.aseguradoras.models import Aseguradora, AseguradoraModulo
+
+    aseguradora = db.get(Aseguradora, aseguradora_id)
+    contratada = db.scalar(
+        select(AseguradoraModulo.aseguradora_id).where(
+            AseguradoraModulo.aseguradora_id == aseguradora_id,
+            AseguradoraModulo.module_code == app,
+            AseguradoraModulo.activo.is_(True),
+        )
+    )
+    if aseguradora is None or aseguradora.deleted_at is not None or contratada is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Sin logo")
+    return respuesta_logo(aseguradora)
