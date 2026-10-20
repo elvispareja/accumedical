@@ -40,6 +40,17 @@ export function Modal({
   const caja = useRef<HTMLDivElement>(null)
   const devolverFocoA = useRef<HTMLElement | null>(null)
   const sinMovimiento = useReducedMotion()
+  /*
+   * El `onCerrar` vigente, en una referencia (20/10/2026). Antes era dependencia
+   * del efecto: quien lo pasa como función nueva en cada render (lo normal) hacía
+   * que el efecto se rehiciera con CADA letra tecleada y devolviera el foco al
+   * primer botón —la X—: en «Cambiar contraseña» no se podía escribir seguido.
+   * El efecto ahora solo corre al abrir y al cerrar.
+   */
+  const cerrarRef = useRef(onCerrar)
+  useEffect(() => {
+    cerrarRef.current = onCerrar
+  }, [onCerrar])
 
   useEffect(() => {
     if (!abierto) return
@@ -58,7 +69,7 @@ export function Modal({
     function alPulsar(evento: KeyboardEvent) {
       if (evento.key === 'Escape') {
         evento.stopPropagation()
-        return onCerrar()
+        return cerrarRef.current()
       }
       if (evento.key !== 'Tab' || !caja.current) return
 
@@ -85,7 +96,7 @@ export function Modal({
       document.body.style.overflow = desbordeAnterior
       devolverFocoA.current?.focus()
     }
-  }, [abierto, onCerrar])
+  }, [abierto])
 
   return createPortal(
     <AnimatePresence>
