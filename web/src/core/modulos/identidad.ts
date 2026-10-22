@@ -8,6 +8,7 @@ import {
   HeartPulse,
   Receipt,
   Stethoscope,
+  Pill,
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
@@ -120,6 +121,13 @@ const POR_CODIGO: Record<string, IdentidadModulo> = {
     suave: 'bg-modulo-reembolso/10',
     texto: 'text-modulo-reembolso',
     borde: 'border-modulo-reembolso/40',
+  },
+  farmacia: {
+    Icono: Pill,
+    punto: 'bg-modulo-farmacia',
+    suave: 'bg-modulo-farmacia/10',
+    texto: 'text-modulo-farmacia',
+    borde: 'border-modulo-farmacia/40',
   },
 }
 

@@ -53,6 +53,7 @@
     --modulo-ambulatorio: 190 70% 34%;
     --modulo-auditoria-vida: 282 45% 48%;
     --modulo-reembolso: 130 45% 34%;
+    --modulo-farmacia: 172 60% 32%;
 
     --radio: 0.5rem;
     --sombra-sutil: 0 1px 2px hsl(165 24% 11% / 0.05), 0 1px 3px hsl(165 24% 11% / 0.04);
@@ -103,6 +104,7 @@
     --modulo-ambulatorio: 190 60% 56%;
     --modulo-auditoria-vida: 282 50% 70%;
     --modulo-reembolso: 130 40% 58%;
+    --modulo-farmacia: 172 50% 52%;
 
     --sombra-sutil: 0 1px 2px hsl(0 0% 0% / 0.4);
     --sombra-elevada: 0 16px 40px -16px hsl(0 0% 0% / 0.7), 0 2px 8px -4px hsl(0 0% 0% / 0.5);

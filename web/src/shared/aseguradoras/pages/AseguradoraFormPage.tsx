@@ -90,6 +90,7 @@ const SUBGRUPOS: Record<string, string> = {
   ambulatorio: 'Ambulatorio',
   auditoria_vida: 'Auditoría de vida',
   reembolso: 'Reembolso',
+  farmacia: 'Farmacovigilancia',
 }
 
 function mensajeDeError(error: unknown, porDefecto: string): string {

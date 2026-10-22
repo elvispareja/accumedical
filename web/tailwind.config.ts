@@ -54,6 +54,7 @@ export default {
           ambulatorio: 'hsl(var(--modulo-ambulatorio) / <alpha-value>)',
           'auditoria-vida': 'hsl(var(--modulo-auditoria-vida) / <alpha-value>)',
           reembolso: 'hsl(var(--modulo-reembolso) / <alpha-value>)',
+          farmacia: 'hsl(var(--modulo-farmacia) / <alpha-value>)',
         },
       },
       fontFamily: {
