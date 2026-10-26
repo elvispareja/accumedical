@@ -266,19 +266,25 @@ export function PrestadorFormPage() {
       setPestana('generales')
       return toast.error('El RUC debe tener exactamente 13 dígitos')
     }
+    // Provincia y ciudad son obligatorias (pedido del usuario, 26/10/2026).
+    if (!form.provincia_codigo || !form.ciudad_codigo) {
+      setPestana('generales')
+      return toast.error('Elige la provincia y la ciudad del prestador')
+    }
     if (form.latitud === null || form.longitud === null) {
       setPestana('generales')
       return toast.error('Fija el punto del prestador en el mapa')
+    }
+    // En el orden de las pestañas: Sedes antes que Contactos.
+    const problemaSede = validarSedes(form.sedes ?? [])
+    if (problemaSede) {
+      setPestana('sedes')
+      return toast.error(problemaSede)
     }
     const problema = validarContactos(form.contactos ?? [])
     if (problema) {
       setPestana('contactos')
       return toast.error(problema)
-    }
-    const problemaSede = validarSedes(form.sedes ?? [])
-    if (problemaSede) {
-      setPestana('sedes')
-      return toast.error(problemaSede)
     }
     guardar.mutate()
   }
@@ -348,8 +354,8 @@ export function PrestadorFormPage() {
         <Tabs
           pestanas={[
             { id: 'generales', etiqueta: 'Datos generales' },
-            { id: 'contactos', etiqueta: 'Contactos' },
             { id: 'sedes', etiqueta: 'Sedes' },
+            { id: 'contactos', etiqueta: 'Contactos' },
             { id: 'convenios', etiqueta: 'Convenios' },
           ]}
           activa={pestana}
@@ -552,7 +558,9 @@ export function PrestadorFormPage() {
                 <div className="space-y-5">
                   <div className="grid gap-5 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="provincia">Provincia</Label>
+                      <Label htmlFor="provincia">
+                        Provincia <span className="text-peligro">*</span>
+                      </Label>
                       <Select
                         id="provincia"
                         value={form.provincia_codigo ?? ''}
@@ -568,7 +576,9 @@ export function PrestadorFormPage() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="ciudad">Ciudad</Label>
+                      <Label htmlFor="ciudad">
+                        Ciudad <span className="text-peligro">*</span>
+                      </Label>
                       <Select
                         id="ciudad"
                         value={form.ciudad_codigo ?? ''}

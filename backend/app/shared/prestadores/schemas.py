@@ -217,8 +217,9 @@ class PrestadorCrear(_ConRuc):
     # La identidad del prestador. No hay elección: solo RUC.
     ruc: str
     estado: Estado = "activo"
-    provincia_codigo: str | None = Field(default=None, min_length=2, max_length=2)
-    ciudad_codigo: str | None = Field(default=None, min_length=4, max_length=4)
+    # Obligatorias (pedido del usuario, 26/10/2026).
+    provincia_codigo: Annotated[str, Field(min_length=2, max_length=2)]
+    ciudad_codigo: Annotated[str, Field(min_length=4, max_length=4)]
     direccion: str | None = Field(default=None, max_length=300)
     # Punto exacto en el mapa: obligatorio en el alta.
     latitud: Latitud
@@ -245,6 +246,14 @@ class PrestadorActualizar(_ConRuc):
     contactos: list[ContactoEntrada] | None = None
     # None = no se tocan las sedes; lista = se reconcilia contra ella.
     sedes: list[SedeEntrada] | None = None
+
+    @field_validator("provincia_codigo", "ciudad_codigo")
+    @classmethod
+    def _ubicacion_no_se_vacia(cls, valor: str | None) -> str:
+        # Se pueden cambiar, pero no vaciar: son obligatorias.
+        if valor is None:
+            raise ValueError("La provincia y la ciudad son obligatorias")
+        return valor
 
 
 class PrestadorResumen(BaseModel):
