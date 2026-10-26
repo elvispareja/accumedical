@@ -21,4 +21,13 @@ export interface PuntoDeMapa {
   ciudad_nombre: string | null
   latitud: number
   longitud: number
+  /**
+   * Opcional: a qué entidad pertenece el punto (el prestador) y su nombre. Con
+   * él, el buscador del costado lista UNA fila por entidad y, al elegirla,
+   * despliega sus sitios (casa matriz y sedes).
+   */
+  grupo?: string
+  nombreGrupo?: string
+  /** El nombre de la sede; null = la casa matriz del prestador. */
+  sede?: string | null
 }

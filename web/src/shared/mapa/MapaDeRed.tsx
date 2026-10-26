@@ -212,11 +212,36 @@ export function MapaDeRed({
   // aparece al escribir, como el buscador de «Nueva visita». El mapa sigue
   // enseñando todos los puntos de la provincia o ciudad elegida.
   const [busqueda, setBusqueda] = useState('')
-  const encontrados = useMemo(() => {
+  // Una fila por ENTIDAD (pedido del usuario, 26/10/2026): el prestador una
+  // sola vez; al elegirlo se despliegan sus sitios (casa matriz y sedes). Los
+  // puntos sin `grupo` (p. ej. aseguradoras) son una fila cada uno.
+  const [abierta, setAbierta] = useState<string | null>(null)
+  const encontrados = useMemo<FilaBuscada[]>(() => {
     const termino = normalizarTexto(busqueda.trim())
     if (!termino) return []
-    return visibles.filter((p) =>
-      normalizarTexto(`${p.titulo} ${p.subtitulo ?? ''}`).includes(termino),
+    const filas = new Map<string, FilaBuscada>()
+    for (const p of visibles) {
+      const clave = p.grupo ?? p.clave
+      let fila = filas.get(clave)
+      if (!fila) {
+        fila = { clave, titulo: p.nombreGrupo ?? p.titulo, subtitulo: p.subtitulo, punto: p, sitios: [] }
+        filas.set(clave, fila)
+      }
+      fila.sitios.push(p)
+      // La casa matriz es la que representa al prestador en la lista.
+      if (p.grupo && !p.sede) {
+        fila.punto = p
+        fila.subtitulo = p.subtitulo
+      }
+    }
+    // Casa matriz primero; después las sedes por nombre.
+    for (const f of filas.values()) {
+      f.sitios.sort((a, b) => (a.sede ? 1 : 0) - (b.sede ? 1 : 0) || (a.sede ?? '').localeCompare(b.sede ?? '', 'es'))
+    }
+    return [...filas.values()].filter((f) =>
+      f.sitios.some((p) =>
+        normalizarTexto(`${f.titulo} ${p.titulo} ${p.subtitulo ?? ''}`).includes(termino),
+      ),
     )
   }, [visibles, busqueda])
 
@@ -457,11 +482,12 @@ export function MapaDeRed({
               </p>
             ) : (
               <ul className="mt-2 space-y-1">
-                {encontrados.map((punto, indice) => {
-                  const esElCentrado = centrado !== null && centrado.clave === punto.clave
+                {encontrados.map((fila, indice) => {
+                  const abiertaEsta = abierta === fila.clave
+                  const conSedes = fila.sitios.length > 1
                   return (
                     <motion.li
-                      key={punto.clave}
+                      key={fila.clave}
                       initial={sinMovimiento ? { opacity: 0 } : { opacity: 0, y: 4 }}
                       animate={{
                         opacity: 1,
@@ -475,29 +501,58 @@ export function MapaDeRed({
                     >
                       <button
                         type="button"
-                        onClick={() => setCentrado(punto)}
+                        onClick={() => {
+                          setAbierta(abiertaEsta ? null : fila.clave)
+                          setCentrado(fila.punto)
+                        }}
+                        aria-expanded={conSedes ? abiertaEsta : undefined}
                         className={cn(
                           'flex w-full items-start gap-2 rounded-md border px-3 py-2 text-left transition-colors duration-150',
-                          esElCentrado
+                          abiertaEsta
                             ? 'border-marca/40 bg-marca-suave/50'
                             : 'border-transparent hover:bg-tenue/60',
                         )}
                       >
-                        <MapPin
-                          className="mt-0.5 size-4 shrink-0 text-peligro"
-                          aria-hidden="true"
-                        />
-                        <span className="min-w-0">
-                          {/* El nombre NO se corta: con sedes es lo que
-                              distingue un punto de otro del mismo sitio. */}
-                          <span className="block text-sm font-medium">{punto.titulo}</span>
-                          {punto.subtitulo && (
+                        <MapPin className="mt-0.5 size-4 shrink-0 text-peligro" aria-hidden="true" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium">{fila.titulo}</span>
+                          {fila.subtitulo && (
                             <span className="mt-0.5 block truncate text-xs text-tenue-fg">
-                              {punto.subtitulo}
+                              {fila.subtitulo}
+                            </span>
+                          )}
+                          {conSedes && (
+                            <span className="mt-0.5 block text-xs text-tenue-fg">
+                              {fila.sitios.length - 1}{' '}
+                              {fila.sitios.length - 1 === 1 ? 'sede' : 'sedes'} · y su casa matriz
                             </span>
                           )}
                         </span>
                       </button>
+                      {abiertaEsta && conSedes && (
+                        <ul className="ml-6 mt-1 space-y-0.5 border-l border-borde pl-2">
+                          {fila.sitios.map((sitio) => {
+                            const esElCentrado = centrado !== null && centrado.clave === sitio.clave
+                            return (
+                              <li key={sitio.clave}>
+                                <button
+                                  type="button"
+                                  onClick={() => setCentrado(sitio)}
+                                  className={cn(
+                                    'w-full rounded px-2 py-1.5 text-left text-sm transition-colors duration-150',
+                                    esElCentrado ? 'bg-marca-suave/50 text-marca' : 'hover:bg-tenue/60',
+                                  )}
+                                >
+                                  <span className="block">{sitio.sede ?? 'Casa matriz'}</span>
+                                  <span className="block truncate text-xs text-tenue-fg">
+                                    {[sitio.ciudad_nombre, sitio.direccion].filter(Boolean).join(' · ')}
+                                  </span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      )}
                     </motion.li>
                   )
                 })}
@@ -565,6 +620,16 @@ function Lista({
       )}
     </div>
   )
+}
+
+/** Una fila del buscador del costado: una entidad con sus sitios en el mapa. */
+interface FilaBuscada {
+  clave: string
+  titulo: string
+  subtitulo: string | null
+  /** El punto al que se va al elegir la fila (la casa matriz si la hay). */
+  punto: PuntoDeMapa
+  sitios: PuntoDeMapa[]
 }
 
 /** Sin tildes y en minúsculas: «clinica» encuentra «CLÍNICA». */

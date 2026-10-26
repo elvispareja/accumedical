@@ -26,6 +26,9 @@ function traducir(punto: PuntoMapa, raiz: string): PuntoDeMapa {
     ciudad_nombre: punto.ciudad_nombre,
     latitud: punto.latitud,
     longitud: punto.longitud,
+    grupo: punto.prestador_id,
+    nombreGrupo: punto.nombre,
+    sede: punto.sede_nombre,
   }
 }
 
