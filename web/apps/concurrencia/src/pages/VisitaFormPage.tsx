@@ -489,6 +489,29 @@ export function VisitaFormPage({
     form.paciente_numero_documento,
   )
 
+  // La búsqueda va SOLA (pedido del usuario, 26/10/2026: sin botón «Buscar
+  // paciente»): en cuanto el documento está completo y es válido, y tras una
+  // pausa corta para no consultar a cada tecla. El aviso «Ya lo teníamos» o «No
+  // lo teníamos» sigue diciendo qué pasó.
+  useEffect(() => {
+    if (editando || soloLectura || pasoPaciente !== 'pendiente') return
+    if (!form.paciente_tipo_documento_codigo || !form.paciente_numero_documento.trim()) return
+    if (problemaDocumento || (supervision && !aseguradoraId)) return
+    const espera = window.setTimeout(() => void buscarAlPaciente(), 600)
+    return () => window.clearTimeout(espera)
+    // `buscarAlPaciente` se rehace en cada pintado; lo que decide buscar son estos datos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    editando,
+    soloLectura,
+    pasoPaciente,
+    form.paciente_tipo_documento_codigo,
+    form.paciente_numero_documento,
+    problemaDocumento,
+    supervision,
+    aseguradoraId,
+  ])
+
   const visibles = useMemo(() => {
     const termino = busqueda.trim().toLocaleLowerCase()
     const todos = prestadores.data ?? []
@@ -700,11 +723,11 @@ export function VisitaFormPage({
           <h1 className="mt-1.5 font-display text-2xl font-semibold tracking-tight">
             {soloLectura ? 'Visita' : editando ? 'Editar visita' : 'Nueva visita'}
           </h1>
-          <p className="mt-1 text-sm text-tenue-fg">
-            {editando
-              ? [detalle.data?.codigo_interno, motivoDeSoloLectura].filter(Boolean).join(' · ')
-              : 'El código se genera automáticamente al guardar.'}
-          </p>
+          {editando && (
+            <p className="mt-1 text-sm text-tenue-fg">
+              {[detalle.data?.codigo_interno, motivoDeSoloLectura].filter(Boolean).join(' · ')}
+            </p>
+          )}
           {/* El estado ya no se teclea, así que se ENSEÑA: dónde está el caso y
               qué lo moverá de ahí. Es lo que antes decía el desplegable, pero
               contado como lo que es: una consecuencia, no una elección. */}
@@ -841,31 +864,10 @@ export function VisitaFormPage({
             </div>
           </div>
 
-          {/* Buscar es un paso que se PIDE, no algo que pasa solo mientras se
-              teclea: de lo contrario nadie se entera de si el paciente ya
-              estaba, que es justo lo que se ha venido a averiguar. */}
-          {!editando && !soloLectura && (
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <Boton
-                type="button"
-                variante="contorno"
-                onClick={buscarAlPaciente}
-                cargando={pasoPaciente === 'buscando'}
-                disabled={
-                  !form.paciente_tipo_documento_codigo ||
-                  !form.paciente_numero_documento.trim() ||
-                  Boolean(problemaDocumento)
-                }
-              >
-                <Search aria-hidden="true" />
-                Buscar paciente
-              </Boton>
-              {pasoPaciente === 'pendiente' && (
-                <p className="text-xs text-tenue-fg">
-                  Miramos si ya pasó por un caso antes de pedir sus datos.
-                </p>
-              )}
-            </div>
+          {pasoPaciente === 'buscando' && (
+            <p className="mt-3 text-xs text-tenue-fg" aria-live="polite">
+              Buscando al paciente…
+            </p>
           )}
 
           {pasoPaciente === 'conocido' && !editando && !soloLectura && (
