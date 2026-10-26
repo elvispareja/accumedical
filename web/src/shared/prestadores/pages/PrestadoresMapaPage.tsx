@@ -29,8 +29,8 @@ export function PrestadoresMapaPage() {
         </h1>
         <p className="mt-1 text-sm text-tenue-fg">
           Un punto por cada sitio donde se atiende: el del prestador y el de cada una de sus
-          sedes. Elige una provincia y al lado quedan los suyos; elige una ciudad y quedan
-          solo los de esa ciudad.
+          sedes. Elige una provincia o una ciudad para acotar el mapa, y busca el prestador
+          por su nombre o código.
         </p>
       </header>
 

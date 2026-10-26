@@ -2,13 +2,14 @@ import 'leaflet/dist/leaflet.css'
 
 import type { LatLngBoundsExpression, LatLngTuple } from 'leaflet'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ChevronRight, MapPin, RotateCw } from 'lucide-react'
+import { ChevronRight, MapPin, RotateCw, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet'
 
 import { cn } from '@/lib/utils'
 import { Boton } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
 import type { PuntoDeMapa } from '@/shared/mapa/tipos'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
@@ -206,6 +207,18 @@ export function MapaDeRed({
       ),
     [puntos, provincia, ciudad],
   )
+
+  // La lista del costado no se pinta entera (pedido del usuario, 26/10/2026):
+  // aparece al escribir, como el buscador de «Nueva visita». El mapa sigue
+  // enseñando todos los puntos de la provincia o ciudad elegida.
+  const [busqueda, setBusqueda] = useState('')
+  const encontrados = useMemo(() => {
+    const termino = normalizarTexto(busqueda.trim())
+    if (!termino) return []
+    return visibles.filter((p) =>
+      normalizarTexto(`${p.titulo} ${p.subtitulo ?? ''}`).includes(termino),
+    )
+  }, [visibles, busqueda])
 
   function elegirProvincia(codigo: string | null) {
     setProvincia(codigo)
@@ -416,13 +429,35 @@ export function MapaDeRed({
             <p className="font-display text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-tenue-fg">
               {etiqueta}
             </p>
+            <div className="relative mt-2">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
+                aria-hidden="true"
+              />
+              <Input
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar por nombre o código"
+                aria-label={`Buscar en ${etiqueta}`}
+                mayusculas={false}
+                className="pl-9"
+              />
+            </div>
             {visibles.length === 0 ? (
               <p className="mt-2 rounded-md border border-dashed border-borde px-3 py-6 text-center text-sm text-tenue-fg">
                 {cargando ? 'Cargando…' : vacio}
               </p>
+            ) : !busqueda.trim() ? (
+              <p className="mt-2 rounded-md border border-dashed border-borde px-3 py-6 text-center text-sm text-tenue-fg">
+                Escribe el nombre o el código para buscar.
+              </p>
+            ) : encontrados.length === 0 ? (
+              <p className="mt-2 rounded-md border border-dashed border-borde px-3 py-6 text-center text-sm text-tenue-fg">
+                Nada coincide con la búsqueda.
+              </p>
             ) : (
               <ul className="mt-2 space-y-1">
-                {visibles.map((punto, indice) => {
+                {encontrados.map((punto, indice) => {
                   const esElCentrado = centrado !== null && centrado.clave === punto.clave
                   return (
                     <motion.li
@@ -530,4 +565,9 @@ function Lista({
       )}
     </div>
   )
+}
+
+/** Sin tildes y en minúsculas: «clinica» encuentra «CLÍNICA». */
+function normalizarTexto(texto: string): string {
+  return texto.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase()
 }
