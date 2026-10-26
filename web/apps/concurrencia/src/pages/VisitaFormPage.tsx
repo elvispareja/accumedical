@@ -668,10 +668,10 @@ export function VisitaFormPage({
     if (supervision && !aseguradoraId) {
       return toast.error('Elige primero la aseguradora del caso')
     }
-    // Sin buscar no hay casillas de nombre que rellenar, así que el error sería
-    // «falta el nombre» y no se entendería de dónde sale.
-    if (!identificado) {
-      return toast.error('Busca primero al paciente por su identificación')
+    // Con el documento válido la búsqueda va sola; guardar a mitad de ella podría
+    // registrar como nuevo a alguien que ya teníamos.
+    if (!identificado && !problemaDocumento && form.paciente_numero_documento.trim()) {
+      return toast.error('Espera un momento: estamos buscando al paciente')
     }
     if (
       faltaObligatorio(form.paciente) ||
@@ -894,20 +894,18 @@ export function VisitaFormPage({
             </p>
           )}
           {/* El nombre del paciente, en las mismas cuatro casillas que en el
-              resto de la plataforma. No se piden hasta haber buscado: son la
-              respuesta a la búsqueda, rellenas o en blanco. */}
-          {identificado && (
-            <div className="mt-4">
-              <CamposNombre
-                idPrefijo="paciente"
-                valores={form.paciente}
-                deshabilitado={soloLectura}
-                onCambiar={(campo, valor) =>
-                  setForm((p) => ({ ...p, paciente: { ...p.paciente, [campo]: valor } }))
-                }
-              />
-            </div>
-          )}
+              resto de la plataforma. Siempre a la vista (pedido del usuario,
+              26/10/2026); si la búsqueda lo encuentra, se rellenan solas. */}
+          <div className="mt-4">
+            <CamposNombre
+              idPrefijo="paciente"
+              valores={form.paciente}
+              deshabilitado={soloLectura}
+              onCambiar={(campo, valor) =>
+                setForm((p) => ({ ...p, paciente: { ...p.paciente, [campo]: valor } }))
+              }
+            />
+          </div>
         </Bloque>
 
         <Bloque
