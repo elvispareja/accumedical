@@ -15,7 +15,6 @@ import {
   obtenerSlaSupervision,
   crearVisita,
   crearVisitaSupervision,
-  listarCorreosPorDefecto,
   type CorreoVisita,
   listarAseguradorasSupervision,
   listarPrestadoresDeAseguradora,
@@ -288,16 +287,6 @@ export function VisitaFormPage({
     queryKey: ['visita', id],
     queryFn: () => obtenerVisita(id!),
     enabled: editando,
-  })
-
-  // A quién se avisa SIEMPRE, se anote a quien se anote. Se enseñan al
-  // programar para que nadie los vuelva a teclear —ni crea que hay que
-  // hacerlo—; en supervisión dependen de la compañía elegida.
-  const porDefecto = useQuery({
-    queryKey: ['concurrencia', 'correos-por-defecto', supervision ? aseguradoraId : 'propia'],
-    queryFn: () => listarCorreosPorDefecto(supervision ? aseguradoraId : undefined),
-    enabled: !supervision || Boolean(aseguradoraId),
-    staleTime: 60_000,
   })
 
   const estadoActual = detalle.data?.estado
@@ -1134,30 +1123,9 @@ export function VisitaFormPage({
               contactos del prestador: enseñaría a gente a la que NO se avisó,
               con su casilla, como si se pudiera marcar ahora. Lo que se enseña
               es el hecho: a quién se avisó de este caso, y nada más. */}
-          {/* Los fijos, primero y apagados: el aviso les llega igual, así que
-              enseñarlos evita que alguien los teclee otra vez o crea que se
-              olvidaron. No se pueden quitar, y por eso no hay casilla. */}
-          {!soloLectura && (porDefecto.data ?? []).length > 0 && (
-            <div className="mb-6">
-              <p className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
-                Correos por defecto
-              </p>
-              <div className="mt-3 space-y-3">
-                {(porDefecto.data ?? []).map((fijo, indice) => (
-                  <div key={fijo.email} className="space-y-2">
-                    <Label htmlFor={`fijo-${indice}`}>
-                      <span className="font-normal text-tenue-fg">{fijo.quien}</span>
-                    </Label>
-                    <Input id={`fijo-${indice}`} value={fijo.email} disabled />
-                  </div>
-                ))}
-              </div>
-              <p className="mt-2 text-xs text-tenue-fg">
-                A estos se les avisa siempre: no hace falta anotarlos.
-              </p>
-            </div>
-          )}
-
+          {/* Los correos por defecto (quien creó el caso y los coordinadores)
+              ya no se enseñan (pedido del usuario, 26/10/2026): el servidor
+              los avisa siempre, se anoten o no. */}
           {soloLectura ? (
             <ListaDeAvisados correos={detalle.data?.correos ?? []} />
           ) : (
