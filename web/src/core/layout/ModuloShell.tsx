@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, ChevronDown, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 
-import { cambiarModulo, cerrarSesion, type ModuloDelUsuario } from '@/core/auth/api'
+import { cambiarModulo, cerrarSesion } from '@/core/auth/api'
 import { esCoordinador } from '@/core/auth/area'
 import { nombreDeRol } from '@/core/auth/roles'
 import { BotonTema } from '@/core/components/BotonTema'
@@ -19,14 +19,9 @@ import { useToast } from '@/shared/components/ui/toast'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 
-/** Sus módulos de la A a la Z, que es como se leen de arriba abajo. */
-function porAbecedario(modulos: ModuloDelUsuario[]): ModuloDelUsuario[] {
-  return [...modulos].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
-}
-
 /**
- * Armazón de un módulo: topbar con su acento y el selector para cambiar de
- * módulo sin volver a entrar. Lo que va debajo lo pone cada módulo con su propio
+ * Armazón de un módulo: topbar con su acento, la identidad del módulo, la
+ * campana, el tema y «Salir». Lo que va debajo lo pone cada módulo con su propio
  * `modules/<slug>/routes.tsx`; los que todavía no tienen pantallas cuelgan del
  * marcador de posición `ModuloPendiente`.
  */
@@ -88,7 +83,6 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
 
   if (!modulo) return null
 
-  const otros = porAbecedario(sesion?.modulos ?? []).filter((m) => m.slug !== slug)
   const rolVisible = nombreDeRol(modulo.rol, Boolean(sesion?.aseguradora))
 
   // Quién es y dónde está: el mismo bloque en los dos armazones.
@@ -177,41 +171,9 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
           {identidadDelModulo}
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Cambiar de módulo sin reautenticar. Con uno solo no hay nada que
-                elegir, así que el selector no se pinta. */}
-            {otros.length > 0 && (
-              <div className="group relative">
-                <Boton variante="contorno" tamano="sm">
-                  Cambiar de módulo
-                  <ChevronDown aria-hidden="true" />
-                </Boton>
-                <ul
-                  className={cn(
-                    'invisible absolute right-0 z-40 mt-1 w-60 rounded-md border border-borde bg-superficie p-1 opacity-0 shadow-elevada',
-                    'transition-[opacity,visibility] duration-150 ease-natural',
-                    'group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100',
-                  )}
-                >
-                  {[modulo, ...otros].map((otro) => {
-                    const suya = identidadDe(otro.codigo)
-                    const actual = otro.slug === slug
-                    return (
-                      <li key={otro.codigo}>
-                        <button
-                          type="button"
-                          onClick={() => cambiar.mutate(otro.slug)}
-                          className="flex w-full items-center gap-2.5 rounded px-2.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-tenue"
-                        >
-                          <span className={cn('size-2 shrink-0 rounded-full', suya.punto)} aria-hidden="true" />
-                          <span className="min-w-0 flex-1 truncate">{otro.nombre}</span>
-                          {actual && <Check className="size-4 shrink-0 text-marca" aria-hidden="true" />}
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            )}
+            {/* Sin «Cambiar de módulo» (pedido del usuario, 26/10/2026): cada app
+                es independiente, con su propio enlace y su login (D52, D53), y
+                la persona ya sabe a qué dirección entrar. */}
 
             {controles}
           </div>
