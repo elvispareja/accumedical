@@ -706,7 +706,7 @@ export function VisitaFormPage({
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="w-full">
       <Link
         to={volverA}
         className="inline-flex items-center gap-1.5 rounded text-sm text-tenue-fg transition-colors duration-150 hover:text-tinta"
