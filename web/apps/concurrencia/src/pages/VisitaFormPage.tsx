@@ -515,11 +515,13 @@ export function VisitaFormPage({
   const visibles = useMemo(() => {
     const termino = busqueda.trim().toLocaleLowerCase()
     const todos = prestadores.data ?? []
-    if (!termino) return todos
+    // Oculta hasta que se escribe (pedido del usuario, 26/10/2026): sin búsqueda
+    // solo se ve el que ya está elegido, para no perderlo de vista.
+    if (!termino) return todos.filter((p) => p.id === form.prestador_id)
     return todos.filter((p) =>
       [p.nombre, p.codigo_interno].some((campo) => campo.toLocaleLowerCase().includes(termino)),
     )
-  }, [prestadores.data, busqueda])
+  }, [prestadores.data, busqueda, form.prestador_id])
 
   function elegirPrestador(prestadorId: string) {
     // Cambiar de prestador invalida la sede y los contactos marcados: son de
@@ -957,6 +959,10 @@ export function VisitaFormPage({
                     <div key={i} className="h-16 animate-pulse rounded-md bg-tenue" />
                   ))}
                 </div>
+              ) : visibles.length === 0 && !busqueda.trim() ? (
+                <p className="rounded-md border border-dashed border-borde px-4 py-6 text-center text-sm text-tenue-fg">
+                  Escribe el nombre o el código para buscar.
+                </p>
               ) : visibles.length === 0 ? (
                 <p className="rounded-md border border-dashed border-borde px-4 py-8 text-center text-sm text-tenue-fg">
                   {(prestadores.data ?? []).length === 0
