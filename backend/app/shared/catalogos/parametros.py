@@ -5,7 +5,7 @@ import unicodedata
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -44,9 +44,25 @@ class TipoPrestadorOut(BaseModel):
     en_uso: int
 
 
+# El nombre: SOLO letras (con tildes y ñ) y espacios, y en MAYÚSCULAS (pedido
+# del usuario, 26/10/2026): «CENTRO DE IMÁGENES». Ni números ni signos.
+_SOLO_LETRAS = re.compile(r"[^\W\d_]+(?: [^\W\d_]+)*")
+
+
+def _nombre_de_tipo(valor: str | None) -> str | None:
+    if valor is None:
+        return None
+    limpio = " ".join(valor.split()).upper()
+    if not _SOLO_LETRAS.fullmatch(limpio):
+        raise ValueError("El nombre solo admite letras y espacios")
+    return limpio
+
+
 class TipoPrestadorCrear(BaseModel):
     nombre: Annotated[str, Field(min_length=2, max_length=NOMBRE_MAX)]
     es_persona: bool = False
+
+    _nombre = field_validator("nombre")(_nombre_de_tipo)
 
 
 class TipoPrestadorActualizar(BaseModel):
@@ -55,6 +71,8 @@ class TipoPrestadorActualizar(BaseModel):
     nombre: Annotated[str, Field(min_length=2, max_length=NOMBRE_MAX)] | None = None
     es_persona: bool | None = None
     activo: bool | None = None
+
+    _nombre = field_validator("nombre")(_nombre_de_tipo)
 
 
 def _codigo_desde(nombre: str) -> str:

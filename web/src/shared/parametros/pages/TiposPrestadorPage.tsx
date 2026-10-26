@@ -287,17 +287,17 @@ function FormularioTipo({
           <Label htmlFor="tipo-nombre">
             Nombre <span className="text-peligro">*</span>
           </Label>
-          {/* Sin mayúsculas automáticas: esto NO es dato de expediente sino
-              una etiqueta del sistema, y «CENTRO DE IMÁGENES» desentonaría en un
-              desplegable donde los de fábrica son «Hospital» y «Clínica»
-              (`docs/07`, §1). */}
+          {/* En MAYÚSCULAS y solo letras y espacios (pedido del usuario,
+              26/10/2026): lo que no es letra no llega ni a escribirse. El
+              servidor aplica la misma regla. */}
           <Input
             id="tipo-nombre"
             value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            placeholder="Centro de imágenes"
+            onChange={(e) =>
+              setNombre(e.target.value.replace(/[^\p{L} ]/gu, '').replace(/ {2,}/g, ' ').toUpperCase())
+            }
+            placeholder="CENTRO DE IMÁGENES"
             maxLength={100}
-            mayusculas={false}
           />
           <p className="text-xs text-tenue-fg">
             {tipo
