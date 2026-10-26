@@ -1,9 +1,11 @@
-import { Building, MapPin, Plus, Trash2 } from 'lucide-react'
+import { Eye, MapPin, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 
 import { useCiudades, useProvincias } from '@/shared/catalogos/hooks'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
+import { Modal } from '@/shared/components/ui/modal'
 import { Select } from '@/shared/components/ui/select'
 import { MapaUbicacion } from '@/shared/mapa/MapaUbicacion'
 import type { EstadoSede, SedeFormulario, SedeSalida } from '@/shared/prestadores/api'
@@ -76,41 +78,21 @@ export function validar(sedes: SedeFormulario[]): string | null {
   return null
 }
 
-/** Una tarjeta de sede. Vive aparte porque cada una pide sus propias ciudades. */
-function TarjetaSede({
+/** El formulario de UNA sede, dentro de la ventana de agregar, ver o editar. */
+function FormularioSede({
   sede,
-  indice,
   onCambiar,
-  onQuitar,
+  soloLectura,
 }: {
   sede: SedeFormulario
-  indice: number
   onCambiar: (clave: string, cambios: Partial<SedeFormulario>) => void
-  onQuitar: (clave: string) => void
+  soloLectura: boolean
 }) {
   const provincias = useProvincias()
   const ciudades = useCiudades(sede.provincia_codigo || null)
 
   return (
-    <fieldset className="rounded-md border border-borde p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <legend className="flex items-center gap-2 font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
-          <Building className="size-3.5" aria-hidden="true" />
-          Sede {indice + 1}
-        </legend>
-        <Boton
-          type="button"
-          variante="fantasma"
-          tamano="sm"
-          onClick={() => onQuitar(sede._key)}
-          aria-label={`Quitar sede ${indice + 1}`}
-          className="hover:text-peligro"
-        >
-          <Trash2 aria-hidden="true" />
-          Quitar
-        </Boton>
-      </div>
-
+    <fieldset disabled={soloLectura}>
       <div className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor={`sede-nombre-${sede._key}`}>
@@ -236,6 +218,7 @@ function TarjetaSede({
           requerido
           punto={{ latitud: sede.latitud, longitud: sede.longitud }}
           onCambiar={(punto) => onCambiar(sede._key, punto)}
+          deshabilitado={soloLectura}
           ayuda="Haz clic en el mapa o arrastra el pin para fijar el punto exacto de la sede."
         />
       </div>
@@ -243,53 +226,193 @@ function TarjetaSede({
   )
 }
 
+/** El nombre de la ciudad y la provincia de una sede (las ciudades se piden por provincia). */
+function Ubicacion({ provincia, ciudad }: { provincia: string; ciudad: string }) {
+  const provincias = useProvincias()
+  const ciudades = useCiudades(provincia || null)
+  const nombreProvincia = provincias.data?.find((p) => p.codigo === provincia)?.nombre
+  const nombreCiudad = ciudades.data?.find((c) => c.codigo === ciudad)?.nombre
+  return (
+    <>
+      <span className="block">{nombreCiudad ?? '—'}</span>
+      <span className="block text-xs text-tenue-fg">{nombreProvincia ?? ''}</span>
+    </>
+  )
+}
+
+type Ventana = { modo: 'nueva' | 'editar' | 'ver'; borrador: SedeFormulario } | null
+
 /**
- * Lista editable de sedes. Tener sedes es opcional; la sede que se crea lleva
- * todos sus campos, coordenadas incluidas.
+ * Las sedes en una TABLA (pedido del usuario, 26/10/2026): cada fila con Ver,
+ * Editar y Quitar; agregar y editar se hacen en una ventana. Tener sedes es
+ * opcional; la sede que se crea lleva todos sus campos, coordenadas incluidas.
+ * Lo que se cambia aquí se guarda con «Guardar cambios» del prestador.
  */
 export function SedesPanel({
   sedes,
-  onAnadir,
+  onAgregar,
   onCambiar,
   onQuitar,
 }: {
   sedes: SedeFormulario[]
-  onAnadir: () => void
+  onAgregar: (sede: SedeFormulario) => void
   onCambiar: (clave: string, cambios: Partial<SedeFormulario>) => void
   onQuitar: (clave: string) => void
 }) {
-  if (sedes.length === 0) {
-    return (
-      <div className="rounded-md border border-dashed border-borde px-6 py-10 text-center">
-        <MapPin className="mx-auto size-5 text-tenue-fg" aria-hidden="true" />
-        <p className="mt-3 font-display text-sm font-medium">Sin sedes</p>
-        <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">
-          Las sedes son opcionales. Añade una si este prestador atiende en varios sitios.
-        </p>
-        <Boton type="button" tamano="sm" className="mt-4" onClick={onAnadir}>
-          <Plus aria-hidden="true" />
-          Añadir sede
-        </Boton>
-      </div>
-    )
+  const [ventana, setVentana] = useState<Ventana>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  function abrir(modo: 'nueva' | 'editar' | 'ver', sede?: SedeFormulario) {
+    setError(null)
+    setVentana({ modo, borrador: sede ? { ...sede } : sedeVacia() })
   }
+
+  function guardar() {
+    if (!ventana) return
+    const { modo, borrador } = ventana
+    // La misma validación de siempre, sobre la lista como quedaría.
+    const lista =
+      modo === 'nueva'
+        ? [...sedes, borrador]
+        : sedes.map((s) => (s._key === borrador._key ? borrador : s))
+    const problema = validar(lista)
+    if (problema) return setError(problema)
+    if (modo === 'nueva') onAgregar(borrador)
+    else onCambiar(borrador._key, borrador)
+    setVentana(null)
+  }
+
+  const soloLectura = ventana?.modo === 'ver'
 
   return (
     <div className="space-y-4">
-      {sedes.map((sede, indice) => (
-        <TarjetaSede
-          key={sede._key}
-          sede={sede}
-          indice={indice}
-          onCambiar={onCambiar}
-          onQuitar={onQuitar}
-        />
-      ))}
+      {sedes.length === 0 ? (
+        <div className="rounded-md border border-dashed border-borde px-6 py-10 text-center">
+          <MapPin className="mx-auto size-5 text-tenue-fg" aria-hidden="true" />
+          <p className="mt-3 font-display text-sm font-medium">Sin sedes</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">
+            Las sedes son opcionales. Añade una si este prestador atiende en varios sitios.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-borde">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-tenue/40 font-display text-[0.6875rem] uppercase tracking-[0.09em] text-tenue-fg">
+              <tr>
+                <th className="px-4 py-3 font-medium">Sede</th>
+                <th className="px-4 py-3 font-medium">Ciudad</th>
+                <th className="px-4 py-3 font-medium">Dirección</th>
+                <th className="px-4 py-3 font-medium">Teléfono</th>
+                <th className="px-4 py-3 font-medium">Estado</th>
+                <th className="px-4 py-3" aria-label="Acciones" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-borde">
+              {sedes.map((sede) => (
+                <tr key={sede._key} className="align-top">
+                  <td className="px-4 py-3 font-medium">{sede.nombre || '—'}</td>
+                  <td className="px-4 py-3">
+                    <Ubicacion provincia={sede.provincia_codigo} ciudad={sede.ciudad_codigo} />
+                  </td>
+                  <td className="max-w-xs px-4 py-3 text-tenue-fg">{sede.direccion || '—'}</td>
+                  <td className="px-4 py-3 tabular text-tenue-fg">{sede.telefono || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={
+                        sede.estado === 'activa'
+                          ? 'rounded-full border border-exito/40 bg-exito-suave/50 px-2 py-0.5 text-xs'
+                          : 'rounded-full border border-borde px-2 py-0.5 text-xs text-tenue-fg'
+                      }
+                    >
+                      {sede.estado === 'activa' ? 'Activa' : 'Inactiva'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2">
+                    <div className="flex justify-end gap-1">
+                      <Boton type="button" variante="fantasma" tamano="sm" onClick={() => abrir('ver', sede)}>
+                        <Eye aria-hidden="true" />
+                        Ver
+                      </Boton>
+                      <Boton type="button" variante="contorno" tamano="sm" onClick={() => abrir('editar', sede)}>
+                        <Pencil aria-hidden="true" />
+                        Editar
+                      </Boton>
+                      <Boton
+                        type="button"
+                        variante="fantasma"
+                        tamano="sm"
+                        onClick={() => onQuitar(sede._key)}
+                        aria-label={`Quitar ${sede.nombre || 'la sede'}`}
+                        className="hover:text-peligro"
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </Boton>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      <Boton type="button" variante="contorno" tamano="sm" onClick={onAnadir}>
+      <Boton type="button" variante="contorno" tamano="sm" onClick={() => abrir('nueva')}>
         <Plus aria-hidden="true" />
         Añadir sede
       </Boton>
+
+      <Modal
+        abierto={ventana !== null}
+        onCerrar={() => setVentana(null)}
+        titulo={
+          ventana?.modo === 'nueva'
+            ? 'Nueva sede'
+            : ventana?.modo === 'editar'
+              ? `Editar ${ventana.borrador.nombre || 'sede'}`
+              : (ventana?.borrador.nombre ?? 'Sede')
+        }
+        descripcion={
+          soloLectura ? undefined : 'Se guarda en el prestador al pulsar «Guardar cambios» en su ficha.'
+        }
+        ancho="max-w-3xl"
+        pie={
+          <div className="flex justify-end gap-2">
+            <Boton type="button" variante="contorno" onClick={() => setVentana(null)}>
+              {soloLectura ? 'Cerrar' : 'Cancelar'}
+            </Boton>
+            {soloLectura ? (
+              <Boton
+                type="button"
+                onClick={() => ventana && setVentana({ modo: 'editar', borrador: ventana.borrador })}
+              >
+                <Pencil aria-hidden="true" />
+                Editar
+              </Boton>
+            ) : (
+              <Boton type="button" onClick={guardar}>
+                {ventana?.modo === 'nueva' ? 'Agregar sede' : 'Aplicar cambios'}
+              </Boton>
+            )}
+          </div>
+        }
+      >
+        {ventana && (
+          <div className="space-y-4">
+            {error && (
+              <p className="rounded-md border border-peligro/40 bg-peligro-suave/40 px-3 py-2 text-sm" role="alert">
+                {error}
+              </p>
+            )}
+            <FormularioSede
+              sede={ventana.borrador}
+              soloLectura={soloLectura}
+              onCambiar={(_, cambios) =>
+                setVentana((v) => (v ? { ...v, borrador: { ...v.borrador, ...cambios } } : v))
+              }
+            />
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

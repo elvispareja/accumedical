@@ -40,7 +40,6 @@ import {
   SedesPanel,
   desdeApi as sedesDesdeApi,
   haciaApi as sedesHaciaApi,
-  sedeVacia,
   validar as validarSedes,
 } from '@/shared/prestadores/components/SedesPanel'
 import { ConveniosPanel } from '@/shared/prestadores/components/ConveniosPanel'
@@ -192,8 +191,8 @@ export function PrestadorFormPage() {
     }))
   }
 
-  function anadirSede() {
-    setForm((previo) => ({ ...previo, sedes: [...(previo.sedes ?? []), sedeVacia()] }))
+  function agregarSede(sede: SedeFormulario) {
+    setForm((previo) => ({ ...previo, sedes: [...(previo.sedes ?? []), sede] }))
   }
 
   function cambiarSede(clave: string, cambios: Partial<SedeFormulario>) {
@@ -648,7 +647,7 @@ export function PrestadorFormPage() {
               >
                 <SedesPanel
                   sedes={form.sedes ?? []}
-                  onAnadir={anadirSede}
+                  onAgregar={agregarSede}
                   onCambiar={cambiarSede}
                   onQuitar={quitarSede}
                 />
