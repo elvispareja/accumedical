@@ -12,6 +12,8 @@ export interface TipoPrestador {
   activo: boolean
   /** Cuántos prestadores vivos lo usan. Con uno solo, ya no se puede retirar. */
   en_uso: number
+  /** Tipo fijo del sistema (centro médico, clínica, hospital): nunca se retira. */
+  fijo: boolean
 }
 
 export async function listarTiposPrestador() {

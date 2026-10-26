@@ -164,16 +164,22 @@ export function TiposPrestadorPage() {
                         {/* Retirar uno en uso rompería la ficha de esos
                             prestadores, así que ni se ofrece; el candado explica
                             por qué en vez de dejar un botón muerto. */}
-                        {t.activo && t.en_uso > 0 ? (
+                        {t.activo && (t.fijo || t.en_uso > 0) ? (
                           <span
                             className="inline-flex size-9 items-center justify-center text-tenue-fg"
-                            title={`Lo usan ${t.en_uso} ${
-                              t.en_uso === 1 ? 'prestador' : 'prestadores'
-                            }: no se puede retirar`}
+                            title={
+                              t.fijo
+                                ? 'Tipo fijo del sistema: no se puede retirar'
+                                : `Lo usan ${t.en_uso} ${
+                                    t.en_uso === 1 ? 'prestador' : 'prestadores'
+                                  }: no se puede retirar`
+                            }
                           >
                             <Lock className="size-4" aria-hidden="true" />
                             <span className="sr-only">
-                              En uso por {t.en_uso}: no se puede retirar
+                              {t.fijo
+                                ? 'Tipo fijo del sistema: no se puede retirar'
+                                : `En uso por ${t.en_uso}: no se puede retirar`}
                             </span>
                           </span>
                         ) : (

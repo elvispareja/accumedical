@@ -31,6 +31,9 @@ router = APIRouter(
 )
 
 NOMBRE_MAX = 100
+# Tipos FIJOS del sistema (pedido del usuario, 26/10/2026): los destinos de las
+# auditorías hospitalarias. Se pueden renombrar, pero nunca retirar.
+TIPOS_FIJOS = frozenset({"centro_medico", "clinica", "hospital"})
 CODIGO_MAX = 20
 
 
@@ -39,6 +42,7 @@ class TipoPrestadorOut(BaseModel):
     nombre: str
     es_persona: bool
     activo: bool
+    fijo: bool
     # Cuántos prestadores VIVOS lo usan. Es lo que decide si se puede retirar, y
     # la pantalla lo enseña para que se entienda por qué.
     en_uso: int
@@ -134,6 +138,7 @@ def _salida(db: DbSession, tipo: TipoPrestador) -> TipoPrestadorOut:
         nombre=tipo.nombre,
         es_persona=tipo.es_persona,
         activo=tipo.activo,
+        fijo=tipo.codigo in TIPOS_FIJOS,
         en_uso=_en_uso(db, tipo.codigo),
     )
 
@@ -212,6 +217,11 @@ def actualizar_tipo_prestador(
     cambios = datos.model_dump(exclude_unset=True)
     antes = {"nombre": tipo.nombre, "es_persona": tipo.es_persona, "activo": tipo.activo}
 
+    if cambios.get("activo") is False and tipo.activo and codigo in TIPOS_FIJOS:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"«{tipo.nombre}» es un tipo fijo del sistema: no se puede retirar.",
+        )
     if cambios.get("activo") is False and tipo.activo:
         usos = _en_uso(db, codigo)
         if usos:
