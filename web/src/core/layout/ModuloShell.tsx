@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { cambiarModulo, cerrarSesion } from '@/core/auth/api'
-import { esCoordinador } from '@/core/auth/area'
 import { nombreDeRol } from '@/core/auth/roles'
 import { BotonTema } from '@/core/components/BotonTema'
 import { BotonNotificaciones } from '@/core/notificaciones/BotonNotificaciones'
@@ -140,51 +139,20 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
     </motion.div>
   )
 
-  // El coordinador —el de una familia de Accumedical y el de una compañía, que
-  // para esto son lo mismo— lleva varios módulos a la vez: los suyos viven en el
-  // MISMO menú lateral que el resto de la plataforma, uno por línea y de la A a
-  // la Z. Quien opera o audita un módulo suelto conserva su topbar con el
-  // selector, que para dos entradas es más directo que una columna entera.
-  // El administrador global entra al módulo COMO coordinador de plataforma (D45):
-  // mismo armazón y mismo menú, en el subdominio y con el diseño del módulo.
-  if (esCoordinador(sesion) || sesion?.user.es_admin_global) {
-    return (
-      // La marca del panel es SIEMPRE la de Accumedical, también para quien
-      // entra desde una aseguradora: el menú es la plataforma, y la compañía se
-      // reconoce arriba, en su logo y su nombre junto al módulo.
-      <ArmazonLateral
-        nav={<NavegacionModulo raiz={raiz} />}
-        franja={identidad.punto}
-        topbarIzquierda={identidadDelModulo}
-        topbarDerecha={controles}
-      >
-        {contenido}
-      </ArmazonLateral>
-    )
-  }
-
+  // TODOS con el mismo menú lateral (pedido del usuario, 26/10/2026: «el menú
+  // lateral como Calificación»), también quien opera o audita: dentro del
+  // módulo solo «Bandeja de entrada» y «Notificaciones» (`NavegacionModulo`).
+  // La marca del panel es SIEMPRE la de Accumedical; la compañía se reconoce
+  // arriba, en su logo y su nombre junto al módulo. El administrador global
+  // entra igual, como coordinador de plataforma (D45).
   return (
-    <div className="min-h-dvh bg-fondo">
-      <header className="sticky top-0 z-30 border-b border-borde bg-superficie/95 backdrop-blur">
-        <div className={cn('h-1', identidad.punto)} aria-hidden="true" />
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
-          {identidadDelModulo}
-
-          <div className="ml-auto flex items-center gap-2">
-            {/* Sin «Cambiar de módulo» (pedido del usuario, 26/10/2026): cada app
-                es independiente, con su propio enlace y su login (D52, D53), y
-                la persona ya sabe a qué dirección entrar. */}
-
-            {controles}
-          </div>
-        </div>
-      </header>
-
-      {/* A TODO el ancho, como el área de administración y como el armazón
-          con menú: la bandeja tiene siete columnas y una columna centrada de
-          72 rem le recortaba el estado. Nadie mira una tabla de casos en una
-          hoja estrecha. */}
-      <main className="px-4 py-10 sm:px-6">{contenido}</main>
-    </div>
+    <ArmazonLateral
+      nav={<NavegacionModulo raiz={raiz} />}
+      franja={identidad.punto}
+      topbarIzquierda={identidadDelModulo}
+      topbarDerecha={controles}
+    >
+      {contenido}
+    </ArmazonLateral>
   )
 }
