@@ -9,7 +9,7 @@ import { nombreDeRol } from '@/core/auth/roles'
 import { BotonTema } from '@/core/components/BotonTema'
 import { BotonNotificaciones } from '@/core/notificaciones/BotonNotificaciones'
 import { CLAVE_SESION, useSesion } from '@/core/auth/useSesion'
-import { ArmazonLateral } from '@/core/layout/MenuLateral'
+import { ArmazonLateral, useContextoMenu } from '@/core/layout/MenuLateral'
 import { NavegacionModulo } from '@/core/layout/NavegacionModulo'
 import { identidadDe } from '@/core/modulos/identidad'
 import { cn } from '@/lib/utils'
@@ -87,23 +87,11 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
   // Quién es y dónde está: el mismo bloque en los dos armazones.
   const identidadDelModulo = (
     <div className="flex min-w-0 items-center gap-3">
-      {/* La marca de la compañía si subió logo; el icono del módulo si no.
-          El mismo hueco para los dos: nada baila al cambiar de módulo. */}
-      {sesion?.aseguradora?.tiene_logo && !logoRoto ? (
-        <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-md border border-borde bg-fondo">
-          <img
-            src="/api/v1/auth/mi-aseguradora/logo"
-            alt={`Logo de ${sesion.aseguradora.nombre}`}
-            title={sesion.aseguradora.nombre}
-            className="size-full object-contain"
-            onError={() => setLogoRoto(true)}
-          />
-        </span>
-      ) : (
-        <span className={cn('grid size-9 shrink-0 place-items-center rounded-md', identidad.suave)}>
-          <identidad.Icono className={cn('size-4.5', identidad.texto)} aria-hidden="true" />
-        </span>
-      )}
+      {/* Solo el icono del módulo: el logo de la compañía va en el menú lateral,
+          donde iría el de Accumedical (pedido del usuario, 26/10/2026). */}
+      <span className={cn('grid size-9 shrink-0 place-items-center rounded-md', identidad.suave)}>
+        <identidad.Icono className={cn('size-4.5', identidad.texto)} aria-hidden="true" />
+      </span>
       <div className="min-w-0">
         <p className="truncate font-display text-sm font-semibold">{modulo.nombre}</p>
         <p className="truncate text-xs text-tenue-fg">
@@ -142,17 +130,48 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
   // TODOS con el mismo menú lateral (pedido del usuario, 26/10/2026: «el menú
   // lateral como Calificación»), también quien opera o audita: dentro del
   // módulo solo «Bandeja de entrada» y «Notificaciones» (`NavegacionModulo`).
-  // La marca del panel es SIEMPRE la de Accumedical; la compañía se reconoce
-  // arriba, en su logo y su nombre junto al módulo. El administrador global
-  // entra igual, como coordinador de plataforma (D45).
+  // La marca del panel: el logo de la aseguradora si lo subió; si no, el de
+  // Accumedical (como en Calificación). El administrador global entra igual,
+  // como coordinador de plataforma (D45).
   return (
     <ArmazonLateral
       nav={<NavegacionModulo raiz={raiz} />}
+      marca={
+        sesion?.aseguradora?.tiene_logo && !logoRoto ? (
+          <MarcaDeAseguradora nombre={sesion.aseguradora.nombre} alFallar={() => setLogoRoto(true)} />
+        ) : undefined
+      }
       franja={identidad.punto}
       topbarIzquierda={identidadDelModulo}
       topbarDerecha={controles}
     >
       {contenido}
     </ArmazonLateral>
+  )
+}
+
+/**
+ * El logo de la aseguradora en el hueco de la marca del menú lateral, sobre una
+ * tarjeta clara (los logos de las compañías suelen venir sobre blanco). Si el
+ * archivo no llega, `alFallar` devuelve el hueco a la marca de Accumedical.
+ */
+function MarcaDeAseguradora({ nombre, alFallar }: { nombre: string; alFallar: () => void }) {
+  const { compacto } = useContextoMenu()
+  return (
+    <span
+      className={cn(
+        'grid place-items-center overflow-hidden rounded-md border border-borde bg-white',
+        compacto ? 'size-10 p-1' : 'h-14 w-full px-3 py-1.5',
+      )}
+    >
+      <img
+        src="/api/v1/auth/mi-aseguradora/logo"
+        alt={`Logo de ${nombre}`}
+        title={nombre}
+        draggable={false}
+        className="max-h-full max-w-full object-contain"
+        onError={alFallar}
+      />
+    </span>
   )
 }
