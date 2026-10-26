@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import uuid
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -45,6 +46,8 @@ class ContactoEntrada(BaseModel):
     tipo_documento_codigo: str | None = Field(default=None, max_length=10)
     numero_documento: str | None = Field(default=None, max_length=20)
     cargo: str | None = Field(default=None, max_length=100)
+    # La sede a la que pertenece; None = la casa matriz.
+    sede_id: uuid.UUID | None = None
 
     _obligatorios = field_validator("nombre_principal", "apellido_paterno")(
         personas.validar_solo_letras
@@ -77,6 +80,7 @@ class ContactoSalida(BaseModel):
     tipo_documento_nombre: str | None
     numero_documento: str | None
     cargo: str | None
+    sede_id: str | None = None
 
 
 EstadoSede = Literal["activa", "inactiva"]

@@ -32,6 +32,8 @@ export interface ContactoFormulario extends NombrePersona {
   tipo_documento_codigo: string
   numero_documento: string
   cargo: string
+  /** Solo contactos de prestador: su sede; '' = la casa matriz. */
+  sede_id?: string
 }
 
 export interface ContactoSalida {
@@ -48,6 +50,8 @@ export interface ContactoSalida {
   tipo_documento_nombre: string | null
   numero_documento: string | null
   cargo: string | null
+  /** Solo contactos de prestador: su sede; null = la casa matriz. */
+  sede_id?: string | null
 }
 
 export function contactoVacio(): ContactoFormulario {
@@ -73,13 +77,16 @@ export function desdeApi(contactos: ContactoSalida[]): ContactoFormulario[] {
     tipo_documento_codigo: c.tipo_documento_codigo ?? '',
     numero_documento: c.numero_documento ?? '',
     cargo: c.cargo ?? '',
+    ...(c.sede_id !== undefined ? { sede_id: c.sede_id ?? '' } : {}),
   }))
 }
 
 /** Limpia `_key` y manda los opcionales vacíos como null. */
 export function haciaApi(contactos: ContactoFormulario[]) {
-  return contactos.map(({ _key, ...c }) => ({
+  return contactos.map(({ _key, sede_id, ...c }) => ({
     ...c,
+    // Solo los contactos de prestador llevan sede: a la aseguradora no se le manda.
+    ...(sede_id !== undefined ? { sede_id: sede_id || null } : {}),
     ...nombreHaciaApi(c),
     email: c.email.trim(),
     telefono: c.telefono.trim() || null,
@@ -129,6 +136,7 @@ export function ContactosPanel({
   onCambiar,
   onQuitar,
   descripcionVacio,
+  sedes,
 }: {
   contactos: ContactoFormulario[]
   tiposDocumento: { codigo: string; nombre: string }[]
@@ -137,6 +145,11 @@ export function ContactosPanel({
   onCambiar: (clave: string, campo: keyof ContactoFormulario, valor: string) => void
   onQuitar: (clave: string) => void
   descripcionVacio: string
+  /**
+   * Solo prestadores: sus sedes YA GUARDADAS. Con ellas cada contacto elige a
+   * cuál pertenece (pedido del usuario, 26/10/2026); vacío = la casa matriz.
+   */
+  sedes?: { id: string; nombre: string }[]
 }) {
   if (contactos.length === 0) {
     return (
@@ -172,6 +185,26 @@ export function ContactosPanel({
               Quitar
             </Boton>
           </div>
+
+          {sedes && (
+            <div className="mb-4 space-y-2">
+              <Label htmlFor={`sede-${contacto._key}`}>
+                Sede <span className="text-peligro">*</span>
+              </Label>
+              <Select
+                id={`sede-${contacto._key}`}
+                value={contacto.sede_id ?? ''}
+                onChange={(e) => onCambiar(contacto._key, 'sede_id', e.target.value)}
+              >
+                <option value="">Casa matriz</option>
+                {sedes.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nombre}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          )}
 
           <CamposNombre
             idPrefijo={`contacto-${contacto._key}`}

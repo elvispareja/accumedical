@@ -84,8 +84,12 @@ def fijar(
     dueno_id: uuid.UUID,
     entrantes: list[dict[str, Any]],
     autor: uuid.UUID,
+    extras: tuple[str, ...] = (),
 ) -> dict[str, int] | None:
     """
+    `extras`: columnas propias de un dueño que se copian tal cual (p. ej. la
+    `sede_id` del contacto de un prestador).
+
     Reconcilia la lista completa: los que traen `id` se actualizan, los que no lo
     traen se crean, y los que faltan respecto a lo guardado se borran lógicamente.
 
@@ -158,6 +162,7 @@ def fijar(
             "tipo_documento_codigo": datos.get("tipo_documento_codigo"),
             "numero_documento": (datos.get("numero_documento") or None),
             "cargo": ((datos.get("cargo") or "").strip() or None),
+            **{extra: datos.get(extra) for extra in extras},
         }
 
         crudo = datos.get("id")

@@ -646,6 +646,13 @@ export function PrestadorFormPage() {
                   onCambiar={cambiarContacto}
                   onQuitar={quitarContacto}
                   descripcionVacio="Añade a quién dirigirse en este prestador."
+                  // Solo las sedes ya guardadas: una nueva aún no tiene id al que atarse.
+                  sedes={(form.sedes ?? [])
+                    .filter((s) => s.id)
+                    .map((s) => ({
+                      id: s.id as string,
+                      nombre: s.estado === 'activa' ? s.nombre : `${s.nombre} (inactiva)`,
+                    }))}
                 />
               </Bloque>
             </div>

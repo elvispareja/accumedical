@@ -103,6 +103,7 @@ def _detalle_completo(db: DbSession, prestador_id) -> PrestadorDetalle:
                 tipo_documento_codigo=c.tipo_documento_codigo,
                 tipo_documento_nombre=nombres_tipo.get(c.tipo_documento_codigo or ""),
                 numero_documento=c.numero_documento,
+                sede_id=str(c.sede_id) if c.sede_id else None,
                 cargo=c.cargo,
             )
             for c in service.contactos_de(db, p.id)

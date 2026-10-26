@@ -71,7 +71,7 @@ ENTIDADES: list[tuple[str, str]] = [
         "prestador_contactos",
         "SELECT id, prestador_id, nombre_principal, nombre_secundario, apellido_paterno,"
         " apellido_materno, email::text AS email, telefono, tipo_documento_codigo,"
-        " numero_documento, cargo,"
+        " numero_documento, cargo, sede_id,"
         " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
         " FROM prestador_contactos",
     ),

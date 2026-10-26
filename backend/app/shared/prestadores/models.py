@@ -139,6 +139,10 @@ class PrestadorContacto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     numero_documento: Mapped[str | None] = mapped_column(String(20))
     # Puesto que ocupa: «Gerente de Siniestros». Opcional.
     cargo: Mapped[str | None] = mapped_column(String(100))
+    # La sede a la que pertenece; NULL = la casa matriz (26/10/2026).
+    sede_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("prestador_sedes.id", ondelete="RESTRICT")
+    )
 
 
 class PrestadorSede(Base, AuditoriaFilaMixin, BorradoLogicoMixin):

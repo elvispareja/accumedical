@@ -302,7 +302,18 @@ def nombres_tipos_documento(db: DbSession) -> dict[str, str]:
 def fijar_contactos(
     db: DbSession, prestador_id: uuid.UUID, entrantes: list[dict[str, Any]], autor: uuid.UUID
 ) -> dict[str, int] | None:
-    return contactos.fijar(db, PrestadorContacto, "prestador_id", prestador_id, entrantes, autor)
+    # La sede de cada contacto debe ser de ESTE prestador y estar guardada.
+    suyas = {s.id for s in sedes_service.listar(db, prestador_id)}
+    for datos in entrantes:
+        sede_id = datos.get("sede_id")
+        if sede_id is not None and uuid.UUID(str(sede_id)) not in suyas:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La sede de uno de los contactos no es de este prestador",
+            )
+    return contactos.fijar(
+        db, PrestadorContacto, "prestador_id", prestador_id, entrantes, autor, extras=("sede_id",)
+    )
 
 
 # ────────────────────────────────── Sedes ────────────────────────────────────
