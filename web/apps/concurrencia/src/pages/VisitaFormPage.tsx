@@ -689,7 +689,7 @@ export function VisitaFormPage({
     if (problemaDocumento) return toast.error(problemaDocumento)
     if (!form.prestador_id) return toast.error('Elige el prestador que se va a visitar')
     if (elegido && elegido.sedes.length > 0 && !form.sede_id) {
-      return toast.error('Elige a dónde va el médico auditor: la casa matriz o una sede')
+      return toast.error('Elige la sede: la casa matriz o una de sus sedes')
     }
     if (vencido && !form.desde) return toast.error('Indica cuándo debe llegar el auditor')
     const correos = form.correos.map((c) => c.valor.trim()).filter(Boolean)
@@ -1025,18 +1025,18 @@ export function VisitaFormPage({
         </Bloque>
 
         {form.prestador_id && (
-          <Bloque titulo="A dónde hay que ir" retraso={0.05}>
+          <Bloque titulo="Sedes" retraso={0.05}>
             {elegido && elegido.sedes.length > 0 ? (
               <div className="space-y-2">
                 <Label htmlFor="sede">
-                  Destino <span className="text-peligro">*</span>
+                  Sede <span className="text-peligro">*</span>
                 </Label>
                 <Select
                   id="sede"
                   value={form.sede_id}
                   onChange={(e) => setForm((previo) => ({ ...previo, sede_id: e.target.value }))}
                 >
-                  <option value="">Elige el destino</option>
+                  <option value="">Elige la sede</option>
                   {/* Tener sedes no quita la casa matriz de en medio: sigue
                       siendo un sitio al que se puede ir, y es el que la base
                       guarda como visita sin sede. */}
