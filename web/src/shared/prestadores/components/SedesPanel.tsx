@@ -1,4 +1,4 @@
-import { Eye, MapPin, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, MapPin, Pencil, Plus, Power, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 
 import { useCiudades, useProvincias } from '@/shared/catalogos/hooks'
@@ -242,9 +242,14 @@ function Ubicacion({ provincia, ciudad }: { provincia: string; ciudad: string })
 
 type Ventana = { modo: 'nueva' | 'editar' | 'ver'; borrador: SedeFormulario } | null
 
+/** Cinco sedes por página (pedido del usuario, 26/10/2026). */
+const POR_PAGINA = 5
+
 /**
- * Las sedes en una TABLA (pedido del usuario, 26/10/2026): cada fila con Ver,
- * Editar y Quitar; agregar y editar se hacen en una ventana. Tener sedes es
+ * Las sedes en una TABLA (pedido del usuario, 26/10/2026), de cinco en cinco,
+ * con Ver, Editar y Activar/Desactivar: una sede GUARDADA no se elimina (se
+ * perdería la trazabilidad de las visitas que fueron a ella); solo se quita una
+ * recién añadida que aún no se guardó. Agregar y editar van en una ventana. Tener sedes es
  * opcional; la sede que se crea lleva todos sus campos, coordenadas incluidas.
  * Lo que se cambia aquí se guarda con «Guardar cambios» del prestador.
  */
@@ -261,6 +266,10 @@ export function SedesPanel({
 }) {
   const [ventana, setVentana] = useState<Ventana>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pagina, setPagina] = useState(0)
+  const paginas = Math.max(1, Math.ceil(sedes.length / POR_PAGINA))
+  const actual = Math.min(pagina, paginas - 1)
+  const enPagina = sedes.slice(actual * POR_PAGINA, actual * POR_PAGINA + POR_PAGINA)
 
   function abrir(modo: 'nueva' | 'editar' | 'ver', sede?: SedeFormulario) {
     setError(null)
@@ -277,8 +286,11 @@ export function SedesPanel({
         : sedes.map((s) => (s._key === borrador._key ? borrador : s))
     const problema = validar(lista)
     if (problema) return setError(problema)
-    if (modo === 'nueva') onAgregar(borrador)
-    else onCambiar(borrador._key, borrador)
+    if (modo === 'nueva') {
+      onAgregar(borrador)
+      // A la última página, donde queda la nueva.
+      setPagina(Math.floor(sedes.length / POR_PAGINA))
+    } else onCambiar(borrador._key, borrador)
     setVentana(null)
   }
 
@@ -286,6 +298,18 @@ export function SedesPanel({
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-tenue-fg">
+          {sedes.length === 0
+            ? 'Sin sedes registradas'
+            : `${sedes.length} ${sedes.length === 1 ? 'sede' : 'sedes'}`}
+        </p>
+        <Boton type="button" tamano="sm" onClick={() => abrir('nueva')}>
+          <Plus aria-hidden="true" />
+          Añadir sede
+        </Boton>
+      </div>
+
       {sedes.length === 0 ? (
         <div className="rounded-md border border-dashed border-borde px-6 py-10 text-center">
           <MapPin className="mx-auto size-5 text-tenue-fg" aria-hidden="true" />
@@ -308,7 +332,7 @@ export function SedesPanel({
               </tr>
             </thead>
             <tbody className="divide-y divide-borde">
-              {sedes.map((sede) => (
+              {enPagina.map((sede) => (
                 <tr key={sede._key} className="align-top">
                   <td className="px-4 py-3 font-medium">{sede.nombre || '—'}</td>
                   <td className="px-4 py-3">
@@ -337,16 +361,36 @@ export function SedesPanel({
                         <Pencil aria-hidden="true" />
                         Editar
                       </Boton>
-                      <Boton
-                        type="button"
-                        variante="fantasma"
-                        tamano="sm"
-                        onClick={() => onQuitar(sede._key)}
-                        aria-label={`Quitar ${sede.nombre || 'la sede'}`}
-                        className="hover:text-peligro"
-                      >
-                        <Trash2 aria-hidden="true" />
-                      </Boton>
+                      {sede.id ? (
+                        <Boton
+                          type="button"
+                          variante="fantasma"
+                          tamano="sm"
+                          onClick={() =>
+                            onCambiar(sede._key, {
+                              estado: sede.estado === 'activa' ? 'inactiva' : 'activa',
+                            })
+                          }
+                          title={sede.estado === 'activa' ? 'Desactivar' : 'Activar'}
+                          aria-label={`${sede.estado === 'activa' ? 'Desactivar' : 'Activar'} ${sede.nombre}`}
+                          className={sede.estado === 'activa' ? 'hover:text-aviso' : 'hover:text-exito'}
+                        >
+                          <Power aria-hidden="true" />
+                        </Boton>
+                      ) : (
+                        // Recién añadida y sin guardar: aún no tiene historia que perder.
+                        <Boton
+                          type="button"
+                          variante="fantasma"
+                          tamano="sm"
+                          onClick={() => onQuitar(sede._key)}
+                          title="Quitar (todavía no se ha guardado)"
+                          aria-label={`Quitar ${sede.nombre || 'la sede'}`}
+                          className="hover:text-peligro"
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </Boton>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -356,10 +400,35 @@ export function SedesPanel({
         </div>
       )}
 
-      <Boton type="button" variante="contorno" tamano="sm" onClick={() => abrir('nueva')}>
-        <Plus aria-hidden="true" />
-        Añadir sede
-      </Boton>
+      {paginas > 1 && (
+        <div className="flex items-center justify-between gap-3 text-sm text-tenue-fg">
+          <span>
+            Página {actual + 1} de {paginas}
+          </span>
+          <div className="flex gap-2">
+            <Boton
+              type="button"
+              variante="contorno"
+              tamano="sm"
+              onClick={() => setPagina(actual - 1)}
+              disabled={actual === 0}
+            >
+              <ChevronLeft aria-hidden="true" />
+              Anterior
+            </Boton>
+            <Boton
+              type="button"
+              variante="contorno"
+              tamano="sm"
+              onClick={() => setPagina(actual + 1)}
+              disabled={actual >= paginas - 1}
+            >
+              Siguiente
+              <ChevronRight aria-hidden="true" />
+            </Boton>
+          </div>
+        </div>
+      )}
 
       <Modal
         abierto={ventana !== null}

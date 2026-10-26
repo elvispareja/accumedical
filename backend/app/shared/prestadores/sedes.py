@@ -68,12 +68,11 @@ def fijar(
     autor: uuid.UUID,
 ) -> dict[str, int] | None:
     """
-    Reconcilia la lista completa, igual que los contactos: las que traen `id` se
-    actualizan, las que no lo traen se crean, y las que faltan respecto a lo
-    guardado se borran lógicamente.
+    Reconcilia la lista completa: las que traen `id` se actualizan y las que no
+    lo traen se crean. Ninguna guardada puede faltar: las sedes no se eliminan,
+    se desactivan.
 
-    Tener sedes es opcional —una lista vacía es válida y da de baja las que
-    hubiera—, pero la sede que se envía va entera: nombre, provincia, ciudad,
+    Tener sedes es opcional, pero la sede que se envía va entera: nombre, provincia, ciudad,
     dirección y punto en el mapa los exige el esquema.
     """
     existentes = {s.id: s for s in listar(db, prestador_id)}
@@ -108,17 +107,14 @@ def fijar(
             )
         vistos.add(clave)
 
-    # ── 2. Las ausentes se dan de baja ANTES de insertar nada ────────────
-    # Y se vuelca el cambio: si una fila nueva reutiliza el valor único de la
-    # que se va —el nombre de la sede, el correo del contacto—, el índice único
-    # parcial vería las dos vivas a la vez y rechazaría el guardado entero.
-    for sede_id, sede in existentes.items():
-        if sede_id not in vistos:
-            sede.deleted_at = func.now()
-            sede.deleted_by = autor
-            eliminadas += 1
-    if eliminadas:
-        db.flush()
+    # ── 2. Una sede guardada NO se elimina (pedido del usuario, 26/10/2026):
+    # se desactiva (`estado = inactiva`), para no perder la trazabilidad de las
+    # visitas que fueron a ella. Si falta alguna en la lista, se rechaza todo.
+    if set(existentes) - vistos:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Las sedes no se eliminan: desactívala para dejar de usarla",
+        )
 
     # ── 3. Altas y ediciones ─────────────────────────────────────────────
     for datos in entrantes:
