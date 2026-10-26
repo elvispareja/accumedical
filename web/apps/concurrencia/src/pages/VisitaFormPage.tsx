@@ -612,7 +612,9 @@ export function VisitaFormPage({
         paciente_numero_documento: form.paciente_numero_documento.trim(),
         // La casa matriz se guarda como ausencia de sede.
         sede_id: form.sede_id === MATRIZ ? null : form.sede_id || null,
-        desde: aISO(form.desde),
+        // Sin el bloque «Cuándo» (pedido del usuario, 26/10/2026): mientras se
+        // definen los parámetros nuevos, la hora base es la del registro.
+        desde: form.desde ? aISO(form.desde) : new Date().toISOString(),
         correos: correosAEnviar(),
         observaciones: form.observaciones.trim() || null,
       }
@@ -689,7 +691,7 @@ export function VisitaFormPage({
     if (elegido && elegido.sedes.length > 0 && !form.sede_id) {
       return toast.error('Elige a dónde va el médico auditor: la casa matriz o una sede')
     }
-    if (!form.desde) return toast.error('Indica cuándo debe llegar el auditor')
+    if (vencido && !form.desde) return toast.error('Indica cuándo debe llegar el auditor')
     const correos = form.correos.map((c) => c.valor.trim()).filter(Boolean)
     if (new Set(correos.map((c) => c.toLocaleLowerCase())).size !== correos.length) {
       return toast.error('Hay un correo repetido')
@@ -1074,43 +1076,48 @@ export function VisitaFormPage({
           </Bloque>
         )}
 
-        <Bloque
-          titulo="Cuándo"
-          descripcion="A qué hora debe llegar el médico auditor. La entrega del informe sale del SLA de la compañía."
-          retraso={0.1}
-        >
-          <div className="grid gap-5 sm:grid-cols-2">
-            {vencido && (
-              <p className="sm:col-span-2 rounded-md border border-dashed border-peligro/40 bg-peligro-suave/40 px-3 py-2.5 text-sm">
-                Esta visita <strong className="font-medium">venció sin que el auditor llegara</strong>.
-                Ponle una fecha y una hora nuevas, y el caso vuelve a la agenda: le reaparece al
-                auditor que ya tenía o, si no tenía, Accumedical lo deriva otra vez.
-              </p>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="desde">
-                Cuándo debe llegar el auditor <span className="text-peligro">*</span>
-              </Label>
-              <Input
-                id="desde"
-                type="datetime-local"
-                value={form.desde}
-                onChange={(e) => setForm((previo) => ({ ...previo, desde: e.target.value }))}
-                required
-              />
+        {/* Fuera el bloque «Cuándo» (pedido del usuario, 26/10/2026; los
+            parámetros nuevos los dirá él). Solo queda para REPROGRAMAR una
+            visita vencida, que sin fecha nueva no vuelve a la agenda. */}
+        {vencido && (
+          <Bloque
+            titulo="Cuándo"
+            descripcion="A qué hora debe llegar el médico auditor. La entrega del informe sale del SLA de la compañía."
+            retraso={0.1}
+          >
+            <div className="grid gap-5 sm:grid-cols-2">
+              {vencido && (
+                <p className="sm:col-span-2 rounded-md border border-dashed border-peligro/40 bg-peligro-suave/40 px-3 py-2.5 text-sm">
+                  Esta visita <strong className="font-medium">venció sin que el auditor llegara</strong>.
+                  Ponle una fecha y una hora nuevas, y el caso vuelve a la agenda: le reaparece al
+                  auditor que ya tenía o, si no tenía, Accumedical lo deriva otra vez.
+                </p>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="desde">
+                  Cuándo debe llegar el auditor <span className="text-peligro">*</span>
+                </Label>
+                <Input
+                  id="desde"
+                  type="datetime-local"
+                  value={form.desde}
+                  onChange={(e) => setForm((previo) => ({ ...previo, desde: e.target.value }))}
+                  required
+                />
+              </div>
+              {/* La entrega NO se teclea: sale del SLA que la compañía tiene
+                  pactado para Concurrencia. Se enseña calculada para que quien
+                  programa sepa para cuándo es, sin poder moverla. */}
+              <div className="space-y-2">
+                <Label htmlFor="entrega">Entrega del informe</Label>
+                <Input id="entrega" value={entrega.texto} disabled />
+                <p className="text-xs text-tenue-fg" aria-live="polite">
+                  {entrega.ayuda}
+                </p>
+              </div>
             </div>
-            {/* La entrega NO se teclea: sale del SLA que la compañía tiene
-                pactado para Concurrencia. Se enseña calculada para que quien
-                programa sepa para cuándo es, sin poder moverla. */}
-            <div className="space-y-2">
-              <Label htmlFor="entrega">Entrega del informe</Label>
-              <Input id="entrega" value={entrega.texto} disabled />
-              <p className="text-xs text-tenue-fg" aria-live="polite">
-                {entrega.ayuda}
-              </p>
-            </div>
-          </div>
-        </Bloque>
+          </Bloque>
+        )}
 
         <Bloque
           titulo="A quién se avisa"
