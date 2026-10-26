@@ -801,10 +801,7 @@ export function VisitaFormPage({
             </Select>
           </Bloque>
         )}
-        <Bloque
-          titulo="Paciente"
-          descripcion="Primero su identificación: buscamos si ya lo tenemos y, si sí, sus datos se llenan solos."
-        >
+        <Bloque titulo="Paciente">
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="paciente_tipo">
