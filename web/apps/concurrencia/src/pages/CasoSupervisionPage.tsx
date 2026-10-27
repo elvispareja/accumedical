@@ -382,7 +382,6 @@ function Derivar({ caso }: { caso: VisitaSupervisionDetalle }) {
     programado ? '' : aLocal(caso.llegada_limite),
   )
   const [auditorId, setAuditorId] = useState(caso.auditor_id ?? '')
-  const auditores = useQuery({ queryKey: ['auditores'], queryFn: listarAuditores })
 
   const guardar = useMutation({
     mutationFn: () =>
@@ -403,20 +402,6 @@ function Derivar({ caso }: { caso: VisitaSupervisionDetalle }) {
           'No se pudo derivar el caso',
       ),
   })
-
-  const lista = auditores.data ?? []
-  const enCiudad = caso.ciudad_nombre
-    ? lista.filter((a) => a.ciudad_nombre === caso.ciudad_nombre)
-    : []
-  const enProvincia = caso.provincia_nombre
-    ? lista.filter((a) => a.provincia_nombre === caso.provincia_nombre && !enCiudad.includes(a))
-    : []
-  const otros = lista.filter((a) => !enCiudad.includes(a) && !enProvincia.includes(a))
-  const grupos: [string, AuditorElegible[]][] = [
-    [`En la ciudad${caso.ciudad_nombre ? ` · ${caso.ciudad_nombre}` : ''}`, enCiudad],
-    [`En la provincia${caso.provincia_nombre ? ` · ${caso.provincia_nombre}` : ''}`, enProvincia],
-    ['En otras provincias', otros],
-  ]
 
   return (
     <div className="space-y-3">
@@ -450,35 +435,12 @@ function Derivar({ caso }: { caso: VisitaSupervisionDetalle }) {
           <Label htmlFor="sl-auditor">
             Auditor <span className="text-peligro">*</span>
           </Label>
-          <Select
+          <SelectorDeAuditor
             id="sl-auditor"
-            value={auditorId}
-            onChange={(e) => setAuditorId(e.target.value)}
-            disabled={auditores.isPending}
-          >
-            <option value="">
-              {auditores.isPending ? 'Cargando auditores…' : 'Elige el auditor'}
-            </option>
-            {grupos
-              .filter(([, filas]) => filas.length > 0)
-              .map(([titulo, filas]) => (
-                <optgroup key={titulo} label={titulo}>
-                  {filas.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {`${a.nombre_completo} · ${
-                        [a.ciudad_nombre, a.provincia_nombre].filter(Boolean).join(', ') ||
-                        'Sin ubicación registrada'
-                      }`}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-          </Select>
-          {auditores.data?.length === 0 && (
-            <p className="text-xs text-tenue-fg">
-              No hay médicos auditores activos: créalos en Usuarios del administrador.
-            </p>
-          )}
+            caso={caso}
+            valor={auditorId}
+            alCambiar={setAuditorId}
+          />
         </div>
       </div>
       <Boton
@@ -500,10 +462,73 @@ function Derivar({ caso }: { caso: VisitaSupervisionDetalle }) {
 }
 
 /**
+ * El auditor del caso: los de la ciudad del destino primero, luego los de la
+ * provincia y luego el resto. Lo usan «Derivar» y «Nuevo horario».
+ */
+function SelectorDeAuditor({
+  id,
+  caso,
+  valor,
+  alCambiar,
+}: {
+  id: string
+  caso: VisitaSupervisionDetalle
+  valor: string
+  alCambiar: (id: string) => void
+}) {
+  const auditores = useQuery({ queryKey: ['auditores'], queryFn: listarAuditores })
+  const lista = auditores.data ?? []
+  const enCiudad = caso.ciudad_nombre
+    ? lista.filter((a) => a.ciudad_nombre === caso.ciudad_nombre)
+    : []
+  const enProvincia = caso.provincia_nombre
+    ? lista.filter((a) => a.provincia_nombre === caso.provincia_nombre && !enCiudad.includes(a))
+    : []
+  const otros = lista.filter((a) => !enCiudad.includes(a) && !enProvincia.includes(a))
+  const grupos: [string, AuditorElegible[]][] = [
+    [`En la ciudad${caso.ciudad_nombre ? ` · ${caso.ciudad_nombre}` : ''}`, enCiudad],
+    [`En la provincia${caso.provincia_nombre ? ` · ${caso.provincia_nombre}` : ''}`, enProvincia],
+    ['En otras provincias', otros],
+  ]
+  return (
+    <>
+      <Select
+        id={id}
+        value={valor}
+        onChange={(e) => alCambiar(e.target.value)}
+        disabled={auditores.isPending}
+      >
+        <option value="">{auditores.isPending ? 'Cargando auditores…' : 'Elige el auditor'}</option>
+        {grupos
+          .filter(([, filas]) => filas.length > 0)
+          .map(([titulo, filas]) => (
+            <optgroup key={titulo} label={titulo}>
+              {filas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {`${a.nombre_completo} · ${
+                    [a.ciudad_nombre, a.provincia_nombre].filter(Boolean).join(', ') ||
+                    'Sin ubicación registrada'
+                  }`}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+      </Select>
+      {auditores.data?.length === 0 && (
+        <p className="text-xs text-tenue-fg">
+          No hay médicos auditores activos: créalos en Usuarios del administrador.
+        </p>
+      )}
+    </>
+  )
+}
+
+/**
  * **Nuevo horario** (pedido del usuario, 27/10/2026; reemplaza a «Extender»):
- * con el auditor ya asignado solo se mueve la ventana —desde y hasta qué hora
- * ir al hospital—, con el mismo auditor. Al auditor le llega el horario nuevo;
- * la compañía no se entera. La entrega del informe no se mueve: es del SLA.
+ * con el auditor ya asignado se mueve la ventana —desde y hasta qué hora ir al
+ * hospital— y, si hace falta, el auditor («por si quiero cambiar de auditor»).
+ * Con el mismo auditor le llega el horario nuevo y la compañía no se entera;
+ * con otro, es una derivación nueva. La entrega del informe no se mueve.
  */
 function NuevoHorario({ caso }: { caso: VisitaSupervisionDetalle }) {
   const toast = useToast()
@@ -511,19 +536,20 @@ function NuevoHorario({ caso }: { caso: VisitaSupervisionDetalle }) {
   const [abierto, setAbierto] = useState(false)
   const [hora, setHora] = useState(() => aLocal(caso.desde))
   const [horaFin, setHoraFin] = useState(() => aLocal(caso.llegada_limite))
+  const [auditorId, setAuditorId] = useState(caso.auditor_id ?? '')
 
   const guardar = useMutation({
     mutationFn: () =>
       asignarAuditor(
         caso.id,
-        caso.auditor_id ?? '',
+        auditorId,
         new Date(hora).toISOString(),
         new Date(horaFin).toISOString(),
       ),
-    onSuccess: () => {
+    onSuccess: (actualizada) => {
       queryClient.invalidateQueries({ queryKey: ['supervision'] })
       queryClient.invalidateQueries({ queryKey: ['supervision-visita', caso.id] })
-      toast.exito(`Nuevo horario guardado; se le avisa a ${caso.auditor_nombre ?? 'el auditor'}`)
+      toast.exito(`Guardado; se le avisa a ${actualizada.auditor_nombre ?? 'el auditor'}`)
       setAbierto(false)
     },
     onError: (error) =>
@@ -545,6 +571,7 @@ function NuevoHorario({ caso }: { caso: VisitaSupervisionDetalle }) {
         onClick={() => {
           setHora(aLocal(caso.desde))
           setHoraFin(aLocal(caso.llegada_limite))
+          setAuditorId(caso.auditor_id ?? '')
           setAbierto(true)
         }}
       >
@@ -558,7 +585,7 @@ function NuevoHorario({ caso }: { caso: VisitaSupervisionDetalle }) {
       <p className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
         Nuevo horario
       </p>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-2">
           <Label htmlFor="nh-desde">
             Ir al hospital desde <span className="text-peligro">*</span>
@@ -582,6 +609,17 @@ function NuevoHorario({ caso }: { caso: VisitaSupervisionDetalle }) {
             onChange={(e) => setHoraFin(e.target.value)}
           />
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="nh-auditor">
+            Auditor <span className="text-peligro">*</span>
+          </Label>
+          <SelectorDeAuditor
+            id="nh-auditor"
+            caso={caso}
+            valor={auditorId}
+            alCambiar={setAuditorId}
+          />
+        </div>
       </div>
       <div className="flex gap-2">
         <Boton
@@ -592,6 +630,7 @@ function NuevoHorario({ caso }: { caso: VisitaSupervisionDetalle }) {
             if (new Date(horaFin) <= new Date(hora)) {
               return toast.error('La hora «hasta» debe ser posterior a la hora «desde»')
             }
+            if (!auditorId) return toast.error('Elige el auditor')
             guardar.mutate()
           }}
         >
@@ -602,7 +641,8 @@ function NuevoHorario({ caso }: { caso: VisitaSupervisionDetalle }) {
         </Boton>
       </div>
       <p className="text-xs text-tenue-fg">
-        Mismo auditor; se le avisa del horario nuevo. La aseguradora no ve el horario.
+        Al auditor le llega el horario nuevo; si cambias de auditor, el caso se le deriva al
+        nuevo. La aseguradora no ve el horario.
       </p>
     </div>
   )
