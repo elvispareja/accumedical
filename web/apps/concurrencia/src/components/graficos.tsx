@@ -127,6 +127,7 @@ export function Dona({
   torta = false,
   etiqueta,
   tamano = 200,
+  leyendaAbajo = false,
 }: {
   series: SerieGrafico[]
   valores: Record<string, number>
@@ -136,6 +137,8 @@ export function Dona({
   torta?: boolean
   etiqueta: string
   tamano?: number
+  /** En tarjetas angostas (un tercio de fila), la leyenda va bajo el círculo. */
+  leyendaAbajo?: boolean
 }) {
   const { marco, mostrar, ocultar, nodo } = useGlobo()
   const total = series.reduce((s, x) => s + (valores[x.clave] ?? 0), 0)
@@ -145,7 +148,12 @@ export function Dona({
   let angulo = 0
 
   return (
-    <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-8">
+    <div
+      className={cn(
+        'flex flex-col items-center gap-5',
+        !leyendaAbajo && 'sm:flex-row sm:items-center sm:gap-8',
+      )}
+    >
       <div ref={marco} className="relative shrink-0" onPointerLeave={ocultar}>
         <svg
           width={tamano}
@@ -200,7 +208,11 @@ export function Dona({
         )}
         {nodo}
       </div>
-      <Leyenda series={series} valores={valores} className="flex-col !gap-y-3" />
+      <Leyenda
+        series={series}
+        valores={valores}
+        className={leyendaAbajo ? 'justify-center' : 'flex-col !gap-y-3'}
+      />
     </div>
   )
 }

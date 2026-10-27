@@ -286,8 +286,9 @@ function GraficosSla({ datos }: { datos: ReporteSla }) {
     porDia.set(clave, col)
   }
 
+  // Los tres en una fila (pedido del usuario, 27/10/2026).
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-3">
       <TarjetaGrafico
         titulo="Estado del SLA"
         nota={`${total.casos} ${total.casos === 1 ? 'caso' : 'casos'} en el periodo.`}
@@ -305,6 +306,8 @@ function GraficosSla({ datos }: { datos: ReporteSla }) {
             valor: total.cumplimiento === null ? '—' : `${Math.round(total.cumplimiento)} %`,
             detalle: 'cumplimiento',
           }}
+          tamano={180}
+          leyendaAbajo
         />
       </TarjetaGrafico>
 
@@ -328,7 +331,6 @@ function GraficosSla({ datos }: { datos: ReporteSla }) {
       </TarjetaGrafico>
 
       <TarjetaGrafico
-        className="lg:col-span-2"
         titulo="Casos por día"
         nota="Por el día en que llegó el pedido, con su estado del SLA."
       >
