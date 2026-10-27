@@ -85,6 +85,10 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
             "AND titular_parentesco IS NOT NULL)",
             name="titular",
         ),
+        CheckConstraint(
+            "requerimiento_medio IS NULL OR requerimiento_medio IN ('correo','otro')",
+            name="requerimiento_medio",
+        ),
         Index("uq_conc_visitas_codigo_interno", "codigo_interno", unique=True),
         # El índice de la bandeja: lo de MI aseguradora, ordenado por fecha.
         Index(
@@ -144,6 +148,13 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
         ForeignKey("tipos_documento.codigo", ondelete="RESTRICT")
     )
     titular_numero_documento: Mapped[str | None] = mapped_column(String(20))
+    # **Cómo llegó el requerimiento** (26/10/2026), solo en el alta del
+    # coordinador de Accumedical: por correo o por otro medio (cuál) y cuándo
+    # llegó. Nulos en los casos que la compañía crea en el sistema. Interno: la
+    # aseguradora no lo ve.
+    requerimiento_medio: Mapped[str | None] = mapped_column(String(10))
+    requerimiento_medio_detalle: Mapped[str | None] = mapped_column(String(60))
+    requerimiento_recibido_at: Mapped[dt.datetime | None] = mapped_column(TS)
     # NULL cuando el prestador no tiene sedes: se visita su dirección principal.
     sede_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("prestador_sedes.id", ondelete="RESTRICT")

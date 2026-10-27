@@ -518,6 +518,48 @@ def poliza_y_titular(
     }
 
 
+#: Cómo llegó el requerimiento al coordinador (26/10/2026); interno.
+CAMPOS_REQUERIMIENTO = (
+    "requerimiento_medio",
+    "requerimiento_medio_detalle",
+    "requerimiento_recibido_at",
+)
+
+
+def requerimiento(datos: dict[str, Any]) -> dict[str, Any]:
+    """
+    **Por qué medio y cuándo llegó el requerimiento**, en el alta del
+    coordinador. Sin medio (alta de la compañía en el sistema) no hay nada que
+    guardar. Con «otro» hace falta decir cuál; la fecha no puede ser futura.
+    """
+    medio = datos.get("requerimiento_medio")
+    if medio is None:
+        return dict.fromkeys(CAMPOS_REQUERIMIENTO)
+    recibido = datos.get("requerimiento_recibido_at")
+    if recibido is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Indica la fecha y hora en que llegó el requerimiento",
+        )
+    if recibido > dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La fecha en que llegó el requerimiento no puede ser futura",
+        )
+    detalle = " ".join((datos.get("requerimiento_medio_detalle") or "").split()).upper() or None
+    if medio == "otro" and detalle is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Indica por qué medio llegó el requerimiento (p. ej. WhatsApp o llamada)",
+        )
+    return {
+        "requerimiento_medio": medio,
+        # Con correo no hace falta decir más.
+        "requerimiento_medio_detalle": detalle if medio == "otro" else None,
+        "requerimiento_recibido_at": recibido,
+    }
+
+
 def crear(
     db: DbSession, aseguradora_id: uuid.UUID, datos: dict[str, Any], autor: uuid.UUID
 ) -> Visita:
@@ -541,6 +583,7 @@ def crear(
 
     visita = Visita(
         **poliza,
+        **requerimiento(datos),
         aseguradora_id=aseguradora_id,
         prestador_id=prestador_id,
         # Las cuatro partes ya llegan normalizadas por el validador de `personas`.

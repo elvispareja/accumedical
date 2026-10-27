@@ -134,6 +134,11 @@ class VisitaCrearSupervision(VisitaCrear):
     """
 
     aseguradora_id: str
+    # Cómo llegó el requerimiento (26/10/2026): por correo o por otro medio
+    # —cuál, p. ej. WhatsApp o llamada— y cuándo llegó. Obligatorios aquí.
+    requerimiento_medio: Literal["correo", "otro"]
+    requerimiento_medio_detalle: Annotated[str, Field(max_length=60)] | None = None
+    requerimiento_recibido_at: AwareDatetime
 
 
 class AseguradoraElegible(BaseModel):
@@ -428,6 +433,10 @@ class VisitaSupervisionDetalle(VisitaSupervisionResumen):
     # Si hay imagen que comprueba un cambio de horario. La ruta no viaja: la
     # imagen se pide a su propio endpoint autenticado.
     tiene_comprobante: bool
+    # Cómo llegó el requerimiento, si lo programó la coordinación (interno).
+    requerimiento_medio: str | None = None
+    requerimiento_medio_detalle: str | None = None
+    requerimiento_recibido_at: dt.datetime | None = None
     # Si el auditor ya generó el informe: el PDF se pide a su propio endpoint.
     tiene_informe: bool = False
     # El punto exacto del destino, para abrir el mapa desde la app del auditor.

@@ -109,6 +109,10 @@ interface Formulario {
   titular: NombrePersona
   titular_tipo_documento_codigo: string
   titular_numero_documento: string
+  // Cómo llegó el requerimiento (solo el alta del coordinador, 26/10/2026).
+  requerimiento_medio: '' | 'correo' | 'otro'
+  requerimiento_medio_detalle: string
+  requerimiento_recibido: string
 }
 
 const PARENTESCOS = [
@@ -134,6 +138,9 @@ const VACIO: Formulario = {
   titular: NOMBRE_VACIO,
   titular_tipo_documento_codigo: '',
   titular_numero_documento: '',
+  requerimiento_medio: '',
+  requerimiento_medio_detalle: '',
+  requerimiento_recibido: '',
 }
 
 function mensajeDeError(error: unknown, porDefecto: string): string {
@@ -693,7 +700,16 @@ export function VisitaFormPage({
         observaciones: form.observaciones.trim() || null,
         ...polizaYTitular(),
       }
-      if (supervision) return crearVisitaSupervision({ ...cuerpo, aseguradora_id: aseguradoraId })
+      if (supervision) {
+        return crearVisitaSupervision({
+          ...cuerpo,
+          aseguradora_id: aseguradoraId,
+          requerimiento_medio: form.requerimiento_medio as 'correo' | 'otro',
+          requerimiento_medio_detalle:
+            form.requerimiento_medio === 'otro' ? form.requerimiento_medio_detalle.trim() : null,
+          requerimiento_recibido_at: aISO(form.requerimiento_recibido),
+        })
+      }
       return id ? actualizarVisita(id, cuerpo) : crearVisita(cuerpo)
     },
     onSuccess: (visita) => {
@@ -762,6 +778,20 @@ export function VisitaFormPage({
       )
     }
     if (problemaDocumento) return toast.error(problemaDocumento)
+    if (supervision) {
+      if (!form.requerimiento_medio) {
+        return toast.error('Indica por qué medio llegó el requerimiento')
+      }
+      if (form.requerimiento_medio === 'otro' && !form.requerimiento_medio_detalle.trim()) {
+        return toast.error('Indica cuál fue el otro medio (p. ej. WhatsApp o llamada)')
+      }
+      if (!form.requerimiento_recibido) {
+        return toast.error('Indica la fecha y hora en que llegó el requerimiento')
+      }
+      if (new Date(form.requerimiento_recibido) > new Date()) {
+        return toast.error('La fecha en que llegó el requerimiento no puede ser futura')
+      }
+    }
     if (!form.poliza.trim()) return toast.error('Indica el número de póliza')
     if (form.paciente_es_titular === 'no') {
       if (!form.titular_tipo_documento_codigo || !form.titular_numero_documento.trim()) {
@@ -889,6 +919,62 @@ export function VisitaFormPage({
                 </option>
               ))}
             </Select>
+          </Bloque>
+        )}
+        {/* Cómo llegó el requerimiento (pedido del usuario, 26/10/2026): al
+            coordinador los pedidos le llegan por correo o por otros medios.
+            Interno de Accumedical: la aseguradora no lo ve. */}
+        {supervision && (
+          <Bloque
+            titulo="Requerimiento"
+            descripcion="Por qué medio llegó el pedido y cuándo."
+          >
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>
+                  Medio <span className="text-peligro">*</span>
+                </Label>
+                <GrupoDeOpciones
+                  etiqueta="Por qué medio llegó el requerimiento"
+                  valor={form.requerimiento_medio}
+                  opciones={[
+                    { valor: 'correo', etiqueta: 'Correo' },
+                    { valor: 'otro', etiqueta: 'Otro medio' },
+                  ]}
+                  onCambiar={(valor) => setForm((p) => ({ ...p, requerimiento_medio: valor }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="requerimiento_recibido">
+                  Fecha y hora en que llegó <span className="text-peligro">*</span>
+                </Label>
+                <Input
+                  id="requerimiento_recibido"
+                  type="datetime-local"
+                  value={form.requerimiento_recibido}
+                  max={aLocal(new Date().toISOString())}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, requerimiento_recibido: e.target.value }))
+                  }
+                />
+              </div>
+              {form.requerimiento_medio === 'otro' && (
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="requerimiento_detalle">
+                    ¿Cuál? <span className="text-peligro">*</span>
+                  </Label>
+                  <Input
+                    id="requerimiento_detalle"
+                    value={form.requerimiento_medio_detalle}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, requerimiento_medio_detalle: e.target.value }))
+                    }
+                    placeholder="WHATSAPP, LLAMADA…"
+                    maxLength={60}
+                  />
+                </div>
+              )}
+            </div>
           </Bloque>
         )}
         <Bloque titulo="Póliza y titular">

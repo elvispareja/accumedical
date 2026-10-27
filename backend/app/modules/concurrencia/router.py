@@ -1386,6 +1386,7 @@ def obtener_supervision(
         **_resumen_supervision(fila).model_dump(),
         **personas.partes_prefijadas(fila[0], "paciente_"),
         **_poliza_out(fila[0]),
+        **{c: getattr(fila[0], c) for c in service.CAMPOS_REQUERIMIENTO},
         observaciones=fila[0].observaciones,
         correos=_correos_out(db, visita_id),
         # `tiene_informe` ya viene del resumen de supervisión: repetirlo aquí
@@ -1655,6 +1656,7 @@ def _detalle_supervision(db: DbSession, visita_id: uuid.UUID) -> VisitaSupervisi
         **_resumen_supervision(fila).model_dump(),
         **personas.partes_prefijadas(fila[0], "paciente_"),
         **_poliza_out(fila[0]),
+        **{c: getattr(fila[0], c) for c in service.CAMPOS_REQUERIMIENTO},
         observaciones=fila[0].observaciones,
         correos=_correos_out(db, visita_id),
         # `tiene_informe` ya viene del resumen de supervisión: repetirlo aquí

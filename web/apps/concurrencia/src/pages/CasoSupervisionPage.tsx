@@ -160,6 +160,37 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
   const seccion = 'font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg'
   return (
     <div className="space-y-6">
+      {/* Cómo llegó el requerimiento, cuando lo programó la coordinación
+          (26/10/2026). Interno: la aseguradora no lo ve. */}
+      {caso.requerimiento_medio && (
+        <div className="space-y-3">
+          <p className={seccion}>Requerimiento</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="sl-req-medio">Medio</Label>
+              <Input
+                id="sl-req-medio"
+                value={
+                  caso.requerimiento_medio === 'correo'
+                    ? 'CORREO'
+                    : `OTRO MEDIO · ${caso.requerimiento_medio_detalle ?? ''}`
+                }
+                disabled
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sl-req-llego">Fecha y hora en que llegó</Label>
+              <Input
+                id="sl-req-llego"
+                type="datetime-local"
+                value={caso.requerimiento_recibido_at ? aLocal(caso.requerimiento_recibido_at) : ''}
+                disabled
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Póliza y titular (26/10/2026), tal como los capturó la compañía. */}
       <div className="space-y-3">
         <p className={seccion}>Póliza y titular</p>

@@ -453,6 +453,10 @@ export async function obtenerDashboardSupervision() {
 }
 
 export interface VisitaSupervisionDetalle extends VisitaSupervision, PolizaYTitular {
+  /** Cómo llegó el requerimiento, si lo programó la coordinación (interno). */
+  requerimiento_medio: 'correo' | 'otro' | null
+  requerimiento_medio_detalle: string | null
+  requerimiento_recibido_at: string | null
   /** Las cuatro partes: esta vista enseña el caso tal como se capturó. */
   paciente_nombre_principal: string
   paciente_nombre_secundario: string | null
@@ -498,7 +502,13 @@ export async function listarPrestadoresDeAseguradora(aseguradoraId: string) {
 
 /** El alta desde plataforma: el mismo formulario más la aseguradora elegida. */
 export async function crearVisitaSupervision(
-  cuerpo: VisitaFormulario & { aseguradora_id: string },
+  cuerpo: VisitaFormulario & {
+    aseguradora_id: string
+    // Cómo llegó el requerimiento (26/10/2026): obligatorio en este alta.
+    requerimiento_medio: 'correo' | 'otro'
+    requerimiento_medio_detalle: string | null
+    requerimiento_recibido_at: string
+  },
 ) {
   const { data } = await api.post<VisitaSupervisionDetalle>(
     '/concurrencia/supervision/visitas',
