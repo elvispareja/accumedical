@@ -13,6 +13,7 @@ import {
   type ReporteSexo,
   type ReporteSla,
 } from '@concurrencia/api'
+import { BarrasApiladas, type Serie } from '@concurrencia/components/BarrasApiladas'
 import { FechaConEtiqueta } from '@concurrencia/components/filtros'
 import { Input } from '@/shared/components/ui/input'
 import { Select } from '@/shared/components/ui/select'
@@ -27,8 +28,10 @@ import { Select } from '@/shared/components/ui/select'
  *   informe.
  *
  * Los filtros (días de Ecuador sobre cuándo llegó el pedido, y la aseguradora)
- * valen para los dos. Cifras y tablas, sin gráficos: el estado del SLA va
- * siempre con su nombre e icono, nunca solo el color.
+ * valen para los dos. Cifras arriba y barras apiladas al 100 % por aseguradora
+ * (`BarrasApiladas`), cada una con su «Ver como tabla». El estado del SLA usa la
+ * paleta de ESTADO de la guía de visualización —siempre con icono y nombre—; el
+ * sexo, los dos primeros colores categóricos validados (azul y naranja).
  */
 export function ReporteriaPage() {
   const { data: sesion } = useSesion()
@@ -132,6 +135,24 @@ const ESTADO: Record<EstadoSla, { etiqueta: string; icono: typeof Clock; tono: s
   cancelado: { etiqueta: 'Cancelado', icono: Clock, tono: 'text-tenue-fg' },
 }
 
+// Paleta de ESTADO de la guía de visualización (fija, igual en los dos modos):
+// verde, ámbar y rojo se distinguen también con daltonismo (validado); el gris
+// es «aún sin juzgar». El ámbar lleva tinta negra; los demás, blanca.
+const SERIES_SLA: Serie[] = [
+  { clave: 'a_tiempo', etiqueta: 'A tiempo', relleno: 'bg-[#0ca30c]', tinta: 'blanca', icono: CheckCircle2 },
+  { clave: 'fuera_de_plazo', etiqueta: 'Fuera de plazo', relleno: 'bg-[#fab219]', tinta: 'negra', icono: AlertTriangle },
+  { clave: 'vencido', etiqueta: 'Vencido sin entregar', relleno: 'bg-[#d03b3b]', tinta: 'blanca', icono: XCircle },
+  { clave: 'en_plazo', etiqueta: 'En plazo', relleno: 'bg-[#898781]', tinta: 'blanca', icono: Hourglass },
+]
+
+// Los dos primeros colores categóricos (azul, naranja), con su paso oscuro;
+// validados juntos en los dos modos. «No consta», en gris.
+const SERIES_SEXO: Serie[] = [
+  { clave: 'femenino', etiqueta: 'Femenino', relleno: 'bg-[#2a78d6] dark:bg-[#3987e5]', tinta: 'blanca' },
+  { clave: 'masculino', etiqueta: 'Masculino', relleno: 'bg-[#eb6834] dark:bg-[#d95926]', tinta: 'blanca' },
+  { clave: 'no_consta', etiqueta: 'No consta', relleno: 'bg-[#898781]', tinta: 'blanca' },
+]
+
 const ORIGEN: Record<string, string> = {
   sistema: 'Sistema (aseguradora)',
   correo: 'Correo',
@@ -187,29 +208,49 @@ function ReporteDeSla({
             ))}
           </div>
 
-          <Tabla
-            className="mt-5"
-            titulo="Por aseguradora"
-            columnas={[
-              'Aseguradora',
-              'Casos',
-              'A tiempo',
-              'Fuera de plazo',
-              'Vencidos',
-              'En plazo',
-              'Cumplimiento',
-            ]}
-            vacio="No hay casos en el periodo."
-            filas={datos.por_aseguradora.map((f) => [
-              f.aseguradora,
-              f.casos,
-              f.a_tiempo,
-              f.fuera_de_plazo,
-              f.vencido,
-              f.en_plazo,
-              porcentaje(f.cumplimiento),
-            ])}
-          />
+          <Tarjeta className="mt-5" titulo="Estado del SLA por aseguradora" nota="A la derecha, el cumplimiento.">
+            <BarrasApiladas
+              etiquetaDelGrafico="Estado del SLA por aseguradora"
+              series={SERIES_SLA}
+              filas={[
+                {
+                  etiqueta: 'Todas',
+                  valores: soloNumeros(datos.total),
+                  resumen: porcentaje(datos.total.cumplimiento),
+                  destacada: true,
+                },
+                ...datos.por_aseguradora.map((f) => ({
+                  etiqueta: f.aseguradora,
+                  valores: soloNumeros(f),
+                  resumen: porcentaje(f.cumplimiento),
+                })),
+              ]}
+            />
+            <VerComoTabla>
+              <Tabla
+                titulo="Por aseguradora"
+                columnas={[
+                  'Aseguradora',
+                  'Casos',
+                  'A tiempo',
+                  'Fuera de plazo',
+                  'Vencidos',
+                  'En plazo',
+                  'Cumplimiento',
+                ]}
+                vacio="No hay casos en el periodo."
+                filas={datos.por_aseguradora.map((f) => [
+                  f.aseguradora,
+                  f.casos,
+                  f.a_tiempo,
+                  f.fuera_de_plazo,
+                  f.vencido,
+                  f.en_plazo,
+                  porcentaje(f.cumplimiento),
+                ])}
+              />
+            </VerComoTabla>
+          </Tarjeta>
 
           <Tabla
             className="mt-5"
@@ -301,19 +342,39 @@ function ReporteDeSexo({
             />
           </div>
 
-          <Tabla
-            className="mt-5"
-            titulo="Por aseguradora"
-            columnas={['Aseguradora', 'Auditados', 'Femenino', 'Masculino', 'No consta']}
-            vacio="No hay casos auditados en el periodo."
-            filas={datos.por_aseguradora.map((f) => [
-              f.aseguradora,
-              f.auditados,
-              f.femenino,
-              f.masculino,
-              f.no_consta,
-            ])}
-          />
+          <Tarjeta className="mt-5" titulo="Sexo por aseguradora" nota="A la derecha, los auditados.">
+            <BarrasApiladas
+              etiquetaDelGrafico="Casos auditados por sexo y aseguradora"
+              series={SERIES_SEXO}
+              filas={[
+                {
+                  etiqueta: 'Todas',
+                  valores: soloNumeros(datos.total),
+                  resumen: String(datos.total.auditados),
+                  destacada: true,
+                },
+                ...datos.por_aseguradora.map((f) => ({
+                  etiqueta: f.aseguradora,
+                  valores: soloNumeros(f),
+                  resumen: String(f.auditados),
+                })),
+              ]}
+            />
+            <VerComoTabla>
+              <Tabla
+                titulo="Por aseguradora"
+                columnas={['Aseguradora', 'Auditados', 'Femenino', 'Masculino', 'No consta']}
+                vacio="No hay casos auditados en el periodo."
+                filas={datos.por_aseguradora.map((f) => [
+                  f.aseguradora,
+                  f.auditados,
+                  f.femenino,
+                  f.masculino,
+                  f.no_consta,
+                ])}
+              />
+            </VerComoTabla>
+          </Tarjeta>
         </>
       )}
     </section>
@@ -349,7 +410,7 @@ function Cifra({
         )}
         {etiqueta}
       </p>
-      <p className="tabular mt-1.5 font-display text-2xl font-semibold">{valor}</p>
+      <p className="mt-1.5 font-display text-2xl font-semibold">{valor}</p>
       {detalle && <p className="mt-0.5 text-xs text-tenue-fg">{detalle}</p>}
     </div>
   )
@@ -411,6 +472,45 @@ function Tabla({
         </div>
       )}
     </div>
+  )
+}
+
+function Tarjeta({
+  titulo,
+  nota,
+  className,
+  children,
+}: {
+  titulo: string
+  nota?: string
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div className={cn('rounded-md border border-borde bg-superficie p-5', className)}>
+      <p className="font-display text-sm font-semibold">{titulo}</p>
+      {nota && <p className="mt-0.5 text-xs text-tenue-fg">{nota}</p>}
+      <div className="mt-4">{children}</div>
+    </div>
+  )
+}
+
+/** Los conteos de una fila, sin el nombre ni el porcentaje: lo que se apila. */
+function soloNumeros(fila: object): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(fila).filter((par): par is [string, number] => typeof par[1] === 'number'),
+  )
+}
+
+/** La vista de tabla del gráfico, plegada: los mismos números, sin depender del color. */
+function VerComoTabla({ children }: { children: ReactNode }) {
+  return (
+    <details className="mt-4">
+      <summary className="cursor-pointer select-none text-xs font-medium text-tenue-fg hover:text-tinta">
+        Ver como tabla
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
   )
 }
 
