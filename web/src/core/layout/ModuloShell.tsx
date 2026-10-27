@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { cambiarModulo, cerrarSesion } from '@/core/auth/api'
-import { nombreDeRol } from '@/core/auth/roles'
 import { BotonTema } from '@/core/components/BotonTema'
 import { BotonNotificaciones } from '@/core/notificaciones/BotonNotificaciones'
 import { CLAVE_SESION, useSesion } from '@/core/auth/useSesion'
@@ -19,7 +18,7 @@ import { useToast } from '@/shared/components/ui/toast'
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 
 /**
- * Armazón de un módulo: topbar con su acento, la identidad del módulo, la
+ * Armazón de un módulo: topbar con su acento (sin el bloque del módulo), la
  * campana, el tema y «Salir». Lo que va debajo lo pone cada módulo con su propio
  * `modules/<slug>/routes.tsx`; los que todavía no tienen pantallas cuelgan del
  * marcador de posición `ModuloPendiente`.
@@ -82,26 +81,6 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
 
   if (!modulo) return null
 
-  const rolVisible = nombreDeRol(modulo.rol, Boolean(sesion?.aseguradora))
-
-  // Quién es y dónde está: el mismo bloque en los dos armazones.
-  const identidadDelModulo = (
-    <div className="flex min-w-0 items-center gap-3">
-      {/* Solo el icono del módulo: el logo de la compañía va en el menú lateral,
-          donde iría el de Accumedical (pedido del usuario, 26/10/2026). */}
-      <span className={cn('grid size-9 shrink-0 place-items-center rounded-md', identidad.suave)}>
-        <identidad.Icono className={cn('size-4.5', identidad.texto)} aria-hidden="true" />
-      </span>
-      <div className="min-w-0">
-        <p className="truncate font-display text-sm font-semibold">{modulo.nombre}</p>
-        <p className="truncate text-xs text-tenue-fg">
-          {rolVisible}
-          {sesion?.aseguradora ? ` · ${sesion.aseguradora.nombre}` : ''}
-        </p>
-      </div>
-    </div>
-  )
-
   const controles = (
     <>
       <BotonNotificaciones modulo={modulo ? { codigo: modulo.codigo, ruta: raiz } : undefined} />
@@ -142,7 +121,8 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
         ) : undefined
       }
       franja={identidad.punto}
-      topbarIzquierda={identidadDelModulo}
+      // Sin el bloque del módulo y el rol en la barra (pedido del usuario,
+      // 26/10/2026): el menú lateral ya dice dónde se está.
       topbarDerecha={controles}
     >
       {contenido}
