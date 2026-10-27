@@ -879,6 +879,18 @@ archivo se queda: es evidencia. En `audit_log` solo van MIME y tamaño
 
 ---
 
+### 3.14 Póliza, requerimiento, SLA desde el pedido y sin `no_auditado` (26–27/10/2026)
+
+| Revisión | Qué cambia en `conc_visitas` |
+|---|---|
+| `a7d3e9c1b852` | `poliza_numero`, `paciente_es_titular` y el titular (`titular_parentesco`, cuatro partes del nombre, tipo y número de documento). CHECK `parentesco` (`conyuge`, `hijo`, `padre_madre`, `otro`) y CHECK `titular` (si no es titular, sus datos completos) |
+| `b3e8f1a2c947` | `requerimiento_medio` (`correo` / `otro`, CHECK), `requerimiento_medio_detalle`, `requerimiento_recibido_at`: cómo y cuándo llegó el pedido a nuestra coordinación |
+| `c6a2d4f8e135` | Fuera el CHECK `ventana` (`hasta > desde`): `hasta` es la entrega del SLA, que corre desde el pedido y puede quedar antes de la visita |
+| `d8b4f2e6a913` | Fuera el estado `no_auditado`: los que hubiera vuelven a `asignada` (con auditor) o `programada` (sin él), con AuditLog `visita_no_auditada`; CHECK `estado` con cinco valores |
+
+Todas suman columnas nulables o quitan reglas: no borran filas. Se aplican con
+`alembic upgrade d8b4f2e6a913` (hay dos heads: la otra es Farmacovigilancia).
+
 ## 4. Núcleo — catálogos comunes
 
 En la migración inicial solo los que ya tienen consumidor: `tipos_documento`, `provincias`, `tipos_prestador` (los tres los referencia `prestadores`). PK natural; usan `activo`, no soft delete.
