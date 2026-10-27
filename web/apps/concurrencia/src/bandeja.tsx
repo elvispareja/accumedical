@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { MapPin } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { listarSupervision, urlInformePdfSupervision } from '@concurrencia/api'
+import { listarSupervision, REFRESCO_MS, urlInformePdfSupervision } from '@concurrencia/api'
 import { EstadoVisitaBadge, Ventana } from '@concurrencia/components/visitas'
 import { CuadroAuditoria } from '@/shared/components/CuadroAuditoria'
 import { TablaBandeja, type CasoDeBandeja } from '@/shared/components/TablaBandeja'
@@ -51,6 +51,7 @@ export function CuadroDeConcurrencia({ filtros, ...props }: PropsCuadroAuditoria
     queryKey: CLAVE(1, filtros),
     queryFn: () => listarSupervision(consultaDe(1, filtros)),
     placeholderData: keepPreviousData,
+    refetchInterval: REFRESCO_MS,
   })
   return (
     <CuadroAuditoria {...props} total={consulta.data?.total} cargando={consulta.isPending} />
@@ -86,6 +87,7 @@ export function CasosDeConcurrencia({ filtros }: PropsCasosAuditoria) {
     queryKey: CLAVE(pagina, filtros),
     queryFn: () => listarSupervision(consultaDe(pagina, filtros)),
     placeholderData: keepPreviousData,
+    refetchInterval: REFRESCO_MS,
   })
 
   const datos = consulta.data

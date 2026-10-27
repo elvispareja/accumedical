@@ -365,15 +365,17 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
   const [exito, setExito] = useState<string | null>(null)
 
   function confirmarEnvio() {
-    if (caso.correos.length === 0) {
-      setAviso('El caso no tiene correos marcados a los que enviar el informe.')
-      return
-    }
+    // Siempre llega a los fijos —quien creó el caso y las dos coordinaciones—;
+    // los correos marcados del caso se suman si los hay (27/10/2026).
+    const fijos =
+      'el operador que creó el caso, la coordinación de la aseguradora y la de Accumedical'
     Alert.alert(
       'Enviar informe',
-      `El PDF se enviará a:\n\n${caso.correos
-        .map((c) => (c.etiqueta ? `${c.email} (${c.etiqueta})` : c.email))
-        .join('\n')}\n\n…y también al operador que creó el caso y a los supervisores de Accumedical y de tu aseguradora.`,
+      caso.correos.length === 0
+        ? `El PDF se enviará a ${fijos}.`
+        : `El PDF se enviará a:\n\n${caso.correos
+            .map((c) => (c.etiqueta ? `${c.email} (${c.etiqueta})` : c.email))
+            .join('\n')}\n\n…y también a ${fijos}.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Enviar', onPress: mandar },

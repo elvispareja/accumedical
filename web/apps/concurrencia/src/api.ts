@@ -5,6 +5,15 @@ import { api } from '@/core/api/client'
  * acción —crear, derivar, «ya llegué», enviar el informe, cancelar— o el
  * servidor al vencer la ventana. Por eso no viajan nunca hacia el servidor.
  */
+/**
+ * Cada cuánto se refrescan solas las listas, las cifras y la ficha de un caso
+ * (pedido del usuario, 27/10/2026: «en tiempo real o máximo 10 segundos»): el
+ * estado lo cambian otros —el auditor marca «Ya llegué», envía el informe— y la
+ * pantalla no puede quedarse en «Asignada» sin recargar. Igual que la app del
+ * auditor. Con la pestaña oculta no se pide nada (React Query lo pausa).
+ */
+export const REFRESCO_MS = 10_000
+
 export type EstadoVisita =
   | 'programada'
   | 'asignada'

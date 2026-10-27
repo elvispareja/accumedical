@@ -23,7 +23,7 @@ import {
   EstadoVisitaBadge,
   sePuedeEditar,
 } from '@concurrencia/components/visitas'
-import { listarOperadores, listarVisitas } from '@concurrencia/api'
+import { listarOperadores, listarVisitas, REFRESCO_MS } from '@concurrencia/api'
 import { FechaConEtiqueta } from '@concurrencia/components/filtros'
 import { Boton } from '@/shared/components/ui/button'
 import { MenuAcciones } from '@/shared/components/ui/menu'
@@ -114,6 +114,7 @@ export function BandejaPage({
         page_size: POR_PAGINA,
       }),
     placeholderData: keepPreviousData,
+    refetchInterval: REFRESCO_MS,
   })
 
   const datos = consulta.data

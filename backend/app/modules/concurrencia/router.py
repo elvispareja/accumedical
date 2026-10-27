@@ -1125,8 +1125,11 @@ def enviar_informe(
     db: DbSession = Depends(get_db),
 ) -> dict[str, int]:
     """
-    El botón «Enviar informe» del auditor: manda el PDF adjunto a TODOS los
-    correos marcados del caso. Las validaciones responden al instante; los
+    El botón «Enviar informe» del auditor: manda el PDF adjunto a los correos
+    marcados del caso y, **siempre**, a los fijos —el operador que lo creó, la
+    coordinación de la aseguradora y la de Accumedical—. Un caso sin correos
+    marcados también se envía (27/10/2026, pedido del usuario: «mínimo el
+    coordinador de la aseguradora y el de Accumedical»). Las validaciones responden al instante; los
     correos salen DESPUÉS de responder, como todos los avisos —mandarlos dentro
     del request retenía la respuesta hasta el 504 de nginx en redes con el SMTP
     lento, y cada reintento del botón duplicaba el envío—. Primero queda la
@@ -1134,20 +1137,19 @@ def enviar_informe(
     """
     visita = _caso_del_auditor(ctx, db, visita_id)
     contenido = _pdf_del_caso(db, visita)
-    correos = service.correos_de(db, visita.id)
-    if not correos:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="El caso no tiene correos marcados a los que enviar el informe",
-        )
     # La cuenta que se responde es la REAL: correos del caso + operador creador
     # + supervisores, ya sin repetidos — la misma lista que usará el envío.
     destinatarios, _ = notificaciones._destinatarios_del_caso(db, visita)  # noqa: SLF001
+    if not destinatarios:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No hay a quién enviar el informe: ni correos del caso ni coordinadores activos",
+        )
 
     # Enviar el informe ES terminar el trabajo: el caso que se estaba auditando
     # —o el que se derivó y se audita sin haber marcado la llegada— pasa a
     # culminada aquí mismo, y así la ve la aseguradora en su panel. Los otros
-    # estados no se tocan: enviar no resucita una cancelada ni una no auditada.
+    # estados no se tocan: enviar no resucita una cancelada.
     estado_anterior = visita.estado
     if visita.estado in ("asignada", "auditando"):
         visita.estado = "culminada"

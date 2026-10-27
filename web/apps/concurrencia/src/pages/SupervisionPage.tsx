@@ -21,6 +21,7 @@ import {
   obtenerDashboardSupervision,
   obtenerFiltrosSupervision,
   usuariosDeAseguradoraSupervision,
+  REFRESCO_MS,
 } from '@concurrencia/api'
 import { FechaConEtiqueta } from '@concurrencia/components/filtros'
 import {
@@ -124,6 +125,7 @@ export function SupervisionPage() {
         page_size: POR_PAGINA,
       }),
     placeholderData: keepPreviousData,
+    refetchInterval: REFRESCO_MS,
   })
 
   // Las cifras de TODAS las compañías, las mismas que ve cada aseguradora de lo
@@ -133,7 +135,7 @@ export function SupervisionPage() {
     queryKey: ['supervision-cifras'],
     queryFn: obtenerDashboardSupervision,
     // Un panel que se queda abierto en la oficina no debe mentir.
-    refetchInterval: 60_000,
+    refetchInterval: REFRESCO_MS,
   })
   const auditores = useQuery({ queryKey: ['auditores'], queryFn: listarAuditores })
   const filtros = useQuery({
@@ -402,7 +404,9 @@ export function SupervisionPage() {
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        {/* Una debajo de otra: lado a lado la segunda se cortaba
+                            al borde de la columna. */}
+                        <div className="flex flex-col items-start gap-1.5">
                           <EstadoVisitaBadge estado={fila.estado} />
                           {fila.fuera_sla && <FueraDeSla />}
                         </div>

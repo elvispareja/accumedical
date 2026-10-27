@@ -59,7 +59,7 @@ export function FueraDeSla() {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5',
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5',
         'border-peligro/30 bg-peligro/10 font-display text-[0.6875rem] font-medium text-peligro',
       )}
     >
@@ -76,7 +76,7 @@ export function EstadoVisitaBadge({ estado }: { estado: string }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5',
+        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5',
         'font-display text-[0.6875rem] font-medium',
         aspecto.caja,
       )}

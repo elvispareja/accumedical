@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { obtenerDashboard } from '@concurrencia/api'
+import { obtenerDashboard, REFRESCO_MS } from '@concurrencia/api'
 import { CuadrosDeVisitas } from '@concurrencia/components/cifras'
 import { BandejaPage, type FiltrosDeEntrada } from '@concurrencia/pages/BandejaPage'
 
@@ -28,7 +28,7 @@ export function DashboardPage() {
     queryKey: ['concurrencia-dashboard'],
     queryFn: obtenerDashboard,
     // Un panel que se queda abierto en la oficina no debe mentir: se refresca solo.
-    refetchInterval: 60_000,
+    refetchInterval: REFRESCO_MS,
   })
   const datos = consulta.data
 

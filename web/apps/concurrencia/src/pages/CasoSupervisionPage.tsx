@@ -12,6 +12,7 @@ import {
   type AuditorElegible,
   type Parentesco,
   type VisitaSupervisionDetalle,
+  REFRESCO_MS,
 } from '@concurrencia/api'
 import { EstadoVisitaBadge, FueraDeSla } from '@concurrencia/components/visitas'
 import { CamposNombre, desdeApi as nombreDesdeApi } from '@/shared/personas/CamposNombre'
@@ -51,6 +52,10 @@ export function CasoSupervisionPage() {
     queryKey: ['supervision-visita', id],
     queryFn: () => obtenerVisitaSupervision(id!),
     enabled: Boolean(id),
+    // El estado lo mueve el auditor (llega, envía el informe): se ve sin
+    // recargar. Lo que el coordinador esté escribiendo no se pisa: vive en el
+    // estado de los formularios, no en esta consulta.
+    refetchInterval: REFRESCO_MS,
   })
 
   if (detalle.isError) {
@@ -122,6 +127,7 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
   const detalle = useQuery({
     queryKey: ['supervision-visita', visitaId],
     queryFn: () => obtenerVisitaSupervision(visitaId),
+    refetchInterval: REFRESCO_MS,
   })
 
   if (detalle.isPending) {
