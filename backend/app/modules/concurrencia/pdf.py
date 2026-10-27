@@ -164,6 +164,38 @@ def _parrafos(lineas: list[str], estilo: ParagraphStyle) -> list:
     return salida
 
 
+#: Lo que ya no sale en DATOS GENERALES (27/10/2026, pedido del usuario).
+_FUERA_DEL_PDF = {"SOLICITADO POR", "FECHA DE LA SOLICITUD"}
+
+
+def _datos_generales(lineas: list[str], poliza: str | None) -> list[str]:
+    """
+    **La póliza es la del caso** (27/10/2026): el número que se puso al crearlo,
+    no lo que la IA haya entendido del dictado. Se reemplaza la línea POLIZA —o
+    se agrega tras PACIENTE si faltara— y se quitan «Solicitado por» y «Fecha
+    de la solicitud». Vale también para los informes redactados antes.
+    """
+    salida: list[str] = []
+    puesta = False
+    for linea in lineas:
+        etiqueta = _normalizar(linea.split(":", 1)[0]) if ":" in linea else ""
+        if etiqueta in _FUERA_DEL_PDF:
+            continue
+        if etiqueta == "POLIZA" and poliza:
+            salida.append(f"POLIZA: {poliza}")
+            puesta = True
+            continue
+        salida.append(linea)
+    if poliza and not puesta:
+        tras_paciente = next(
+            (i + 1 for i, linea in enumerate(salida)
+             if _normalizar(linea.split(":", 1)[0]) == "PACIENTE"),
+            0,
+        )
+        salida.insert(tras_paciente, f"POLIZA: {poliza}")
+    return salida
+
+
 def _tabla_datos(lineas: list[str], est: dict) -> Table:
     filas = []
     for linea in lineas:
@@ -264,7 +296,7 @@ def _caja_analisis(lineas: list[str], est: dict) -> Table:
     return caja
 
 
-def generar_pdf(informe: str, codigo_interno: str) -> InformePdf:
+def generar_pdf(informe: str, codigo_interno: str, *, poliza: str | None = None) -> InformePdf:
     est = _estilos()
     buffer = io.BytesIO()
 
@@ -331,7 +363,8 @@ def generar_pdf(informe: str, codigo_interno: str) -> InformePdf:
             )
 
         if clave == "DATOS GENERALES":
-            flujo.append(_tabla_datos([linea for linea in lineas if linea.strip()], est))
+            datos = _datos_generales([linea for linea in lineas if linea.strip()], poliza)
+            flujo.append(_tabla_datos(datos, est))
         elif clave == "CUENTA":
             flujo += _tabla_cuenta(lineas, est)
         elif clave == "ANALISIS":

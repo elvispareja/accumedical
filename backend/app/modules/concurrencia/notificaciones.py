@@ -316,6 +316,7 @@ def _datos_del_caso(fila: tuple, *, con_horario: bool = True) -> list[str]:
         f"  Código:       {visita.codigo_interno}",
         f"  Paciente:     {personas.de_fila(visita, 'paciente_')} "
         f"({visita.paciente_numero_documento})",
+        *([f"  Póliza:       {visita.poliza_numero}"] if visita.poliza_numero else []),
         f"  Aseguradora:  {nombre_comercial or razon_social}",
         f"  Prestador:    {prestador_nombre}",
         f"  Destino:      {lugar}",

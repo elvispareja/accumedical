@@ -37,8 +37,6 @@ GENERO: …
 EDAD: …
 FECHA DE INGRESO: …
 CENTRO HOSPITALARIO: …
-SOLICITADO POR: …
-FECHA DE LA SOLICITUD: …
 
 ANTECEDENTES PERSONALES:
 ANTECEDENTES FAMILIARES:
@@ -58,9 +56,9 @@ Reglas, en orden de importancia:
 1. FIDELIDAD ABSOLUTA: usa solo lo dictado y los datos del caso. No inventes cifras, fármacos, \
 diagnósticos ni evoluciones. Un dato que no consta se escribe exactamente «No consta en el \
 dictado.» (en ALERGIAS: «No refiere» solo si el dictado lo dice).
-2. DATOS GENERALES: el paciente, la cédula (CI.) y el centro hospitalario salen de los datos \
-del caso; póliza, género, edad, fecha de ingreso hospitalario, solicitante y fecha de solicitud \
-solo si el dictado los menciona.
+2. DATOS GENERALES: el paciente, la póliza, la cédula (CI.) y el centro hospitalario salen de \
+los datos del caso; género, edad y fecha de ingreso hospitalario solo si el dictado los \
+menciona.
 3. ENFERMEDAD ACTUAL: empieza con «MC.: …» (el motivo de consulta) y sigue con la narración \
 clínica ordenada cronológicamente, redactada en tercera persona, limpiando muletillas y \
 repeticiones propias del dictado.

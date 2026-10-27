@@ -1100,7 +1100,9 @@ def _pdf_del_caso(db: DbSession, visita) -> bytes:
     """
     if not visita.informe:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="El caso aún no tiene informe")
-    informe = informe_pdf.generar_pdf(visita.informe, visita.codigo_interno)
+    informe = informe_pdf.generar_pdf(
+        visita.informe, visita.codigo_interno, poliza=visita.poliza_numero
+    )
     return firma.firmar(informe.contenido, caja=informe.caja_sello)
 
 
