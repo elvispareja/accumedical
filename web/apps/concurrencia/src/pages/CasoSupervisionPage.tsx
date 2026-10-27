@@ -5,11 +5,14 @@ import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import {
+  asignarAuditor,
+  listarAuditores,
   obtenerVisitaSupervision,
   prorrogarVisita,
   subirComprobante,
   urlComprobante,
   urlInformePdfSupervision,
+  type AuditorElegible,
   type VisitaSupervisionDetalle,
 } from '@concurrencia/api'
 import { EstadoVisitaBadge } from '@concurrencia/components/visitas'
@@ -17,6 +20,7 @@ import { CamposNombre, desdeApi as nombreDesdeApi } from '@/shared/personas/Camp
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
+import { Select } from '@/shared/components/ui/select'
 import { useToast } from '@/shared/components/ui/toast'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
@@ -139,8 +143,17 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
     )
   }
 
-  const caso = detalle.data
+  return <CasoCargado caso={detalle.data} />
+}
+
+/** Solo en la agenda se deriva o se cambia la hora (igual que el servidor). */
+const ESTADOS_DERIVABLES = ['programada', 'asignada']
+
+function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
   const porFijar = caso.estado === 'programada'
+  const derivable = ESTADOS_DERIVABLES.includes(caso.estado)
+  // Un caso ya derivado trae su hora; uno programado nace sin ella.
+  const [hora, setHora] = useState(() => (porFijar ? '' : aLocal(caso.desde)))
   const seccion = 'font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg'
   return (
     <div className="space-y-6">
@@ -191,21 +204,36 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
 
       <div className="space-y-3">
         <p className={seccion}>Cuándo</p>
-        {/* Un caso programado aún no tiene hora: la fija la coordinación al
-            derivarlo (26/10/2026). Lo guardado es provisional y no se enseña. */}
-        {porFijar && (
-          <p className="rounded-md border border-dashed border-borde px-3 py-2.5 text-sm text-tenue-fg">
-            Hora por fijar: se indica al derivar el caso a un médico auditor.
-          </p>
-        )}
+        {/* La hora de ir al hospital la fija AQUÍ la coordinación, junto con el
+            auditor (26/10/2026): una sola, sin rango. Mientras el caso está en
+            la agenda es editable; se guarda con «Derivar», más abajo. Lo que
+            trae un caso programado es provisional y no se enseña. */}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="sl-desde">Llegada del auditor</Label>
-            <Input id="sl-desde" type="datetime-local" value={porFijar ? '' : aLocal(caso.desde)} disabled />
+            <Label htmlFor="sl-desde">
+              Hora de ir al hospital{derivable && <span className="text-peligro"> *</span>}
+            </Label>
+            <Input
+              id="sl-desde"
+              type="datetime-local"
+              value={derivable ? hora : porFijar ? '' : aLocal(caso.desde)}
+              min={derivable ? aLocal(new Date().toISOString()) : undefined}
+              onChange={(e) => setHora(e.target.value)}
+              disabled={!derivable}
+            />
+            {derivable && (
+              <p className="text-xs text-tenue-fg">
+                Se guarda con «{caso.auditor_id ? 'Guardar' : 'Derivar'}», en Derivación. La
+                aseguradora no la ve.
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="sl-hasta">Entrega del informe</Label>
             <Input id="sl-hasta" type="datetime-local" value={porFijar ? '' : aLocal(caso.hasta)} disabled />
+            {porFijar && (
+              <p className="text-xs text-tenue-fg">Sale del SLA de la compañía al derivar.</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="sl-limite">Plazo de llegada</Label>
@@ -262,10 +290,14 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
 
       <div className="space-y-2">
         <p className={seccion}>Derivación</p>
-        <div className="space-y-2">
-          <Label htmlFor="sl-auditor">Auditor asignado</Label>
-          <Input id="sl-auditor" value={caso.auditor_nombre ?? 'Sin asignar'} disabled />
-        </div>
+        {derivable ? (
+          <Derivar caso={caso} hora={hora} />
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="sl-auditor">Auditor asignado</Label>
+            <Input id="sl-auditor" value={caso.auditor_nombre ?? 'Sin asignar'} disabled />
+          </div>
+        )}
       </div>
 
       {/* El informe del auditor, cuando ya existe: el PDF con la marca. */}
@@ -286,6 +318,95 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
 
       <Extender caso={caso} />
       <Comprobante caso={caso} />
+    </div>
+  )
+}
+
+/**
+ * Derivar desde la ficha: el auditor —los de la ciudad del destino primero,
+ * luego los de la provincia y luego el resto— y la hora puesta en «Cuándo».
+ * Las dos son obligatorias; se guardan juntas. Con el caso ya derivado, sirve
+ * para cambiar de auditor o de hora.
+ */
+function Derivar({ caso, hora }: { caso: VisitaSupervisionDetalle; hora: string }) {
+  const toast = useToast()
+  const queryClient = useQueryClient()
+  const [auditorId, setAuditorId] = useState(caso.auditor_id ?? '')
+  const auditores = useQuery({ queryKey: ['auditores'], queryFn: listarAuditores })
+
+  const guardar = useMutation({
+    mutationFn: () => asignarAuditor(caso.id, auditorId, new Date(hora).toISOString()),
+    onSuccess: (actualizada) => {
+      queryClient.invalidateQueries({ queryKey: ['supervision'] })
+      queryClient.invalidateQueries({ queryKey: ['supervision-visita', caso.id] })
+      toast.exito(`${actualizada.codigo_interno} derivada a ${actualizada.auditor_nombre}`)
+    },
+    onError: (error) =>
+      toast.error(
+        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          'No se pudo derivar el caso',
+      ),
+  })
+
+  const lista = auditores.data ?? []
+  const enCiudad = caso.ciudad_nombre
+    ? lista.filter((a) => a.ciudad_nombre === caso.ciudad_nombre)
+    : []
+  const enProvincia = caso.provincia_nombre
+    ? lista.filter((a) => a.provincia_nombre === caso.provincia_nombre && !enCiudad.includes(a))
+    : []
+  const otros = lista.filter((a) => !enCiudad.includes(a) && !enProvincia.includes(a))
+  const grupos: [string, AuditorElegible[]][] = [
+    [`En la ciudad${caso.ciudad_nombre ? ` · ${caso.ciudad_nombre}` : ''}`, enCiudad],
+    [`En la provincia${caso.provincia_nombre ? ` · ${caso.provincia_nombre}` : ''}`, enProvincia],
+    ['En otras provincias', otros],
+  ]
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label htmlFor="sl-auditor">
+          Auditor <span className="text-peligro">*</span>
+        </Label>
+        <Select
+          id="sl-auditor"
+          value={auditorId}
+          onChange={(e) => setAuditorId(e.target.value)}
+          disabled={auditores.isPending}
+        >
+          <option value="">{auditores.isPending ? 'Cargando auditores…' : 'Elige el auditor'}</option>
+          {grupos
+            .filter(([, filas]) => filas.length > 0)
+            .map(([titulo, filas]) => (
+              <optgroup key={titulo} label={titulo}>
+                {filas.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {`${a.nombre_completo} · ${
+                      [a.ciudad_nombre, a.provincia_nombre].filter(Boolean).join(', ') ||
+                      'Sin ubicación registrada'
+                    }`}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+        </Select>
+        {auditores.data?.length === 0 && (
+          <p className="text-xs text-tenue-fg">
+            No hay médicos auditores activos: créalos en Usuarios del administrador.
+          </p>
+        )}
+      </div>
+      <Boton
+        type="button"
+        cargando={guardar.isPending}
+        onClick={() => {
+          if (!hora) return toast.error('Indica la hora de ir al hospital, en «Cuándo»')
+          if (!auditorId) return toast.error('Elige el auditor')
+          guardar.mutate()
+        }}
+      >
+        {caso.auditor_id ? 'Guardar' : 'Derivar'}
+      </Boton>
     </div>
   )
 }
@@ -326,7 +447,8 @@ function Extender({ caso }: { caso: VisitaSupervisionDetalle }) {
   })
 
   // Con el auditor ya dentro, o con el caso terminado, no hay plazo que mover.
-  if (!['programada', 'asignada', 'no_auditado'].includes(caso.estado)) return null
+  // Programado tampoco: aún no tiene hora, se la pone la derivación (26/10/2026).
+  if (!['asignada', 'no_auditado'].includes(caso.estado)) return null
 
   if (!abierto) {
     return (
