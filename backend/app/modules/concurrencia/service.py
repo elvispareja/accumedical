@@ -154,6 +154,11 @@ def horas_de_sla(db: DbSession, aseguradora_id: uuid.UUID) -> Decimal:
     return horas
 
 
+def _inicio_del_dia_ec(dia: dt.date) -> dt.datetime:
+    """Las 00:00 de ese día en Ecuador: los filtros Desde/Hasta son días de aquí."""
+    return dt.datetime.combine(dia, dt.time.min, tzinfo=_ZONA_EC)
+
+
 def entrega_por_sla(db: DbSession, aseguradora_id: uuid.UUID, desde: dt.datetime) -> dt.datetime:
     """
     Cuándo vence el informe: la hora de llegada más las horas del SLA, **reloj
@@ -286,11 +291,12 @@ def listar(
     if estado:
         consulta = consulta.where(condicion_de_estado(estado, interno=False))
     if desde:
-        consulta = consulta.where(Visita.hasta >= desde)
+        consulta = consulta.where(Visita.hasta >= _inicio_del_dia_ec(desde))
     if hasta:
         # Hasta el final de ese día: una visita que empieza a las 16:00 del día
-        # filtrado tiene que salir.
-        consulta = consulta.where(Visita.desde < hasta + dt.timedelta(days=1))
+        # filtrado tiene que salir. El día es el de Ecuador, no el de UTC: un
+        # caso de las 19:30 del 26 (00:30 UTC del 27) es del 26 (26/10/2026).
+        consulta = consulta.where(Visita.desde < _inicio_del_dia_ec(hasta + dt.timedelta(days=1)))
 
     sub = consulta.subquery()
     total = db.scalar(select(func.count()).select_from(sub)) or 0
@@ -1006,11 +1012,12 @@ def listar_supervision(
     # solo la que empiece dentro. Un caso del lunes al miércoles sale al filtrar
     # el martes.
     if desde:
-        consulta = consulta.where(Visita.hasta >= desde)
+        consulta = consulta.where(Visita.hasta >= _inicio_del_dia_ec(desde))
     if hasta:
         # Hasta el final de ese día: una visita que empieza a las 16:00 del día
-        # filtrado tiene que salir.
-        consulta = consulta.where(Visita.desde < hasta + dt.timedelta(days=1))
+        # filtrado tiene que salir. El día es el de Ecuador, no el de UTC: un
+        # caso de las 19:30 del 26 (00:30 UTC del 27) es del 26 (26/10/2026).
+        consulta = consulta.where(Visita.desde < _inicio_del_dia_ec(hasta + dt.timedelta(days=1)))
     if aseguradora_id is not None:
         consulta = consulta.where(Visita.aseguradora_id == aseguradora_id)
     # Los casos en los que intervino alguien del personal, esté o no todavía.
