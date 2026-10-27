@@ -652,3 +652,24 @@ export async function obtenerReporteSexo(filtros: FiltrosReporte) {
   })
   return data
 }
+
+export interface CuentaEdad {
+  auditados: number
+  de_1_a_20: number
+  de_21_a_40: number
+  de_41_a_60: number
+  mas_de_60: number
+  no_consta: number
+}
+
+export interface ReporteEdad {
+  total: CuentaEdad
+  por_aseguradora: (CuentaEdad & { aseguradora: string })[]
+}
+
+export async function obtenerReporteEdad(filtros: FiltrosReporte) {
+  const { data } = await api.get<ReporteEdad>('/concurrencia/supervision/reportes/edad', {
+    params: paramsDeReporte(filtros),
+  })
+  return data
+}

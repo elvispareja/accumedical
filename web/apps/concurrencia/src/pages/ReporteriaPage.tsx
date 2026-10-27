@@ -5,9 +5,11 @@ import { useState, type ReactNode } from 'react'
 import { useSesion } from '@/core/auth/useSesion'
 import {
   obtenerFiltrosSupervision,
+  obtenerReporteEdad,
   obtenerReporteSexo,
   obtenerReporteSla,
   type FiltrosReporte,
+  type ReporteEdad,
   type ReporteSexo,
   type ReporteSla,
 } from '@concurrencia/api'
@@ -33,6 +35,9 @@ import { Select } from '@/shared/components/ui/select'
  *   por aseguradora y columnas apiladas de casos por día.
  * - **Sexo**: de los casos ya auditados, según la línea «GENERO:» del informe.
  *   Torta y columnas apiladas por aseguradora.
+ * - **Edad**: igual, de la línea «EDAD:», en los rangos del usuario (1–20,
+ *   21–40, 41–60, más de 60). Rangos ORDENADOS → una escala de un solo tono,
+ *   de claro a oscuro (validada como ordinal en los dos modos).
  *
  * Colores validados con la guía de visualización: el SLA usa la paleta de
  * ESTADO (siempre con icono y nombre en la leyenda); el sexo, los dos primeros
@@ -61,6 +66,12 @@ export function ReporteriaPage() {
   const sexo = useQuery({
     queryKey: ['reporte-sexo', filtros],
     queryFn: () => obtenerReporteSexo(filtros),
+    enabled: esCoordinador,
+    placeholderData: keepPreviousData,
+  })
+  const edad = useQuery({
+    queryKey: ['reporte-edad', filtros],
+    queryFn: () => obtenerReporteEdad(filtros),
     enabled: esCoordinador,
     placeholderData: keepPreviousData,
   })
@@ -145,6 +156,16 @@ export function ReporteriaPage() {
       >
         {sexo.data && <GraficosSexo datos={sexo.data} />}
       </Seccion>
+
+      <Seccion
+        titulo="Casos auditados por edad"
+        nota="Solo los casos ya auditados: la edad sale del informe (línea «EDAD»). Los menores de un año cuentan en 1 – 20."
+        cargando={edad.isPending}
+        error={edad.isError}
+        recargando={edad.isFetching && !edad.isPending}
+      >
+        {edad.data && <GraficosEdad datos={edad.data} />}
+      </Seccion>
     </div>
   )
 }
@@ -207,6 +228,37 @@ const SERIES_SEXO: SerieGrafico[] = [
     etiqueta: 'Masculino',
     fondo: 'bg-[#eb6834] dark:bg-[#d95926]',
     relleno: 'fill-[#eb6834] dark:fill-[#d95926]',
+  },
+  { clave: 'no_consta', etiqueta: 'No consta', fondo: 'bg-[#898781]', relleno: 'fill-[#898781]' },
+]
+
+// Rangos de edad: ORDENADOS, así que una escala de un solo tono (azul), de claro
+// (jóvenes) a oscuro (mayores) en modo claro, y al revés en oscuro, donde «más»
+// se lee más claro. Validada como ordinal en los dos modos. «No consta», gris.
+const SERIES_EDAD: SerieGrafico[] = [
+  {
+    clave: 'de_1_a_20',
+    etiqueta: '1 – 20 años',
+    fondo: 'bg-[#86b6ef] dark:bg-[#184f95]',
+    relleno: 'fill-[#86b6ef] dark:fill-[#184f95]',
+  },
+  {
+    clave: 'de_21_a_40',
+    etiqueta: '21 – 40 años',
+    fondo: 'bg-[#5598e7] dark:bg-[#256abf]',
+    relleno: 'fill-[#5598e7] dark:fill-[#256abf]',
+  },
+  {
+    clave: 'de_41_a_60',
+    etiqueta: '41 – 60 años',
+    fondo: 'bg-[#2a78d6] dark:bg-[#3987e5]',
+    relleno: 'fill-[#2a78d6] dark:fill-[#3987e5]',
+  },
+  {
+    clave: 'mas_de_60',
+    etiqueta: 'Más de 60 años',
+    fondo: 'bg-[#1c5cab] dark:bg-[#86b6ef]',
+    relleno: 'fill-[#1c5cab] dark:fill-[#86b6ef]',
   },
   { clave: 'no_consta', etiqueta: 'No consta', fondo: 'bg-[#898781]', relleno: 'fill-[#898781]' },
 ]
@@ -322,6 +374,52 @@ function GraficosSexo({ datos }: { datos: ReporteSexo }) {
           columnas={datos.por_aseguradora.map((f) => ({
             etiqueta: f.aseguradora,
             valores: { femenino: f.femenino, masculino: f.masculino, no_consta: f.no_consta },
+          }))}
+        />
+      </TarjetaGrafico>
+    </div>
+  )
+}
+
+// ───────────────────────────── Edad ─────────────────────────────
+
+function GraficosEdad({ datos }: { datos: ReporteEdad }) {
+  const { auditados, ...rangos } = datos.total
+  const valoresDe = (f: Omit<ReporteEdad['total'], 'auditados'>) => ({
+    de_1_a_20: f.de_1_a_20,
+    de_21_a_40: f.de_21_a_40,
+    de_41_a_60: f.de_41_a_60,
+    mas_de_60: f.mas_de_60,
+    no_consta: f.no_consta,
+  })
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <TarjetaGrafico
+        titulo="Distribución por edad"
+        nota={`${auditados} ${auditados === 1 ? 'caso auditado' : 'casos auditados'}.`}
+      >
+        {auditados === 0 ? (
+          <p className="py-10 text-center text-sm text-tenue-fg">
+            Aún no hay casos auditados en el periodo.
+          </p>
+        ) : (
+          <Dona
+            etiqueta="Distribución por edad"
+            series={SERIES_EDAD}
+            valores={valoresDe(rangos)}
+            torta
+          />
+        )}
+      </TarjetaGrafico>
+
+      <TarjetaGrafico titulo="Edad por aseguradora">
+        <Columnas
+          etiqueta="Casos auditados por edad y aseguradora"
+          series={SERIES_EDAD}
+          vacio="Aún no hay casos auditados en el periodo."
+          columnas={datos.por_aseguradora.map((f) => ({
+            etiqueta: f.aseguradora,
+            valores: valoresDe(f),
           }))}
         />
       </TarjetaGrafico>

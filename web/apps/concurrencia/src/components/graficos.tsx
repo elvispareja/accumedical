@@ -113,6 +113,13 @@ function sector(cx: number, cy: number, rExt: number, rInt: number, a0: number, 
   return `M ${x0} ${y0} A ${rExt} ${rExt} 0 ${grande} 1 ${x1} ${y1} L ${x2} ${y2} A ${rInt} ${rInt} 0 ${grande} 0 ${x3} ${y3} Z`
 }
 
+/** El círculo entero (torta) o el anillo entero (dona), para un único segmento. */
+function anillo(c: number, rExt: number, rInt: number) {
+  const circulo = (r: number) =>
+    `M ${c - r} ${c} a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0 Z`
+  return rInt > 0 ? `${circulo(rExt)} ${circulo(rInt)}` : circulo(rExt)
+}
+
 export function Dona({
   series,
   valores,
@@ -157,11 +164,10 @@ export function Dona({
               const a1 = angulo + (2 * Math.PI * v) / total
               angulo = a1
               const texto = `${v} · ${pct(v, total)} %`
-              // Un solo segmento es el círculo entero: un arco de 360° no se dibuja.
-              const d =
-                v === total
-                  ? sector(c, c, rExt, rInt, 0, Math.PI) + ' ' + sector(c, c, rExt, rInt, Math.PI, 2 * Math.PI - 1e-6)
-                  : sector(c, c, rExt, rInt, a0, a1)
+              // Un solo segmento es el círculo (o el anillo) entero, sin costura:
+              // un arco de 360° no se dibuja y dos mitades dejan ver el hueco.
+              const entero = v === total
+              const d = entero ? anillo(c, rExt, rInt) : sector(c, c, rExt, rInt, a0, a1)
               return (
                 <path
                   key={s.clave}
@@ -173,7 +179,8 @@ export function Dona({
                     s.relleno,
                     'stroke-superficie outline-none transition-opacity duration-100 hover:opacity-85 focus-visible:opacity-85',
                   )}
-                  strokeWidth={2}
+                  strokeWidth={entero ? 0 : 2}
+                  fillRule="evenodd"
                   strokeLinejoin="round"
                   onPointerMove={(e) => mostrar(e, texto, s.etiqueta)}
                   onFocus={(e) => mostrar(e, texto, s.etiqueta)}

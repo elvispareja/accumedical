@@ -68,6 +68,7 @@ from app.modules.concurrencia.schemas import (
     PrestadorElegible,
     ProrrogaOut,
     ProrrogaRequest,
+    ReporteEdad,
     ReporteSexo,
     ReporteSla,
     ReprogramarRequest,
@@ -1892,6 +1893,19 @@ def reporte_sexo(
     """Casos ya auditados por sexo, según la línea «GENERO:» de su informe."""
     _solo_supervision(ctx)
     return ReporteSexo(**reportes.reporte_sexo(db, desde, hasta, aseguradora_id))
+
+
+@router.get("/supervision/reportes/edad", response_model=ReporteEdad)
+def reporte_edad(
+    desde: dt.date | None = Query(default=None),
+    hasta: dt.date | None = Query(default=None),
+    aseguradora_id: uuid.UUID | None = Query(default=None),
+    ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
+    db: DbSession = Depends(get_db),
+) -> ReporteEdad:
+    """Casos ya auditados por rango de edad, según la línea «EDAD:» de su informe."""
+    _solo_supervision(ctx)
+    return ReporteEdad(**reportes.reporte_edad(db, desde, hasta, aseguradora_id))
 
 
 @router.post("/supervision/visitas/{visita_id}/prorroga", response_model=ProrrogaOut)

@@ -573,3 +573,23 @@ class ReporteSexo(BaseModel):
     total: CuentaSexo
     por_aseguradora: list[SexoDeAseguradora]
 
+
+class CuentaEdad(BaseModel):
+    """Casos auditados por rango de edad (1–20, 21–40, 41–60, más de 60)."""
+
+    auditados: int
+    de_1_a_20: int
+    de_21_a_40: int
+    de_41_a_60: int
+    mas_de_60: int
+    no_consta: int
+
+
+class EdadDeAseguradora(CuentaEdad):
+    aseguradora: str
+
+
+class ReporteEdad(BaseModel):
+    total: CuentaEdad
+    por_aseguradora: list[EdadDeAseguradora]
+

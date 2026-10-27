@@ -7,6 +7,9 @@ coordinación de Accumedical sobre los casos de TODAS las aseguradoras.
   (`created_at`) o el «Requerimiento» de nuestra coordinación
   (`requerimiento_recibido_at`)— hasta la PRIMERA entrega del informe firmado.
   El límite ya está materializado en `hasta` al crear el caso.
+- **Edad** (27/10/2026): igual que el sexo, de la línea «EDAD: …» del informe.
+  Rangos del usuario: 1–20, 21–40, 41–60 y más de 60; los menores de un año
+  («8 meses», «15 días») cuentan en el primero.
 - **Sexo**: sale del informe, ya auditado. La IA escribe la línea «GENERO: …»
   en DATOS GENERALES (`informe.INSTRUCCION`); lo que no diga femenino ni
   masculino cuenta como «no consta».
@@ -34,6 +37,16 @@ _ZONA_EC = dt.timezone(dt.timedelta(hours=-5))
 ESTADOS_SLA = ("a_tiempo", "fuera_de_plazo", "vencido", "en_plazo", "cancelado")
 
 SEXOS = ("femenino", "masculino", "no_consta")
+#: Rangos de edad (pedido del usuario): (clave, desde, hasta incluido).
+RANGOS_EDAD = (
+    ("de_1_a_20", 0, 20),
+    ("de_21_a_40", 21, 40),
+    ("de_41_a_60", 41, 60),
+    ("mas_de_60", 61, None),
+)
+EDADES = (*(r[0] for r in RANGOS_EDAD), "no_consta")
+_LINEA_EDAD = re.compile(r"^\s*EDAD\s*:\s*(.*)$", re.IGNORECASE | re.MULTILINE)
+_NUMERO = re.compile(r"\d{1,3}")
 _LINEA_GENERO = re.compile(r"^\s*G[EÉ]NERO\s*:\s*(.*)$", re.IGNORECASE | re.MULTILINE)
 
 
@@ -207,3 +220,61 @@ def reporte_sexo(
             key=lambda f: f["aseguradora"],
         ),
     }
+
+
+def edad_del_informe(informe: str | None) -> str:
+    """
+    El rango de edad según la línea «EDAD:» del informe. «45 años», «45», «45
+    AÑOS DE EDAD» → 45. Meses o días sin años («8 meses») → menor de un año,
+    primer rango. Sin número claro («No consta en el dictado.») o fuera de lo
+    posible (> 130) → `no_consta`.
+    """
+    linea = _LINEA_EDAD.search(informe or "")
+    if not linea:
+        return "no_consta"
+    texto = linea.group(1).strip().upper()
+    numero = _NUMERO.search(texto)
+    if not numero:
+        return "no_consta"
+    # «8 MESES» o «15 DÍAS» sin años delante: aún no cumple un año.
+    if "AÑO" not in texto and re.search(r"MES|D[IÍ]A|SEMANA", texto):
+        anios = 0
+    else:
+        anios = int(numero.group())
+    if anios > 130:
+        return "no_consta"
+    for clave, desde, hasta in RANGOS_EDAD:
+        if anios >= desde and (hasta is None or anios <= hasta):
+            return clave
+    return "no_consta"
+
+
+def reporte_edad(
+    db: DbSession,
+    desde: dt.date | None = None,
+    hasta: dt.date | None = None,
+    aseguradora_id: uuid.UUID | None = None,
+) -> dict[str, Any]:
+    """Casos YA AUDITADOS (culminados) por rango de edad, del informe."""
+    total = dict.fromkeys(EDADES, 0)
+    por_aseguradora: dict[uuid.UUID, dict[str, Any]] = {}
+    for visita, aseguradora, _inicio, _entrega in _casos(db, desde, hasta, aseguradora_id):
+        if visita.estado != "culminada":
+            continue
+        rango = edad_del_informe(visita.informe)
+        total[rango] += 1
+        fila = por_aseguradora.setdefault(
+            visita.aseguradora_id, {"aseguradora": aseguradora, **dict.fromkeys(EDADES, 0)}
+        )
+        fila[rango] += 1
+    return {
+        "total": {"auditados": sum(total.values()), **total},
+        "por_aseguradora": sorted(
+            (
+                {**fila, "auditados": sum(fila[e] for e in EDADES)}
+                for fila in por_aseguradora.values()
+            ),
+            key=lambda f: f["aseguradora"],
+        ),
+    }
+
