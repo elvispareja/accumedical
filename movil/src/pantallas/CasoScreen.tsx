@@ -5,7 +5,7 @@ import {
   setAudioModeAsync,
   useAudioRecorder,
 } from 'expo-audio'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -363,8 +363,16 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
   const [pdf, setPdf] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
   const [exito, setExito] = useState<string | null>(null)
+  // **Enviado, se bloquea** (27/10/2026, pedido del usuario): desde que se
+  // confirma el envío y mientras sale —o ya salió— no se redacta, corrige ni
+  // reenvía: así no viajan dos veces los mismos correos y PDF. Si el envío
+  // falla, todo se desbloquea. Un caso ya culminado llega bloqueado.
+  const [enviado, setEnviado] = useState(caso.estado === 'culminada')
+  const enviandoRef = useRef(false)
+  const bloqueado = enviando || enviado
 
   function confirmarEnvio() {
+    if (bloqueado) return
     // Siempre llega a los fijos —quien creó el caso y las dos coordinaciones—;
     // los correos marcados del caso se suman si los hay (27/10/2026).
     const fijos =
@@ -384,6 +392,9 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
   }
 
   async function mandar() {
+    // Dos toques a «Enviar» antes de repintar no mandan dos veces.
+    if (enviandoRef.current || enviado) return
+    enviandoRef.current = true
     setEnviando(true)
     setAviso(null)
     setExito(null)
@@ -394,9 +405,11 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
           ? 'Informe en camino a 1 correo.'
           : `Informe en camino a ${r.destinatarios} correos.`,
       )
+      setEnviado(true)
     } catch (error) {
       setAviso(error instanceof ErrorDeApi ? error.message : 'No se pudo enviar. Reintenta.')
     } finally {
+      enviandoRef.current = false
       setEnviando(false)
     }
   }
@@ -698,12 +711,12 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
         )}
         <Pressable
           onPress={generar}
-          disabled={generando || !puedeGenerar}
+          disabled={generando || !puedeGenerar || bloqueado}
           accessibilityRole="button"
           style={[
             estilos.boton,
             estilos.botonIa,
-            (generando || !puedeGenerar) && estilos.botonApagado,
+            (generando || !puedeGenerar || bloqueado) && estilos.botonApagado,
           ]}
         >
           {generando ? (
@@ -738,16 +751,22 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
                 marcados del caso; antes se confirma enseñando a quiénes. */}
             <Pressable
               onPress={confirmarEnvio}
-              disabled={enviando}
+              disabled={bloqueado}
               accessibilityRole="button"
-              style={[estilos.boton, enviando && estilos.botonApagado]}
+              style={[estilos.boton, bloqueado && estilos.botonApagado]}
             >
               {enviando ? (
                 <ActivityIndicator color="#ffffff" />
               ) : (
                 <>
-                  <Ionicons name="send-outline" size={16} color="#ffffff" />
-                  <Text style={estilos.botonTexto}>Enviar informe</Text>
+                  <Ionicons
+                    name={enviado ? 'checkmark-done-outline' : 'send-outline'}
+                    size={16}
+                    color="#ffffff"
+                  />
+                  <Text style={estilos.botonTexto}>
+                    {enviado ? 'Informe enviado' : 'Enviar informe'}
+                  </Text>
                 </>
               )}
             </Pressable>
@@ -755,82 +774,91 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
             {/* El texto completo no se pinta aquí: en pantalla se hace largo;
                 el informe se revisa como va a salir, en su PDF de marca. */}
             <Text style={estilos.pista}>
-              Informe listo. Revísalo con «Ver el PDF».
+              {enviado
+                ? 'Informe enviado. Puedes verlo con «Ver el PDF».'
+                : enviando
+                  ? 'Enviando el informe…'
+                  : 'Informe listo. Revísalo con «Ver el PDF».'}
             </Text>
 
             {/* Revisado el informe, lo que falte o esté mal se dicta aquí: la
-                IA aplica SOLO esas correcciones y no toca el resto. */}
-            <Text style={estilos.seccion}>Corregir el informe</Text>
-            <Text style={estilos.vacio}>
-              Dicta lo que falte o deba cambiar: «la edad es 54», «el género es
-              masculino», «en comentarios que diga X en vez de Y». La IA aplica
-              solo eso y conserva el resto tal cual.
-            </Text>
-            <Pressable
-              onPress={() => alternarDictado('correccion')}
-              disabled={transcribiendo || (grabando && destinoDictado !== 'correccion')}
-              accessibilityRole="button"
-              accessibilityLabel={
-                grabando && destinoDictado === 'correccion'
-                  ? 'Terminar el dictado'
-                  : 'Dictar la corrección'
-              }
-              style={[
-                estilos.botonDictar,
-                grabando && destinoDictado === 'correccion' && estilos.botonDictarActivo,
-                (transcribiendo || (grabando && destinoDictado !== 'correccion')) &&
-                  estilos.botonApagado,
-              ]}
-            >
-              {transcribiendo && destinoDictado === 'correccion' ? (
-                <>
-                  <ActivityIndicator color="#ffffff" />
-                  <Text style={estilos.botonTexto}>Transcribiendo…</Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons
-                    name={
-                      grabando && destinoDictado === 'correccion' ? 'stop-circle' : 'mic'
-                    }
-                    size={20}
-                    color="#ffffff"
-                  />
-                  <Text style={estilos.botonTexto}>
-                    {grabando && destinoDictado === 'correccion'
-                      ? 'Grabando… toca para terminar'
-                      : 'Dictar la corrección'}
-                  </Text>
-                </>
-              )}
-            </Pressable>
-            <TextInput
-              value={correccion}
-              onChangeText={setCorreccion}
-              multiline
-              placeholder="Dicta o escribe las correcciones aquí…"
-              placeholderTextColor={colores.tenue}
-              style={[estilos.caja, estilos.cajaCorreccion]}
-            />
-            <Pressable
-              onPress={aplicarCorrecciones}
-              disabled={corrigiendo || !correccion.trim()}
-              accessibilityRole="button"
-              style={[
-                estilos.boton,
-                estilos.botonIa,
-                (corrigiendo || !correccion.trim()) && estilos.botonApagado,
-              ]}
-            >
-              {corrigiendo ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <>
-                  <Ionicons name="color-wand-outline" size={16} color="#ffffff" />
-                  <Text style={estilos.botonTexto}>Aplicar correcciones</Text>
-                </>
-              )}
-            </Pressable>
+                IA aplica SOLO esas correcciones y no toca el resto. Mientras
+                se envía, o ya enviado, no se corrige: se oculta. */}
+            {!bloqueado && (
+              <>
+                <Text style={estilos.seccion}>Corregir el informe</Text>
+                <Text style={estilos.vacio}>
+                  Dicta lo que falte o deba cambiar: «la edad es 54», «el género es
+                  masculino», «en comentarios que diga X en vez de Y». La IA aplica
+                  solo eso y conserva el resto tal cual.
+                </Text>
+                <Pressable
+                  onPress={() => alternarDictado('correccion')}
+                  disabled={transcribiendo || (grabando && destinoDictado !== 'correccion')}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    grabando && destinoDictado === 'correccion'
+                      ? 'Terminar el dictado'
+                      : 'Dictar la corrección'
+                  }
+                  style={[
+                    estilos.botonDictar,
+                    grabando && destinoDictado === 'correccion' && estilos.botonDictarActivo,
+                    (transcribiendo || (grabando && destinoDictado !== 'correccion')) &&
+                      estilos.botonApagado,
+                  ]}
+                >
+                  {transcribiendo && destinoDictado === 'correccion' ? (
+                    <>
+                      <ActivityIndicator color="#ffffff" />
+                      <Text style={estilos.botonTexto}>Transcribiendo…</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons
+                        name={
+                          grabando && destinoDictado === 'correccion' ? 'stop-circle' : 'mic'
+                        }
+                        size={20}
+                        color="#ffffff"
+                      />
+                      <Text style={estilos.botonTexto}>
+                        {grabando && destinoDictado === 'correccion'
+                          ? 'Grabando… toca para terminar'
+                          : 'Dictar la corrección'}
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+                <TextInput
+                  value={correccion}
+                  onChangeText={setCorreccion}
+                  multiline
+                  placeholder="Dicta o escribe las correcciones aquí…"
+                  placeholderTextColor={colores.tenue}
+                  style={[estilos.caja, estilos.cajaCorreccion]}
+                />
+                <Pressable
+                  onPress={aplicarCorrecciones}
+                  disabled={corrigiendo || !correccion.trim()}
+                  accessibilityRole="button"
+                  style={[
+                    estilos.boton,
+                    estilos.botonIa,
+                    (corrigiendo || !correccion.trim()) && estilos.botonApagado,
+                  ]}
+                >
+                  {corrigiendo ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <>
+                      <Ionicons name="color-wand-outline" size={16} color="#ffffff" />
+                      <Text style={estilos.botonTexto}>Aplicar correcciones</Text>
+                    </>
+                  )}
+                </Pressable>
+              </>
+            )}
           </>
         )}
 

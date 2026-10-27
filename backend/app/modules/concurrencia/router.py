@@ -623,6 +623,19 @@ def mis_casos(
     return salida
 
 
+def _sin_informe_enviado(visita) -> None:
+    """
+    **Enviado el informe, ya no se redacta, corrige ni reenvía** (27/10/2026,
+    pedido del usuario: «para prevenir que reenvíen correos y PDF ya
+    enviados»). Enviar culmina el caso; un culminado ya entregó su informe.
+    """
+    if visita.estado == "culminada":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="El informe de este caso ya se envió: no se puede volver a redactar ni enviar",
+        )
+
+
 def _caso_del_auditor(ctx: AuthContext, db: DbSession, visita_id: uuid.UUID):
     """
     La doble puerta del panel del auditor: personal de plataforma y caso
@@ -951,6 +964,7 @@ def generar_informe(
     responde se guarda: un fallo de la IA no deja nada a medias.
     """
     visita = _caso_del_auditor(ctx, db, visita_id)
+    _sin_informe_enviado(visita)
     notas = service.notas_de(db, visita.id)
     presentes = {n.tipo for n in notas}
     faltantes = [t for t in informe_ia.ETIQUETA_TIPO if t not in presentes]
@@ -1029,6 +1043,7 @@ def corregir_informe(
     médico— y la IA cambia SOLO lo pedido; el resto queda palabra por palabra.
     """
     visita = _caso_del_auditor(ctx, db, visita_id)
+    _sin_informe_enviado(visita)
     if not visita.informe:
         raise HTTPException(
             status.HTTP_409_CONFLICT, detail="El caso aún no tiene informe que corregir"
@@ -1136,6 +1151,11 @@ def enviar_informe(
     huella en AuditLog; cada correo va aislado y deja la suya en el log.
     """
     visita = _caso_del_auditor(ctx, db, visita_id)
+    # La fila BLOQUEADA hasta el commit: dos toques seguidos —o un reintento con
+    # mala cobertura— no pueden mandar el informe dos veces; el segundo espera
+    # y ya lo encuentra culminado.
+    db.refresh(visita, with_for_update=True)
+    _sin_informe_enviado(visita)
     contenido = _pdf_del_caso(db, visita)
     # La cuenta que se responde es la REAL: correos del caso + operador creador
     # + supervisores, ya sin repetidos — la misma lista que usará el envío.
