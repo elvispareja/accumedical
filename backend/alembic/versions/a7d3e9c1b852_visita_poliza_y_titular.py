@@ -76,8 +76,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("ck_conc_visitas_titular", "conc_visitas", type_="check")
-    op.drop_constraint("ck_conc_visitas_parentesco", "conc_visitas", type_="check")
+    op.drop_constraint(op.f("ck_conc_visitas_titular"), "conc_visitas", type_="check")
+    op.drop_constraint(op.f("ck_conc_visitas_parentesco"), "conc_visitas", type_="check")
     op.drop_constraint(
         "fk_conc_visitas_titular_tipo_documento_codigo_tipos_documento",
         "conc_visitas",

@@ -50,7 +50,8 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
 
     __tablename__ = "conc_visitas"
     __table_args__ = (
-        CheckConstraint("hasta > desde", name="ventana"),
+        # Sin CHECK «hasta > desde» desde el 27/10/2026: la entrega corre desde
+        # el pedido y la visita puede fijarse después de ella.
         # Prorrogar solo da MÁS tiempo, nunca menos del ya concedido.
         CheckConstraint("llegada_limite >= desde", name="limite"),
         # Seis estados, y **ninguno se elige**: cada uno lo pone una acción.
@@ -162,9 +163,11 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     # A qué hora debe llegar el auditor. **Es lo único que se teclea** de los
     # tres plazos: los otros dos salen de aquí.
     desde: Mapped[dt.datetime] = mapped_column(TS, nullable=False)
-    # Cuándo vence la ENTREGA DEL INFORME: `desde` + las horas de SLA que esa
-    # compañía tiene pactadas para Concurrencia. Se materializa a propósito —
-    # renegociar el SLA mañana no puede mover el plazo de un caso ya abierto.
+    # Cuándo vence la ENTREGA DEL INFORME: el inicio del SLA —cuando llegó el
+    # pedido: el alta de la compañía o el «Requerimiento» de nuestra
+    # coordinación (27/10/2026)— + las horas que esa compañía tiene pactadas.
+    # Se materializa a propósito —renegociar el SLA mañana no puede mover el
+    # plazo de un caso ya abierto.
     hasta: Mapped[dt.datetime] = mapped_column(TS, nullable=False)
     # Hasta cuándo se le acepta la LLEGADA al auditor. Nace igual a `desde` y
     # cada prórroga del coordinador lo empuja a «ahora + las horas que ponga»:

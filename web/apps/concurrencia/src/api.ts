@@ -577,3 +577,78 @@ export async function prorrogarVisita(visitaId: string, horas: number) {
   )
   return data
 }
+
+// ─────────────── Reportería del coordinador (27/10/2026) ───────────────
+
+export type EstadoSla = 'a_tiempo' | 'fuera_de_plazo' | 'vencido' | 'en_plazo' | 'cancelado'
+
+export interface CuentaSla {
+  casos: number
+  a_tiempo: number
+  fuera_de_plazo: number
+  vencido: number
+  en_plazo: number
+  cancelado: number
+  /** A tiempo entre lo que ya se puede juzgar (entregado o vencido); null si nada. */
+  cumplimiento: number | null
+}
+
+export interface CasoSla {
+  id: string
+  codigo_interno: string
+  aseguradora: string
+  /** «correo» / «otro» si lo programó la coordinación; «sistema» si la compañía. */
+  origen: string
+  inicio_sla: string
+  limite: string
+  entregado_at: string | null
+  horas: number
+  horas_sla: number
+  estado_sla: EstadoSla
+}
+
+export interface ReporteSla {
+  total: CuentaSla
+  por_aseguradora: (CuentaSla & { aseguradora: string })[]
+  casos: CasoSla[]
+}
+
+export interface CuentaSexo {
+  auditados: number
+  femenino: number
+  masculino: number
+  no_consta: number
+}
+
+export interface ReporteSexo {
+  total: CuentaSexo
+  por_aseguradora: (CuentaSexo & { aseguradora: string })[]
+}
+
+export interface FiltrosReporte {
+  desde?: string
+  hasta?: string
+  aseguradora_id?: string
+}
+
+function paramsDeReporte(f: FiltrosReporte) {
+  return {
+    desde: f.desde || undefined,
+    hasta: f.hasta || undefined,
+    aseguradora_id: f.aseguradora_id || undefined,
+  }
+}
+
+export async function obtenerReporteSla(filtros: FiltrosReporte) {
+  const { data } = await api.get<ReporteSla>('/concurrencia/supervision/reportes/sla', {
+    params: paramsDeReporte(filtros),
+  })
+  return data
+}
+
+export async function obtenerReporteSexo(filtros: FiltrosReporte) {
+  const { data } = await api.get<ReporteSexo>('/concurrencia/supervision/reportes/sexo', {
+    params: paramsDeReporte(filtros),
+  })
+  return data
+}

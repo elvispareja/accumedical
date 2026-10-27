@@ -36,6 +36,7 @@ from app.modules.concurrencia import (
     notificaciones,
     nucleo,
     permissions,
+    reportes,
     service,
     transcripcion,
 )
@@ -67,6 +68,8 @@ from app.modules.concurrencia.schemas import (
     PrestadorElegible,
     ProrrogaOut,
     ProrrogaRequest,
+    ReporteSexo,
+    ReporteSla,
     ReprogramarRequest,
     SedeElegible,
     SlaDelModulo,
@@ -1598,15 +1601,12 @@ def reprogramar(
     """
     _solo_supervision(ctx)
     visita = service.obtener_para_supervision(db, visita_id)
-    # La entrega se recalcula con el SLA de la compañía, y el plazo de llegada
-    # vuelve a la hora nueva: las prórrogas de la cita anterior no valen para
-    # una cita distinta.
-    nueva_entrega = service.entrega_por_sla(db, visita.aseguradora_id, datos.desde)
-
+    # El plazo de llegada vuelve a la hora nueva: las prórrogas de la cita
+    # anterior no valen para otra. La entrega del informe NO se mueve: el SLA
+    # corre desde que llegó el pedido (27/10/2026).
     desde_anterior, hasta_anterior = visita.desde, visita.hasta
     if desde_anterior != datos.desde:
         visita.desde = datos.desde
-        visita.hasta = nueva_entrega
         visita.llegada_limite = datos.desde
         visita.updated_by = ctx.user.id
         # Reprogramar un caso vencido lo devuelve a la agenda: misma regla que
@@ -1621,7 +1621,7 @@ def reprogramar(
             },
             "despues": {
                 "desde": datos.desde.isoformat(),
-                "hasta": nueva_entrega.isoformat(),
+                "hasta": visita.hasta.isoformat(),
             },
         }
         if revivido is not None:
@@ -1863,6 +1863,35 @@ def sla_del_modulo_supervision(
     """Lo mismo para el coordinador, que elige de qué compañía nace el caso."""
     _solo_supervision(ctx)
     return SlaDelModulo(horas=float(service.horas_de_sla(db, aseguradora_id)))
+
+
+# ─────────── Reportería del coordinador de Accumedical (27/10/2026) ───────────
+
+
+@router.get("/supervision/reportes/sla", response_model=ReporteSla)
+def reporte_sla(
+    desde: dt.date | None = Query(default=None),
+    hasta: dt.date | None = Query(default=None),
+    aseguradora_id: uuid.UUID | None = Query(default=None),
+    ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
+    db: DbSession = Depends(get_db),
+) -> ReporteSla:
+    """Cumplimiento del SLA: desde que llegó el pedido hasta la primera entrega."""
+    _solo_supervision(ctx)
+    return ReporteSla(**reportes.reporte_sla(db, desde, hasta, aseguradora_id))
+
+
+@router.get("/supervision/reportes/sexo", response_model=ReporteSexo)
+def reporte_sexo(
+    desde: dt.date | None = Query(default=None),
+    hasta: dt.date | None = Query(default=None),
+    aseguradora_id: uuid.UUID | None = Query(default=None),
+    ctx: AuthContext = Depends(require_permission(permissions.LEER_VISITA)),
+    db: DbSession = Depends(get_db),
+) -> ReporteSexo:
+    """Casos ya auditados por sexo, según la línea «GENERO:» de su informe."""
+    _solo_supervision(ctx)
+    return ReporteSexo(**reportes.reporte_sexo(db, desde, hasta, aseguradora_id))
 
 
 @router.post("/supervision/visitas/{visita_id}/prorroga", response_model=ProrrogaOut)

@@ -39,7 +39,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("ck_conc_visitas_requerimiento_medio", "conc_visitas", type_="check")
+    op.drop_constraint(op.f("ck_conc_visitas_requerimiento_medio"), "conc_visitas", type_="check")
     op.drop_column("conc_visitas", "requerimiento_recibido_at")
     op.drop_column("conc_visitas", "requerimiento_medio_detalle")
     op.drop_column("conc_visitas", "requerimiento_medio")

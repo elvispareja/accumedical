@@ -163,9 +163,9 @@ def _inicio_del_dia_ec(dia: dt.date) -> dt.datetime:
 
 def entrega_por_sla(db: DbSession, aseguradora_id: uuid.UUID, desde: dt.datetime) -> dt.datetime:
     """
-    Cuándo vence el informe: la hora de llegada más las horas del SLA, **reloj
-    corrido**. Con 23 h pactadas, llegar el 27 a las 15:00 entrega el 28 a las
-    14:00.
+    Cuándo vence el informe: el inicio del SLA (cuando llegó el pedido) más las
+    horas pactadas, **reloj corrido**. Con 24 h, un pedido del 27 a las 15:00
+    se entrega hasta el 28 a las 15:00.
     """
     return desde + dt.timedelta(hours=float(horas_de_sla(db, aseguradora_id)))
 
@@ -569,9 +569,15 @@ def crear(
     # La aseguradora ya no pone hora (26/10/2026): el caso nace con la hora del
     # registro como provisional y la coordinación fija la real al asignar. Un
     # caso sin asignar no vence (`marcar_no_auditadas` solo mira `asignada`).
-    desde = datos.get("desde") or dt.datetime.now(dt.UTC)
-    # `hasta` ya no se teclea: sale del SLA de la compañía.
-    hasta = entrega_por_sla(db, aseguradora_id, desde)
+    ahora = dt.datetime.now(dt.UTC)
+    desde = datos.get("desde") or ahora
+    # **El SLA corre desde que llega el pedido** (27/10/2026): desde que la
+    # compañía crea el caso en el sistema o, si lo programa nuestra
+    # coordinación, desde la fecha y hora del card «Requerimiento». La entrega
+    # del informe (`hasta`) es ese inicio más las horas pactadas, y ni derivar
+    # ni reprogramar la visita la mueven.
+    origen = requerimiento(datos)
+    hasta = entrega_por_sla(db, aseguradora_id, origen["requerimiento_recibido_at"] or ahora)
     # El documento del paciente, contra el catálogo y su regex (una cédula de 9
     # dígitos se corta aquí con mensaje claro, no con un error de integridad).
     validar_documento(
@@ -583,7 +589,7 @@ def crear(
 
     visita = Visita(
         **poliza,
-        **requerimiento(datos),
+        **origen,
         aseguradora_id=aseguradora_id,
         prestador_id=prestador_id,
         # Las cuatro partes ya llegan normalizadas por el validador de `personas`.
@@ -657,12 +663,10 @@ def actualizar(
         numero = cambios.get("paciente_numero_documento") or visita.paciente_numero_documento
         nuevos = {k: v for k, v in cambios.items() if k in CAMPOS_POLIZA}
         resultante.update(poliza_y_titular(db, actual | nuevos, tipo, numero))
-    # Reprogramar es mover la hora de llegada, y de ahí salen los otros dos
-    # plazos: la entrega se recalcula con el SLA vigente y el límite de llegada
-    # vuelve a ser la hora nueva —las prórrogas de la cita anterior no siguen
-    # valiendo para una cita distinta—.
+    # Reprogramar es mover la hora de llegada: el límite de llegada vuelve a la
+    # hora nueva —las prórrogas de la cita anterior no valen para otra—. La
+    # entrega del informe NO se mueve: el SLA corre desde que llegó el pedido.
     if resultante.get("desde") is not None and resultante["desde"] != visita.desde:
-        resultante["hasta"] = entrega_por_sla(db, visita.aseguradora_id, resultante["desde"])
         resultante["llegada_limite"] = resultante["desde"]
     resultante.pop("correos", None)
     if "prestador_id" in resultante:
@@ -1577,7 +1581,8 @@ def asignar_auditor(
     # **La ventana de la visita la fija la coordinación al derivar** (26/10/2026):
     # DESDE qué hora y HASTA qué hora puede llegar el auditor al hospital. El
     # «hasta» es el plazo de llegada (`llegada_limite`: pasado sin llegar, el
-    # caso vence); la entrega del informe sale del SLA contado desde el inicio.
+    # caso vence). La entrega del informe no depende de la visita: el SLA corre
+    # desde que llegó el pedido (`crear`).
     # La compañía no ve nada de esto.
     if auditor_id is not None:
         if desde is None or hasta is None:
@@ -1605,7 +1610,7 @@ def asignar_auditor(
             diff["despues"]["llegada_limite"] = hasta.isoformat()
             visita.desde = desde
             visita.llegada_limite = hasta
-            visita.hasta = entrega_por_sla(db, visita.aseguradora_id, desde)
+            # La entrega del informe no se toca: el SLA corre desde el pedido.
             visita.updated_by = autor
     if visita.auditor_id != auditor_id:
         diff["antes"]["auditor_id"] = str(visita.auditor_id) if visita.auditor_id else None

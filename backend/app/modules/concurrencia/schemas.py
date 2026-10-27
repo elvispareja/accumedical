@@ -516,3 +516,60 @@ class AsignarAuditorRequest(BaseModel):
     # horaria: una hora «a secas» no dice si es la de Guayaquil o la de UTC.
     desde: AwareDatetime | None = None
     hasta: AwareDatetime | None = None
+
+
+# ─────────────── Reportería del coordinador (27/10/2026) ───────────────
+
+
+class CuentaSla(BaseModel):
+    """Cuántos casos hay en cada estado del SLA y el % de cumplimiento."""
+
+    casos: int
+    a_tiempo: int
+    fuera_de_plazo: int
+    vencido: int
+    en_plazo: int
+    cancelado: int
+    # A tiempo entre lo que ya se puede juzgar (entregado o vencido); nulo si nada.
+    cumplimiento: float | None
+
+
+class SlaDeAseguradora(CuentaSla):
+    aseguradora: str
+
+
+class CasoSla(BaseModel):
+    id: str
+    codigo_interno: str
+    aseguradora: str
+    # «correo» / «otro» si lo programó la coordinación; «sistema» si la compañía.
+    origen: str
+    inicio_sla: dt.datetime
+    limite: dt.datetime
+    entregado_at: dt.datetime | None
+    horas: float
+    horas_sla: float
+    estado_sla: Literal["a_tiempo", "fuera_de_plazo", "vencido", "en_plazo", "cancelado"]
+
+
+class ReporteSla(BaseModel):
+    total: CuentaSla
+    por_aseguradora: list[SlaDeAseguradora]
+    casos: list[CasoSla]
+
+
+class CuentaSexo(BaseModel):
+    auditados: int
+    femenino: int
+    masculino: int
+    no_consta: int
+
+
+class SexoDeAseguradora(CuentaSexo):
+    aseguradora: str
+
+
+class ReporteSexo(BaseModel):
+    total: CuentaSexo
+    por_aseguradora: list[SexoDeAseguradora]
+
