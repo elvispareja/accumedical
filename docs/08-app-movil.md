@@ -1,6 +1,6 @@
 # La app móvil del auditor
 
-Nativa, con **Expo SDK 57 / React Native 0.86** (TypeScript), en `movil/`. Es
+Nativa, con **Expo SDK 58 / React Native 0.88** (TypeScript), en `movil/`. Es
 la app del médico auditor de Concurrencia: login con la marca real y la bandeja
 «Mis casos» en dos pestañas —**Programadas** (lo pendiente, lo más urgente
 primero, con semáforo contra el reloj) e **Historial** (lo ya cerrado:
