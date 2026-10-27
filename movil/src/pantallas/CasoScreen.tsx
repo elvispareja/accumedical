@@ -448,7 +448,7 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
             <View style={estilos.filaDato}>
               <Ionicons name="location-outline" size={15} color={colores.tenue} />
               <Text style={estilos.dato}>
-                {caso.sede_nombre ?? 'Casa matriz'}
+                {caso.sede_nombre ?? 'Sede principal'}
                 {[caso.ciudad_nombre, caso.provincia_nombre].filter(Boolean).length
                   ? ` · ${[caso.ciudad_nombre, caso.provincia_nombre].filter(Boolean).join(', ')}`
                   : ''}

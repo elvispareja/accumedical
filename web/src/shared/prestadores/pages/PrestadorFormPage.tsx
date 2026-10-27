@@ -660,7 +660,7 @@ export function PrestadorFormPage() {
             <div className="space-y-4 pt-6">
               <Bloque
                 titulo="Sedes"
-                descripcion="Dónde atiende: matriz, sucursales o consultorios. Son opcionales."
+                descripcion="Dónde atiende: sede principal, sucursales o consultorios. Son opcionales."
               >
                 <SedesPanel
                   sedes={form.sedes ?? []}

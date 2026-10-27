@@ -1,4 +1,5 @@
-import { Plus, Trash2, UserPlus } from 'lucide-react'
+import { Pencil, Plus, Search, Trash2, UserPlus } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import {
@@ -11,6 +12,7 @@ import {
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
+import { Modal } from '@/shared/components/ui/modal'
 import { Select } from '@/shared/components/ui/select'
 import {
   CamposNombre,
@@ -32,7 +34,7 @@ export interface ContactoFormulario extends NombrePersona {
   tipo_documento_codigo: string
   numero_documento: string
   cargo: string
-  /** Solo contactos de prestador: su sede; '' = la casa matriz. */
+  /** Solo contactos de prestador: su sede; '' = la sede principal. */
   sede_id?: string
 }
 
@@ -50,7 +52,7 @@ export interface ContactoSalida {
   tipo_documento_nombre: string | null
   numero_documento: string | null
   cargo: string | null
-  /** Solo contactos de prestador: su sede; null = la casa matriz. */
+  /** Solo contactos de prestador: su sede; null = la sede principal. */
   sede_id?: string | null
 }
 
@@ -124,9 +126,12 @@ export function validar(contactos: ContactoFormulario[]): string | null {
 }
 
 /**
- * Lista editable de contactos. La comparten aseguradoras y prestadores porque el
- * formulario es idéntico; lo que no se comparte es la tabla donde se guardan,
- * que es propia de cada dueño.
+ * Los contactos en una TABLA (pedido del usuario, 26/10/2026), como la de
+ * usuarios: buscador, filtro por sede (solo prestadores) y Editar / Quitar por
+ * fila. Añadir y editar van en una ventana con el mismo formulario de siempre.
+ * La comparten aseguradoras y prestadores porque el formulario es idéntico; lo
+ * que no se comparte es la tabla donde se guardan, que es propia de cada dueño.
+ * Lo que se cambia aquí se guarda con «Guardar cambios» de la ficha.
  */
 export function ContactosPanel({
   contactos,
@@ -147,45 +152,206 @@ export function ContactosPanel({
   descripcionVacio: string
   /**
    * Solo prestadores: sus sedes YA GUARDADAS. Con ellas cada contacto elige a
-   * cuál pertenece (pedido del usuario, 26/10/2026); vacío = la casa matriz.
+   * cuál pertenece (pedido del usuario, 26/10/2026); vacío = la sede principal.
    */
   sedes?: { id: string; nombre: string }[]
 }) {
-  if (contactos.length === 0) {
-    return (
-      <div className="rounded-md border border-dashed border-borde px-6 py-10 text-center">
-        <UserPlus className="mx-auto size-5 text-tenue-fg" aria-hidden="true" />
-        <p className="mt-3 font-display text-sm font-medium">Sin contactos</p>
-        <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">{descripcionVacio}</p>
-        <Boton type="button" tamano="sm" className="mt-4" onClick={onAnadir}>
-          <Plus aria-hidden="true" />
-          Añadir contacto
-        </Boton>
-      </div>
-    )
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroSede, setFiltroSede] = useState<string>(TODAS)
+  // La ventana: qué contacto se edita, cómo estaba al abrirla (para «Cancelar»)
+  // y si es uno recién añadido (cancelar lo quita).
+  const [abierto, setAbierto] = useState<{ clave: string; antes: ContactoFormulario | null } | null>(null)
+  const [esperandoNuevo, setEsperandoNuevo] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const cuantosAntes = useRef(contactos.length)
+
+  // «Añadir» lo hace el dueño de la lista; en cuanto aparece, se abre su ventana.
+  useEffect(() => {
+    if (esperandoNuevo && contactos.length > cuantosAntes.current) {
+      setAbierto({ clave: contactos[contactos.length - 1]!._key, antes: null })
+      setEsperandoNuevo(false)
+    }
+    cuantosAntes.current = contactos.length
+  }, [contactos, esperandoNuevo])
+
+  const nombreDeSede = (id: string | undefined) =>
+    !id ? 'Sede principal' : (sedes?.find((s) => s.id === id)?.nombre ?? '—')
+
+  const visibles = useMemo(() => {
+    const termino = busqueda.trim().toLocaleLowerCase()
+    return contactos.filter((c) => {
+      if (sedes && filtroSede !== TODAS && (c.sede_id ?? '') !== filtroSede) return false
+      if (!termino) return true
+      return [nombreCompleto(c), c.email, c.cargo, c.telefono]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(termino)
+    })
+  }, [contactos, busqueda, filtroSede, sedes])
+
+  const contacto = abierto ? contactos.find((c) => c._key === abierto.clave) : undefined
+
+  function cerrar(aplicar: boolean) {
+    if (!abierto) return
+    if (aplicar && contacto) {
+      const problema = validar([contacto])
+      if (problema) return setError(problema)
+      const correo = contacto.email.trim().toLocaleLowerCase()
+      if (contactos.some((c) => c._key !== contacto._key && c.email.trim().toLocaleLowerCase() === correo)) {
+        return setError('Ese correo ya lo tiene otro contacto')
+      }
+    }
+    if (!aplicar) {
+      // Cancelar deja todo como estaba: el nuevo se va y el editado se restaura.
+      if (abierto.antes === null) onQuitar(abierto.clave)
+      else {
+        for (const [campo, valor] of Object.entries(abierto.antes)) {
+          if (campo !== '_key' && valor !== undefined) {
+            onCambiar(abierto.clave, campo as keyof ContactoFormulario, String(valor))
+          }
+        }
+      }
+    }
+    setError(null)
+    setAbierto(null)
   }
 
   return (
     <div className="space-y-4">
-      {contactos.map((contacto, indice) => (
-        <fieldset key={contacto._key} className="rounded-md border border-borde p-4">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <legend className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
-              Contacto {indice + 1}
-            </legend>
-            <Boton
-              type="button"
-              variante="fantasma"
-              tamano="sm"
-              onClick={() => onQuitar(contacto._key)}
-              aria-label={`Quitar contacto ${indice + 1}`}
-              className="hover:text-peligro"
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[14rem] flex-1">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
+            aria-hidden="true"
+          />
+          <Input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por nombre, correo o cargo"
+            aria-label="Buscar contacto"
+            mayusculas={false}
+            className="pl-9"
+          />
+        </div>
+        {sedes && (
+          <div className="w-60">
+            <Select
+              value={filtroSede}
+              onChange={(e) => setFiltroSede(e.target.value)}
+              aria-label="Filtrar por sede"
             >
-              <Trash2 aria-hidden="true" />
-              Quitar
+              <option value={TODAS}>Todas las sedes</option>
+              <option value="">Sede principal</option>
+              {sedes.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nombre}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+        <Boton
+          type="button"
+          tamano="sm"
+          onClick={() => {
+            setError(null)
+            setEsperandoNuevo(true)
+            onAnadir()
+          }}
+        >
+          <Plus aria-hidden="true" />
+          Añadir contacto
+        </Boton>
+      </div>
+
+      {contactos.length === 0 ? (
+        <div className="rounded-md border border-dashed border-borde px-6 py-10 text-center">
+          <UserPlus className="mx-auto size-5 text-tenue-fg" aria-hidden="true" />
+          <p className="mt-3 font-display text-sm font-medium">Sin contactos</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">{descripcionVacio}</p>
+        </div>
+      ) : visibles.length === 0 ? (
+        <p className="rounded-md border border-dashed border-borde px-4 py-8 text-center text-sm text-tenue-fg">
+          Ningún contacto coincide con la búsqueda.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-borde">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-tenue/40 font-display text-[0.6875rem] uppercase tracking-[0.09em] text-tenue-fg">
+              <tr>
+                <th className="px-4 py-3 font-medium">Nombre</th>
+                <th className="px-4 py-3 font-medium">Cargo</th>
+                <th className="px-4 py-3 font-medium">Correo</th>
+                <th className="px-4 py-3 font-medium">Teléfono</th>
+                {sedes && <th className="px-4 py-3 font-medium">Sede</th>}
+                <th className="px-4 py-3" aria-label="Acciones" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-borde">
+              {visibles.map((c) => (
+                <tr key={c._key} className="align-top">
+                  <td className="px-4 py-3 font-medium">{nombreCompleto(c) || '—'}</td>
+                  <td className="px-4 py-3 text-tenue-fg">{c.cargo || '—'}</td>
+                  <td className="px-4 py-3 text-tenue-fg">{c.email || '—'}</td>
+                  <td className="px-4 py-3 tabular text-tenue-fg">{c.telefono || '—'}</td>
+                  {sedes && <td className="px-4 py-3">{nombreDeSede(c.sede_id)}</td>}
+                  <td className="px-4 py-2">
+                    <div className="flex justify-end gap-1">
+                      <Boton
+                        type="button"
+                        variante="contorno"
+                        tamano="sm"
+                        onClick={() => {
+                          setError(null)
+                          setAbierto({ clave: c._key, antes: { ...c } })
+                        }}
+                      >
+                        <Pencil aria-hidden="true" />
+                        Editar
+                      </Boton>
+                      <Boton
+                        type="button"
+                        variante="fantasma"
+                        tamano="sm"
+                        onClick={() => onQuitar(c._key)}
+                        aria-label={`Quitar a ${nombreCompleto(c) || c.email || 'este contacto'}`}
+                        className="hover:text-peligro"
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </Boton>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Modal
+        abierto={Boolean(abierto && contacto)}
+        onCerrar={() => cerrar(false)}
+        titulo={abierto?.antes === null ? 'Nuevo contacto' : `Editar ${contacto ? nombreCompleto(contacto) || 'contacto' : 'contacto'}`}
+        descripcion="Se guarda al pulsar «Guardar cambios» en la ficha."
+        ancho="max-w-3xl"
+        pie={
+          <div className="flex justify-end gap-2">
+            <Boton type="button" variante="contorno" onClick={() => cerrar(false)}>
+              Cancelar
+            </Boton>
+            <Boton type="button" onClick={() => cerrar(true)}>
+              {abierto?.antes === null ? 'Agregar contacto' : 'Aplicar cambios'}
             </Boton>
           </div>
-
+        }
+      >
+        {contacto && (
+          <div>
+            {error && (
+              <p className="mb-4 rounded-md border border-peligro/40 bg-peligro-suave/40 px-3 py-2 text-sm" role="alert">
+                {error}
+              </p>
+            )}
           {sedes && (
             <div className="mb-4 space-y-2">
               <Label htmlFor={`sede-${contacto._key}`}>
@@ -196,7 +362,7 @@ export function ContactosPanel({
                 value={contacto.sede_id ?? ''}
                 onChange={(e) => onCambiar(contacto._key, 'sede_id', e.target.value)}
               >
-                <option value="">Casa matriz</option>
+                <option value="">Sede principal</option>
                 {sedes.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.nombre}
@@ -315,13 +481,12 @@ export function ContactosPanel({
               maxLength={100}
             />
           </div>
-        </fieldset>
-      ))}
-
-      <Boton type="button" variante="contorno" tamano="sm" onClick={onAnadir}>
-        <Plus aria-hidden="true" />
-        Añadir contacto
-      </Boton>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
+
+/** Valor del filtro de sede que no filtra. */
+const TODAS = '__todas__'

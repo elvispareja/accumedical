@@ -213,7 +213,7 @@ export function MapaDeRed({
   // enseñando todos los puntos de la provincia o ciudad elegida.
   const [busqueda, setBusqueda] = useState('')
   // Una fila por ENTIDAD (pedido del usuario, 26/10/2026): el prestador una
-  // sola vez; al elegirlo se despliegan sus sitios (casa matriz y sedes). Los
+  // sola vez; al elegirlo se despliegan sus sitios (sede principal y sedes). Los
   // puntos sin `grupo` (p. ej. aseguradoras) son una fila cada uno.
   const [abierta, setAbierta] = useState<string | null>(null)
   const encontrados = useMemo<FilaBuscada[]>(() => {
@@ -228,13 +228,13 @@ export function MapaDeRed({
         filas.set(clave, fila)
       }
       fila.sitios.push(p)
-      // La casa matriz es la que representa al prestador en la lista.
+      // La sede principal es la que representa al prestador en la lista.
       if (p.grupo && !p.sede) {
         fila.punto = p
         fila.subtitulo = p.subtitulo
       }
     }
-    // Casa matriz primero; después las sedes por nombre.
+    // Sede principal primero; después las sedes por nombre.
     for (const f of filas.values()) {
       f.sitios.sort((a, b) => (a.sede ? 1 : 0) - (b.sede ? 1 : 0) || (a.sede ?? '').localeCompare(b.sede ?? '', 'es'))
     }
@@ -524,7 +524,7 @@ export function MapaDeRed({
                           {conSedes && (
                             <span className="mt-0.5 block text-xs text-tenue-fg">
                               {fila.sitios.length - 1}{' '}
-                              {fila.sitios.length - 1 === 1 ? 'sede' : 'sedes'} · y su casa matriz
+                              {fila.sitios.length - 1 === 1 ? 'sede' : 'sedes'} · y su sede principal
                             </span>
                           )}
                         </span>
@@ -543,7 +543,7 @@ export function MapaDeRed({
                                     esElCentrado ? 'bg-marca-suave/50 text-marca' : 'hover:bg-tenue/60',
                                   )}
                                 >
-                                  <span className="block">{sitio.sede ?? 'Casa matriz'}</span>
+                                  <span className="block">{sitio.sede ?? 'Sede principal'}</span>
                                   <span className="block truncate text-xs text-tenue-fg">
                                     {[sitio.ciudad_nombre, sitio.direccion].filter(Boolean).join(' · ')}
                                   </span>
@@ -627,7 +627,7 @@ interface FilaBuscada {
   clave: string
   titulo: string
   subtitulo: string | null
-  /** El punto al que se va al elegir la fila (la casa matriz si la hay). */
+  /** El punto al que se va al elegir la fila (la sede principal si la hay). */
   punto: PuntoDeMapa
   sitios: PuntoDeMapa[]
 }

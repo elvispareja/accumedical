@@ -307,13 +307,13 @@ export function BandejaPage({
                         <p className="max-w-[12rem] truncate 2xl:max-w-[18rem]">{fila.prestador_nombre}</p>
                       </td>
                       <td className="px-3 py-3 text-tenue-fg">
-                        {/* Sin sede la visita es a la casa matriz: se nombra
+                        {/* Sin sede la visita es a la sede principal: se nombra
                             igual que en el formulario para que no parezcan
                             cosas distintas. */}
                         <div className="max-w-[13rem] 2xl:max-w-[18rem]">
                           <span className="flex items-center gap-1.5">
                             <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
-                            <span className="truncate">{fila.sede_nombre ?? 'Casa matriz'}</span>
+                            <span className="truncate">{fila.sede_nombre ?? 'Sede principal'}</span>
                           </span>
                           {/* Dónde está, no en qué calle: en una columna estrecha
                               la ciudad se lee entera y la dirección se cortaría. */}

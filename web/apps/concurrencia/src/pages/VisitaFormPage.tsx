@@ -57,7 +57,7 @@ function formatoLargo(fecha: Date): string {
 const BANDEJA = '/dashboard'
 
 /**
- * La casa matriz no es una sede: en la base es `sede_id` nulo. Aquí necesita un
+ * La sede principal no es una sede: en la base es `sede_id` nulo. Aquí necesita un
  * valor propio para poder distinguirla de «todavía no he elegido nada», que es
  * la cadena vacía.
  */
@@ -315,7 +315,7 @@ export function VisitaFormPage({
       paciente_tipo_documento_codigo: detalle.data.paciente_tipo_documento_codigo,
       paciente_numero_documento: detalle.data.paciente_numero_documento,
       prestador_id: detalle.data.prestador_id,
-      // Sin sede guardada, la visita era a la casa matriz.
+      // Sin sede guardada, la visita era a la sede principal.
       sede_id: detalle.data.sede_id ?? MATRIZ,
       desde: aLocal(detalle.data.desde),
       contactos_elegidos: [],
@@ -599,7 +599,7 @@ export function VisitaFormPage({
         paciente_apellido_materno: nombre.apellido_materno,
         paciente_tipo_documento_codigo: form.paciente_tipo_documento_codigo,
         paciente_numero_documento: form.paciente_numero_documento.trim(),
-        // La casa matriz se guarda como ausencia de sede.
+        // La sede principal se guarda como ausencia de sede.
         sede_id: form.sede_id === MATRIZ ? null : form.sede_id || null,
         // Sin el bloque «Cuándo» (pedido del usuario, 26/10/2026): mientras se
         // definen los parámetros nuevos, la hora base es la del registro.
@@ -678,7 +678,7 @@ export function VisitaFormPage({
     if (problemaDocumento) return toast.error(problemaDocumento)
     if (!form.prestador_id) return toast.error('Elige el prestador que se va a visitar')
     if (elegido && elegido.sedes.length > 0 && !form.sede_id) {
-      return toast.error('Elige la sede: la casa matriz o una de sus sedes')
+      return toast.error('Elige la sede: la sede principal o una de sus sedes')
     }
     if (vencido && !form.desde) return toast.error('Indica cuándo debe llegar el auditor')
     const correos = form.correos.map((c) => c.valor.trim()).filter(Boolean)
@@ -994,8 +994,8 @@ export function VisitaFormPage({
                         </span>
                         <span className="mt-0.5 block text-xs text-tenue-fg">
                           {p.sedes.length > 0
-                            ? `${p.sedes.length} ${p.sedes.length === 1 ? 'sede' : 'sedes'} · y su casa matriz`
-                            : 'Sin sedes: se visita su casa matriz'}
+                            ? `${p.sedes.length} ${p.sedes.length === 1 ? 'sede' : 'sedes'} · y su sede principal`
+                            : 'Sin sedes: se visita su sede principal'}
                         </span>
                       </span>
                     </label>
@@ -1026,11 +1026,11 @@ export function VisitaFormPage({
                   onChange={(e) => setForm((previo) => ({ ...previo, sede_id: e.target.value }))}
                 >
                   <option value="">Elige la sede</option>
-                  {/* Tener sedes no quita la casa matriz de en medio: sigue
+                  {/* Tener sedes no quita la sede principal de en medio: sigue
                       siendo un sitio al que se puede ir, y es el que la base
                       guarda como visita sin sede. */}
                   <option value={MATRIZ}>
-                    Casa matriz —{' '}
+                    Sede principal —{' '}
                     {zona(elegido.ciudad_nombre, elegido.provincia_nombre, elegido.direccion)}
                   </option>
                   {elegido.sedes.map((s) => (
@@ -1053,7 +1053,7 @@ export function VisitaFormPage({
               <p className="flex items-start gap-2 rounded-md border border-borde bg-superficie-hundida px-4 py-3 text-sm text-tenue-fg">
                 <Building className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>
-                  {elegido?.nombre} no tiene sedes registradas, así que se visita su casa matriz:{' '}
+                  {elegido?.nombre} no tiene sedes registradas, así que se visita su sede principal:{' '}
                   <span className="text-tinta">
                     {zona(elegido?.ciudad_nombre, elegido?.provincia_nombre, elegido?.direccion)}
                   </span>

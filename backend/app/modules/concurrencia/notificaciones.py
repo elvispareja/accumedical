@@ -299,14 +299,14 @@ def _datos_del_caso(fila: tuple) -> list[str]:
         _total_correos,
     ) = fila
 
-    # El destino, resuelto entero: la sede si la hay, la casa matriz si no.
+    # El destino, resuelto entero: la sede si la hay, la sede principal si no.
     if visita.sede_id:
         destino, direccion, ciudad, provincia = (
             sede_nombre, sede_direccion, sede_ciudad, sede_provincia,
         )
     else:
         destino, direccion, ciudad, provincia = (
-            "Casa matriz", prestador_direccion, prestador_ciudad, prestador_provincia,
+            "Sede principal", prestador_direccion, prestador_ciudad, prestador_provincia,
         )
     donde = ", ".join(p for p in (ciudad, provincia) if p)
     lugar = " — ".join(p for p in (destino, direccion) if p) + (f" ({donde})" if donde else "")

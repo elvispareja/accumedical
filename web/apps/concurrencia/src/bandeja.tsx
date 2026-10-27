@@ -99,7 +99,7 @@ export function CasosDeConcurrencia({ filtros }: PropsCasosAuditoria) {
         <span className="flex max-w-[14rem] items-center gap-1 text-xs">
           <MapPin className="size-3 shrink-0" aria-hidden="true" />
           <span className="truncate">
-            {v.sede_nombre ?? 'Casa matriz'}
+            {v.sede_nombre ?? 'Sede principal'}
             {v.ciudad_nombre ? ` · ${v.ciudad_nombre}` : ''}
           </span>
         </span>

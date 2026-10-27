@@ -417,7 +417,7 @@ export function SupervisionPage() {
                         <span className="flex max-w-[14rem] items-center gap-1 truncate text-xs">
                           <MapPin className="size-3 shrink-0" aria-hidden="true" />
                           <span className="truncate">
-                            {fila.sede_nombre ?? 'Casa matriz'}
+                            {fila.sede_nombre ?? 'Sede principal'}
                             {fila.ciudad_nombre ? ` · ${fila.ciudad_nombre}` : ''}
                           </span>
                         </span>
