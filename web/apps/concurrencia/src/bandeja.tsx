@@ -105,7 +105,10 @@ export function CasosDeConcurrencia({ filtros }: PropsCasosAuditoria) {
         </span>
       </>
     ),
-    cuando: <Ventana desde={v.desde} hasta={v.hasta} />,
+    // La ventana de la visita: desde y hasta (= plazo de llegada); sin hora aún, por fijar.
+    cuando: (
+      <Ventana desde={v.desde} hasta={v.llegada_limite} porFijar={v.estado === 'programada'} />
+    ),
     estado: <EstadoVisitaBadge estado={v.estado} />,
     // Pidiendo los terminados, lo que se quiere de cada uno es su informe: la
     // fila abre el PDF firmado en vez de la pantalla del caso. **Solo si lo

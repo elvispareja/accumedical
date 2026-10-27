@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowLeft, Clock, FileText, ImageUp } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { ArrowLeft, Clock, FileText } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import {
@@ -9,8 +9,6 @@ import {
   listarAuditores,
   obtenerVisitaSupervision,
   prorrogarVisita,
-  subirComprobante,
-  urlComprobante,
   urlInformePdfSupervision,
   type AuditorElegible,
   type VisitaSupervisionDetalle,
@@ -150,10 +148,7 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
 const ESTADOS_DERIVABLES = ['programada', 'asignada']
 
 function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
-  const porFijar = caso.estado === 'programada'
   const derivable = ESTADOS_DERIVABLES.includes(caso.estado)
-  // Un caso ya derivado trae su hora; uno programado nace sin ella.
-  const [hora, setHora] = useState(() => (porFijar ? '' : aLocal(caso.desde)))
   const seccion = 'font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg'
   return (
     <div className="space-y-6">
@@ -210,34 +205,34 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
 
       <div className="space-y-3">
         <p className={seccion}>Cuándo</p>
-        {/* La hora de ir al hospital la fija AQUÍ la coordinación, junto con el
-            auditor (26/10/2026): una sola, sin rango. Mientras el caso está en
-            la agenda es editable; se guarda con «Derivar», más abajo. Lo que
-            trae un caso programado es provisional y no se enseña. */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="sl-desde">
-              Hora de ir al hospital{derivable && <span className="text-peligro"> *</span>}
-            </Label>
-            <Input
-              id="sl-desde"
-              type="datetime-local"
-              value={derivable ? hora : porFijar ? '' : aLocal(caso.desde)}
-              min={derivable ? aLocal(new Date().toISOString()) : undefined}
-              onChange={(e) => setHora(e.target.value)}
-              disabled={!derivable}
-            />
-            {derivable && (
-              <p className="text-xs text-tenue-fg">
-                Se guarda con «{caso.auditor_id ? 'Guardar' : 'Derivar'}», en Derivación. La
-                aseguradora no la ve.
-              </p>
-            )}
+        {/* La hora de ir al hospital y, AL LADO, el auditor (pedido del usuario,
+            26/10/2026): la coordinación fija las dos cosas juntas, una sola
+            hora, sin rango. Editables solo mientras el caso está en la agenda.
+            Sin «Entrega del informe» ni «Plazo de llegada» («esas dos cosas ya
+            no van»): el servidor los sigue calculando de esta hora. */}
+        {derivable ? (
+          <Derivar caso={caso} />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="sl-desde">Ir al hospital desde</Label>
+              <Input id="sl-desde" type="datetime-local" value={aLocal(caso.desde)} disabled />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sl-hasta">Hasta</Label>
+              <Input
+                id="sl-hasta"
+                type="datetime-local"
+                value={aLocal(caso.llegada_limite)}
+                disabled
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sl-auditor">Auditor</Label>
+              <Input id="sl-auditor" value={caso.auditor_nombre ?? 'Sin asignar'} disabled />
+            </div>
           </div>
-          {/* Sin «Entrega del informe» ni «Plazo de llegada» en pantalla (pedido
-              del usuario, 26/10/2026: «esas dos cosas ya no van»). El servidor
-              los sigue calculando de esta hora (SLA y vencimiento). */}
-        </div>
+        )}
         <div className="space-y-2">
           {/* La insignia, no un desplegable apagado: el estado no se elige en
               ninguna pantalla, así que tampoco se pinta como si se pudiera. */}
@@ -256,39 +251,8 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
         </div>
       </div>
 
-      <div className="space-y-3">
-        <p className={seccion}>A quién se avisa</p>
-        {caso.correos.length === 0 ? (
-          <p className="text-sm text-tenue-fg">Sin correos anotados.</p>
-        ) : (
-          caso.correos.map((correo, indice) => (
-            <div key={correo.email} className="space-y-2">
-              <Label htmlFor={`sl-correo-${indice}`}>
-                Correo {indice + 1}
-                {correo.etiqueta && (
-                  <span className="ml-2 font-normal normal-case text-tenue-fg">
-                    · {correo.etiqueta}
-                  </span>
-                )}
-              </Label>
-              <Input id={`sl-correo-${indice}`} value={correo.email} disabled />
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <p className={seccion}>Derivación</p>
-        {derivable ? (
-          <Derivar caso={caso} hora={hora} />
-        ) : (
-          <div className="space-y-2">
-            <Label htmlFor="sl-auditor">Auditor asignado</Label>
-            <Input id="sl-auditor" value={caso.auditor_nombre ?? 'Sin asignar'} disabled />
-          </div>
-        )}
-      </div>
-
+      {/* Sin «A quién se avisa» ni «Comprobante del cambio» (pedido del
+          usuario, 26/10/2026): los avisos se mandan igual; aquí no se muestran. */}
       {/* El informe del auditor, cuando ya existe: el PDF con la marca. */}
       {caso.tiene_informe && (
         <div className="space-y-2">
@@ -306,7 +270,6 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
       )}
 
       <Extender caso={caso} />
-      <Comprobante caso={caso} />
     </div>
   )
 }
@@ -317,14 +280,26 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
  * Las dos son obligatorias; se guardan juntas. Con el caso ya derivado, sirve
  * para cambiar de auditor o de hora.
  */
-function Derivar({ caso, hora }: { caso: VisitaSupervisionDetalle; hora: string }) {
+function Derivar({ caso }: { caso: VisitaSupervisionDetalle }) {
   const toast = useToast()
   const queryClient = useQueryClient()
+  // Un caso ya derivado trae su ventana; uno programado nace sin ella.
+  const programado = caso.estado === 'programada'
+  const [hora, setHora] = useState(() => (programado ? '' : aLocal(caso.desde)))
+  const [horaFin, setHoraFin] = useState(() =>
+    programado ? '' : aLocal(caso.llegada_limite),
+  )
   const [auditorId, setAuditorId] = useState(caso.auditor_id ?? '')
   const auditores = useQuery({ queryKey: ['auditores'], queryFn: listarAuditores })
 
   const guardar = useMutation({
-    mutationFn: () => asignarAuditor(caso.id, auditorId, new Date(hora).toISOString()),
+    mutationFn: () =>
+      asignarAuditor(
+        caso.id,
+        auditorId,
+        new Date(hora).toISOString(),
+        new Date(horaFin).toISOString(),
+      ),
     onSuccess: (actualizada) => {
       queryClient.invalidateQueries({ queryKey: ['supervision'] })
       queryClient.invalidateQueries({ queryKey: ['supervision-visita', caso.id] })
@@ -353,43 +328,75 @@ function Derivar({ caso, hora }: { caso: VisitaSupervisionDetalle; hora: string 
 
   return (
     <div className="space-y-3">
-      <div className="space-y-2">
-        <Label htmlFor="sl-auditor">
-          Auditor <span className="text-peligro">*</span>
-        </Label>
-        <Select
-          id="sl-auditor"
-          value={auditorId}
-          onChange={(e) => setAuditorId(e.target.value)}
-          disabled={auditores.isPending}
-        >
-          <option value="">{auditores.isPending ? 'Cargando auditores…' : 'Elige el auditor'}</option>
-          {grupos
-            .filter(([, filas]) => filas.length > 0)
-            .map(([titulo, filas]) => (
-              <optgroup key={titulo} label={titulo}>
-                {filas.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {`${a.nombre_completo} · ${
-                      [a.ciudad_nombre, a.provincia_nombre].filter(Boolean).join(', ') ||
-                      'Sin ubicación registrada'
-                    }`}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-        </Select>
-        {auditores.data?.length === 0 && (
-          <p className="text-xs text-tenue-fg">
-            No hay médicos auditores activos: créalos en Usuarios del administrador.
-          </p>
-        )}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="space-y-2">
+          <Label htmlFor="sl-desde">
+            Ir al hospital desde <span className="text-peligro">*</span>
+          </Label>
+          <Input
+            id="sl-desde"
+            type="datetime-local"
+            value={hora}
+            onChange={(e) => setHora(e.target.value)}
+          />
+          <p className="text-xs text-tenue-fg">La aseguradora no ve el horario.</p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="sl-hasta">
+            Hasta <span className="text-peligro">*</span>
+          </Label>
+          <Input
+            id="sl-hasta"
+            type="datetime-local"
+            value={horaFin}
+            min={hora || aLocal(new Date().toISOString())}
+            onChange={(e) => setHoraFin(e.target.value)}
+          />
+          <p className="text-xs text-tenue-fg">Pasada esta hora sin llegar, el caso vence.</p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="sl-auditor">
+            Auditor <span className="text-peligro">*</span>
+          </Label>
+          <Select
+            id="sl-auditor"
+            value={auditorId}
+            onChange={(e) => setAuditorId(e.target.value)}
+            disabled={auditores.isPending}
+          >
+            <option value="">
+              {auditores.isPending ? 'Cargando auditores…' : 'Elige el auditor'}
+            </option>
+            {grupos
+              .filter(([, filas]) => filas.length > 0)
+              .map(([titulo, filas]) => (
+                <optgroup key={titulo} label={titulo}>
+                  {filas.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {`${a.nombre_completo} · ${
+                        [a.ciudad_nombre, a.provincia_nombre].filter(Boolean).join(', ') ||
+                        'Sin ubicación registrada'
+                      }`}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+          </Select>
+          {auditores.data?.length === 0 && (
+            <p className="text-xs text-tenue-fg">
+              No hay médicos auditores activos: créalos en Usuarios del administrador.
+            </p>
+          )}
+        </div>
       </div>
       <Boton
         type="button"
         cargando={guardar.isPending}
         onClick={() => {
-          if (!hora) return toast.error('Indica la hora de ir al hospital, en «Cuándo»')
+          if (!hora || !horaFin) return toast.error('Indica desde y hasta qué hora ir al hospital')
+          if (new Date(horaFin) <= new Date(hora)) {
+            return toast.error('La hora «hasta» debe ser posterior a la hora «desde»')
+          }
           if (!auditorId) return toast.error('Elige el auditor')
           guardar.mutate()
         }}
@@ -489,68 +496,6 @@ function Extender({ caso }: { caso: VisitaSupervisionDetalle }) {
       </div>
       <p className="text-xs text-tenue-fg">
         La entrega del informe no se mueve: sigue donde la puso el SLA.
-      </p>
-    </div>
-  )
-}
-
-/** La imagen que comprueba el cambio de horario pedido por correo. */
-function Comprobante({ caso }: { caso: VisitaSupervisionDetalle }) {
-  const toast = useToast()
-  const queryClient = useQueryClient()
-  const entrada = useRef<HTMLInputElement>(null)
-  // El query se invalida al subir, pero el navegador cachearía la imagen por
-  // URL: la versión en la query string la obliga a recargarse.
-  const [version, setVersion] = useState(0)
-
-  const subir = useMutation({
-    mutationFn: (archivo: File) => subirComprobante(caso.id, archivo),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['supervision-visita', caso.id] })
-      setVersion((v) => v + 1)
-      toast.exito('Comprobante guardado')
-    },
-    onError: (error) =>
-      toast.error(
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-          'No se pudo subir el comprobante',
-      ),
-  })
-
-  return (
-    <div className="space-y-3">
-      <p className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
-        Comprobante del cambio
-      </p>
-      {caso.tiene_comprobante && (
-        <img
-          src={`${urlComprobante(caso.id)}?v=${version}`}
-          alt={`Comprobante del cambio de horario de ${caso.codigo_interno}`}
-          className="max-h-72 w-full rounded-md border border-borde object-contain"
-        />
-      )}
-      <input
-        ref={entrada}
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        className="hidden"
-        onChange={(e) => {
-          const archivo = e.target.files?.[0]
-          if (archivo) subir.mutate(archivo)
-          e.target.value = ''
-        }}
-      />
-      <Boton
-        type="button"
-        variante="contorno"
-        cargando={subir.isPending}
-        onClick={() => entrada.current?.click()}
-      >
-        <ImageUp aria-hidden="true" />
-        {caso.tiene_comprobante ? 'Reemplazar comprobante' : 'Subir comprobante'}
-      </Boton>
-      <p className="text-xs text-tenue-fg">
-        La imagen del correo donde pidieron el cambio de horario. PNG, JPEG o WebP.
       </p>
     </div>
   )

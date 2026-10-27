@@ -479,17 +479,19 @@ export async function crearVisitaSupervision(
 }
 
 /**
- * `null` deja el caso sin asignar; un id lo deriva a ese auditor, **con la hora
- * a la que debe ir** (ISO con zona): sin ella el servidor no deriva.
+ * `null` deja el caso sin asignar; un id lo deriva a ese auditor, **con la
+ * ventana en que debe ir** —desde y hasta, ISO con zona—: sin ella el servidor
+ * no deriva. El «hasta» es el plazo de llegada.
  */
 export async function asignarAuditor(
   visitaId: string,
   auditorId: string | null,
   desde?: string,
+  hasta?: string,
 ) {
   const { data } = await api.patch<VisitaSupervision>(
     `/concurrencia/supervision/visitas/${visitaId}/auditor`,
-    { auditor_id: auditorId, desde },
+    { auditor_id: auditorId, desde, hasta },
   )
   return data
 }

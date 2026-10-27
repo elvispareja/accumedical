@@ -1415,6 +1415,7 @@ def asignar_auditor(
     autor: uuid.UUID,
     *,
     desde: dt.datetime | None = None,
+    hasta: dt.datetime | None = None,
 ) -> dict[str, Any]:
     """
     Deriva el caso (o lo deja sin asignar, con `None`). El destino se valida
@@ -1444,28 +1445,37 @@ def asignar_auditor(
             )
 
     diff: dict[str, Any] = {"antes": {}, "despues": {}}
-    # **La hora de la visita la fija la coordinación al derivar** (26/10/2026):
-    # una sola hora, sin rango. De ella salen el plazo de llegada y la entrega del
-    # informe (SLA). La compañía no la ve.
+    # **La ventana de la visita la fija la coordinación al derivar** (26/10/2026):
+    # DESDE qué hora y HASTA qué hora puede llegar el auditor al hospital. El
+    # «hasta» es el plazo de llegada (`llegada_limite`: pasado sin llegar, el
+    # caso vence); la entrega del informe sale del SLA contado desde el inicio.
+    # La compañía no ve nada de esto.
     if auditor_id is not None:
-        if desde is None:
+        if desde is None or hasta is None:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Indica a qué hora debe ir el auditor al hospital",
+                detail="Indica desde y hasta qué hora debe ir el auditor al hospital",
             )
-        # Solo si la hora CAMBIA: reasignar con la misma hora no debe borrar una
+        if hasta <= desde:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La hora «hasta» debe ser posterior a la hora «desde»",
+            )
+        # Solo si la ventana CAMBIA: reasignar con la misma no debe borrar una
         # prórroga ya concedida sobre el plazo de llegada.
-        if desde != visita.desde:
-            # Una hora pasada vencería el caso en el acto (`marcar_no_auditadas`).
-            if desde < dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5):
+        if desde != visita.desde or hasta != visita.llegada_limite:
+            # Una ventana ya cerrada vencería el caso en el acto (`marcar_no_auditadas`).
+            if hasta < dt.datetime.now(dt.UTC):
                 raise HTTPException(
                     status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Esa hora ya pasó: indica una hora futura para la visita",
+                    detail="Esa ventana ya pasó: indica un «hasta» futuro",
                 )
             diff["antes"]["desde"] = visita.desde.isoformat()
             diff["despues"]["desde"] = desde.isoformat()
+            diff["antes"]["llegada_limite"] = visita.llegada_limite.isoformat()
+            diff["despues"]["llegada_limite"] = hasta.isoformat()
             visita.desde = desde
-            visita.llegada_limite = desde
+            visita.llegada_limite = hasta
             visita.hasta = entrega_por_sla(db, visita.aseguradora_id, desde)
             visita.updated_by = autor
     if visita.auditor_id != auditor_id:

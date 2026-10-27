@@ -327,7 +327,9 @@ def _datos_del_caso(fila: tuple, *, con_horario: bool = True) -> list[str]:
     ]
     if con_horario:
         lineas += [
-            f"  Llegada:      {_cuando(visita.desde)}",
+            # La ventana de la visita: desde y hasta (= plazo de llegada).
+            f"  Ir desde:     {_cuando(visita.desde)}",
+            f"  Ir hasta:     {_cuando(visita.llegada_limite)}",
             f"  Entrega:      {_cuando(visita.hasta)} (hora de Ecuador)",
         ]
     lineas.append(f"  Estado:       {ETIQUETA_ESTADO.get(visita.estado, visita.estado)}")

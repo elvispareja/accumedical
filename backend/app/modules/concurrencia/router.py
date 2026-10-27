@@ -1540,7 +1540,9 @@ def asignar_auditor(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El auditor no es válido"
             ) from error
 
-    diff = service.asignar_auditor(db, visita, auditor_id, ctx.user.id, desde=datos.desde)
+    diff = service.asignar_auditor(
+        db, visita, auditor_id, ctx.user.id, desde=datos.desde, hasta=datos.hasta
+    )
     if diff["despues"]:
         audit.registrar(
             db,

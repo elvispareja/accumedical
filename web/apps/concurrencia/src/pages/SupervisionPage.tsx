@@ -169,11 +169,13 @@ export function SupervisionPage() {
       visita,
       auditorId,
       desde,
+      hasta,
     }: {
       visita: VisitaSupervision
       auditorId: string | null
       desde?: string
-    }) => asignarAuditor(visita.id, auditorId, desde),
+      hasta?: string
+    }) => asignarAuditor(visita.id, auditorId, desde, hasta),
     onSuccess: (actualizada) => {
       queryClient.invalidateQueries({ queryKey: ['supervision'] })
       toast.exito(
@@ -431,9 +433,10 @@ export function SupervisionPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-tenue-fg">
+                        {/* La ventana de la visita: desde y hasta (= plazo de llegada). */}
                         <Ventana
                           desde={fila.desde}
-                          hasta={fila.hasta}
+                          hasta={fila.llegada_limite}
                           porFijar={fila.estado === 'programada'}
                         />
                       </td>
@@ -499,7 +502,7 @@ export function SupervisionPage() {
         )}
       </div>
 
-      {/* Derivar: primero la hora de la visita y luego el auditor, agrupados
+      {/* Derivar: primero la ventana de la visita y luego el auditor, agrupados
           por cercanía al destino del caso. Elegir uno asigna y cierra. */}
       <Modal
         abierto={asignando !== null}
@@ -526,9 +529,9 @@ export function SupervisionPage() {
             caso={asignando}
             auditores={auditores.data ?? []}
             ocupado={derivar.isPending}
-            onElegir={(auditorId, desde) =>
+            onElegir={(auditorId, desde, hasta) =>
               derivar.mutate(
-                { visita: asignando, auditorId, desde },
+                { visita: asignando, auditorId, desde, hasta },
                 { onSuccess: () => setAsignando(null) },
               )
             }
@@ -675,23 +678,29 @@ function ElegirAuditor({
   caso: VisitaSupervision
   auditores: AuditorElegible[]
   ocupado: boolean
-  onElegir: (auditorId: string | null, desde?: string) => void
+  onElegir: (auditorId: string | null, desde?: string, hasta?: string) => void
 }) {
   const [busqueda, setBusqueda] = useState('')
-  // La hora a la que el auditor va al hospital: una sola, sin rango (pedido del
-  // usuario, 26/10/2026). Un caso ya derivado trae la suya; uno programado
-  // nace sin hora y se fija aquí. La compañía no la ve.
-  const [hora, setHora] = useState(() =>
-    caso.estado === 'programada' ? '' : aLocal(caso.desde),
+  // La ventana en que el auditor va al hospital: desde y hasta (26/10/2026;
+  // el «hasta» es el plazo de llegada). Un caso ya derivado trae la suya; uno
+  // programado nace sin ella y se fija aquí. La compañía no la ve.
+  const programado = caso.estado === 'programada'
+  const [hora, setHora] = useState(() => (programado ? '' : aLocal(caso.desde)))
+  const [horaFin, setHoraFin] = useState(() =>
+    programado ? '' : aLocal(caso.llegada_limite),
   )
-  const [faltaHora, setFaltaHora] = useState(false)
+  const [faltaHora, setFaltaHora] = useState<string | null>(null)
 
   function elegir(auditorId: string) {
-    if (!hora) {
-      setFaltaHora(true)
+    if (!hora || !horaFin) {
+      setFaltaHora('Indica desde y hasta qué hora debe ir el auditor antes de elegirlo.')
       return
     }
-    onElegir(auditorId, new Date(hora).toISOString())
+    if (new Date(horaFin) <= new Date(hora)) {
+      setFaltaHora('La hora «hasta» debe ser posterior a la hora «desde».')
+      return
+    }
+    onElegir(auditorId, new Date(hora).toISOString(), new Date(horaFin).toISOString())
   }
 
   const normalizar = (texto: string) =>
@@ -722,30 +731,50 @@ function ElegirAuditor({
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="derivar-hora">
-          Hora de la visita <span className="text-peligro">*</span>
-        </Label>
-        <Input
-          id="derivar-hora"
-          type="datetime-local"
-          value={hora}
-          min={aLocal(new Date().toISOString())}
-          onChange={(e) => {
-            setHora(e.target.value)
-            setFaltaHora(false)
-          }}
-          aria-invalid={faltaHora || undefined}
-          aria-describedby="derivar-hora-ayuda"
-          required
-        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="derivar-hora">
+              Ir desde <span className="text-peligro">*</span>
+            </Label>
+            <Input
+              id="derivar-hora"
+              type="datetime-local"
+              value={hora}
+              onChange={(e) => {
+                setHora(e.target.value)
+                setFaltaHora(null)
+              }}
+              aria-invalid={Boolean(faltaHora) || undefined}
+              aria-describedby="derivar-hora-ayuda"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="derivar-hora-fin">
+              Hasta <span className="text-peligro">*</span>
+            </Label>
+            <Input
+              id="derivar-hora-fin"
+              type="datetime-local"
+              value={horaFin}
+              min={hora || aLocal(new Date().toISOString())}
+              onChange={(e) => {
+                setHoraFin(e.target.value)
+                setFaltaHora(null)
+              }}
+              aria-invalid={Boolean(faltaHora) || undefined}
+              aria-describedby="derivar-hora-ayuda"
+              required
+            />
+          </div>
+        </div>
         <p
           id="derivar-hora-ayuda"
           className={cn('text-xs', faltaHora ? 'text-peligro' : 'text-tenue-fg')}
           aria-live="polite"
         >
-          {faltaHora
-            ? 'Indica a qué hora debe ir el auditor antes de elegirlo.'
-            : 'A qué hora debe llegar el auditor al hospital. La aseguradora no la ve.'}
+          {faltaHora ??
+            'Entre qué horas debe llegar el auditor al hospital; pasado el «hasta» sin llegar, el caso vence. La aseguradora no lo ve.'}
         </p>
       </div>
 

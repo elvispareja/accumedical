@@ -443,7 +443,8 @@ class AsignarAuditorRequest(BaseModel):
     """`null` deja el caso sin asignar; un id lo deriva a ese auditor."""
 
     auditor_id: str | None = None
-    # La hora a la que el auditor debe ir al hospital (una sola, sin rango).
-    # Obligatoria al derivar a un auditor (26/10/2026). Con zona horaria: una
-    # hora «a secas» no dice si es la de Guayaquil o la de UTC.
+    # La ventana en que el auditor debe ir al hospital: desde y hasta (26/10/2026;
+    # «hasta» = plazo de llegada). Obligatorias al derivar a un auditor. Con zona
+    # horaria: una hora «a secas» no dice si es la de Guayaquil o la de UTC.
     desde: AwareDatetime | None = None
+    hasta: AwareDatetime | None = None
