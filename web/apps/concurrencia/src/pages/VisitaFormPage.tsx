@@ -37,7 +37,6 @@ import {
   desdeApi as nombreDesdeApi,
   faltaObligatorio,
   haciaApi as nombreHaciaApi,
-  nombreCompleto,
   type NombrePersona,
 } from '@/shared/personas/CamposNombre'
 
@@ -412,7 +411,6 @@ export function VisitaFormPage({
   const [pasoPaciente, setPasoPaciente] = useState<'pendiente' | 'buscando' | 'conocido' | 'nuevo'>(
     'pendiente',
   )
-  const [conocidoComo, setConocidoComo] = useState('')
 
   // Tocar el documento invalida lo buscado: el nombre que hubiera quedado era
   // el de OTRA persona, y arrastrarlo sería el peor error posible aquí.
@@ -423,7 +421,6 @@ export function VisitaFormPage({
       paciente: pasoPaciente === 'conocido' ? NOMBRE_VACIO : p.paciente,
     }))
     setPasoPaciente('pendiente')
-    setConocidoComo('')
   }
 
   async function buscarAlPaciente() {
@@ -447,7 +444,6 @@ export function VisitaFormPage({
         apellido_materno: conocido.apellido_materno,
       })
       setForm((p) => ({ ...p, paciente: nombre }))
-      setConocidoComo(nombreCompleto(nombre))
       setPasoPaciente('conocido')
     } catch {
       // Que la búsqueda falle no puede impedir abrir el caso: se sigue a mano.
@@ -496,8 +492,8 @@ export function VisitaFormPage({
 
   // La búsqueda va SOLA (pedido del usuario, 26/10/2026: sin botón «Buscar
   // paciente»): en cuanto el documento está completo y es válido, y tras una
-  // pausa corta para no consultar a cada tecla. El aviso «Ya lo teníamos» o «No
-  // lo teníamos» sigue diciendo qué pasó.
+  // pausa corta para no consultar a cada tecla. Si es nuevo, el aviso «No lo
+  // teníamos» lo dice; si ya estaba, sus datos se llenan solos, sin aviso.
   useEffect(() => {
     if (editando || soloLectura || pasoPaciente !== 'pendiente') return
     if (!form.paciente_tipo_documento_codigo || !form.paciente_numero_documento.trim()) return
@@ -1103,17 +1099,8 @@ export function VisitaFormPage({
             </p>
           )}
 
-          {pasoPaciente === 'conocido' && !editando && !soloLectura && (
-            <p
-              className="mt-3 rounded-md border border-exito/40 bg-exito-suave/50 px-3 py-2 text-sm"
-              aria-live="polite"
-            >
-              <span className="font-medium">Ya lo teníamos: {conocidoComo}.</span>{' '}
-              <span className="text-tenue-fg">
-                Sus datos se llenaron solos; corrígelos si cambiaron.
-              </span>
-            </p>
-          )}
+          {/* Sin el aviso «Ya lo teníamos» (pedido del usuario, 27/10/2026):
+              los datos del paciente conocido se llenan solos y basta. */}
           {pasoPaciente === 'nuevo' && !editando && !soloLectura && (
             <p
               className="mt-3 rounded-md border border-borde bg-tenue/40 px-3 py-2 text-sm"
