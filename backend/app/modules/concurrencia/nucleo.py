@@ -45,6 +45,10 @@ from app.shared.central import redes as redes_central
 from app.shared.prestadores.models import Prestador, PrestadorContacto, PrestadorSede
 
 MODULO = "concurrencia"
+# A dónde se manda al médico auditor (pedido del usuario, 26/10/2026): a TODOS los
+# hospitales, clínicas y centros médicos activos, tengan o no convenio con la
+# aseguradora del caso. Son los tipos fijos del sistema (no se pueden retirar).
+TIPOS_HOSPITALARIOS = ("centro_medico", "clinica", "hospital")
 
 
 # ═════════════════════════════ Fuente local ═════════════════════════════════
@@ -106,6 +110,57 @@ class _Local:
             }
             for p, tipo, ciudad, provincia in filas
         ]
+
+    @staticmethod
+    def hospitalarios(db: DbSession, search: str | None) -> list[dict[str, Any]]:
+        consulta = (
+            select(Prestador, TipoPrestador.nombre, Ciudad.nombre, Provincia.nombre)
+            .join(TipoPrestador, TipoPrestador.codigo == Prestador.tipo_codigo)
+            .outerjoin(Ciudad, Ciudad.codigo == Prestador.ciudad_codigo)
+            .outerjoin(Provincia, Provincia.codigo == Prestador.provincia_codigo)
+            .where(
+                Prestador.tipo_codigo.in_(TIPOS_HOSPITALARIOS),
+                Prestador.deleted_at.is_(None),
+                Prestador.estado == "activo",
+            )
+        )
+        if search:
+            patron = f"%{search.strip()}%"
+            consulta = consulta.where(
+                or_(Prestador.nombre.ilike(patron), Prestador.ruc.ilike(patron))
+            )
+        filas = db.execute(consulta.order_by(Prestador.nombre)).all()
+        if not filas:
+            return []
+        ids = [p.id for p, *_ in filas]
+        sedes = _Local._sedes(db, ids)
+        contactos = _Local._contactos(db, ids)
+        return [
+            {
+                "prestador": p,
+                "tipo_nombre": tipo,
+                "ciudad_nombre": ciudad,
+                "provincia_nombre": provincia,
+                "sedes": sedes.get(p.id, []),
+                "contactos": contactos.get(p.id, []),
+            }
+            for p, tipo, ciudad, provincia in filas
+        ]
+
+    @staticmethod
+    def es_hospitalario(db: DbSession, prestador_id: uuid.UUID) -> bool:
+        return bool(
+            db.scalar(
+                select(func.count())
+                .select_from(Prestador)
+                .where(
+                    Prestador.id == prestador_id,
+                    Prestador.tipo_codigo.in_(TIPOS_HOSPITALARIOS),
+                    Prestador.deleted_at.is_(None),
+                    Prestador.estado == "activo",
+                )
+            )
+        )
 
     @staticmethod
     def _sedes(db: DbSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, list[tuple[Any, ...]]]:
@@ -247,50 +302,82 @@ class _Central:
             p = _get(f"/api/prestadores/{conv['prestador_id']}")
             if texto and texto not in p["nombre"].casefold() and texto not in p["ruc"].casefold():
                 continue
-            prestador = SimpleNamespace(
-                id=uuid.UUID(p["id"]),
-                codigo_interno=p["codigo_interno"],
-                nombre=p["nombre"],
-                ruc=p["ruc"],
-                direccion=p["direccion"],
-            )
-            sedes = [
-                (
-                    SimpleNamespace(
-                        id=uuid.UUID(s["id"]),
-                        prestador_id=prestador.id,
-                        nombre=s["nombre"],
-                        direccion=s["direccion"],
-                        estado=s["estado"],
-                    ),
-                    ciudades.get(s["ciudad_codigo"]),
-                    provincias.get(s["provincia_codigo"]),
-                )
-                for s in p["sedes"]
-                if s["estado"] == "activa"
-            ]
-            contactos = sorted(
-                (SimpleNamespace(prestador_id=prestador.id, **c) for c in p["contactos"]),
-                key=lambda c: (personas.de_fila(c), str(c.id)),
-            )
-            for c in contactos:
-                c.id = uuid.UUID(str(c.id))
-            salida.append(
-                {
-                    "prestador": prestador,
-                    "tipo_nombre": tipos.get(p["tipo_codigo"]),
-                    "ciudad_nombre": ciudades.get(p["ciudad_codigo"])
-                    if p["ciudad_codigo"]
-                    else None,
-                    "provincia_nombre": provincias.get(p["provincia_codigo"])
-                    if p["provincia_codigo"]
-                    else None,
-                    "sedes": sorted(sedes, key=lambda t: t[0].nombre),
-                    "contactos": contactos,
-                }
-            )
+            salida.append(_Central._fila(p, tipos, provincias, ciudades))
         salida.sort(key=lambda f: f["prestador"].nombre)
         return salida
+
+    @staticmethod
+    def _fila(p: dict[str, Any], tipos: dict, provincias: dict, ciudades: dict) -> dict[str, Any]:
+        """Un prestador de la central en el formato que usan las pantallas."""
+        prestador = SimpleNamespace(
+            id=uuid.UUID(p["id"]),
+            codigo_interno=p["codigo_interno"],
+            nombre=p["nombre"],
+            ruc=p["ruc"],
+            direccion=p["direccion"],
+        )
+        sedes = [
+            (
+                SimpleNamespace(
+                    id=uuid.UUID(s["id"]),
+                    prestador_id=prestador.id,
+                    nombre=s["nombre"],
+                    direccion=s["direccion"],
+                    estado=s["estado"],
+                ),
+                ciudades.get(s["ciudad_codigo"]),
+                provincias.get(s["provincia_codigo"]),
+            )
+            for s in p["sedes"]
+            if s["estado"] == "activa"
+        ]
+        contactos = sorted(
+            (SimpleNamespace(prestador_id=prestador.id, **c) for c in p["contactos"]),
+            key=lambda c: (personas.de_fila(c), str(c.id)),
+        )
+        for c in contactos:
+            c.id = uuid.UUID(str(c.id))
+        return {
+            "prestador": prestador,
+            "tipo_nombre": tipos.get(p["tipo_codigo"]),
+            "ciudad_nombre": ciudades.get(p["ciudad_codigo"]) if p["ciudad_codigo"] else None,
+            "provincia_nombre": provincias.get(p["provincia_codigo"])
+            if p["provincia_codigo"]
+            else None,
+            "sedes": sorted(sedes, key=lambda t: t[0].nombre),
+            "contactos": contactos,
+        }
+
+    @staticmethod
+    def hospitalarios(db: DbSession, search: str | None) -> list[dict[str, Any]]:
+        tipos = _catalogo("tipos-prestador")
+        provincias = _catalogo("provincias")
+        ciudades = _catalogo("ciudades")
+        texto = (search or "").strip().casefold()
+        salida = []
+        for tipo in TIPOS_HOSPITALARIOS:
+            offset = 0
+            while True:
+                pagina = _get(
+                    f"/api/prestadores?tipo={tipo}&estado=activo&limit=100&offset={offset}"
+                )
+                for item in pagina["items"]:
+                    nombre, ruc = item["nombre"].casefold(), (item.get("ruc") or "").casefold()
+                    if texto and texto not in nombre and texto not in ruc:
+                        continue
+                    salida.append(_Central._fila(_get(f"/api/prestadores/{item['id']}"),
+                                                 tipos, provincias, ciudades))
+                offset += len(pagina["items"])
+                if not pagina["items"] or offset >= pagina["total"]:
+                    break
+        salida.sort(key=lambda f: f["prestador"].nombre)
+        return salida
+
+    @staticmethod
+    def es_hospitalario(db: DbSession, prestador_id: uuid.UUID) -> bool:
+        p = _get(f"/api/prestadores/{prestador_id}")
+        return (p["tipo_codigo"] in TIPOS_HOSPITALARIOS and p["estado"] == "activo"
+                and not p.get("deleted_at"))
 
     @staticmethod
     def en_red(db: DbSession, aseguradora_id: uuid.UUID, prestador_id: uuid.UUID) -> bool:
@@ -365,6 +452,22 @@ def prestadores_de_la_red(
         lambda: _Local.red(db, aseguradora_id, search),
         lambda: _Central.red(db, aseguradora_id, search),
         respaldo=not redes_central.todas(),
+    )
+
+
+def prestadores_hospitalarios(db: DbSession, search: str | None = None) -> list[dict[str, Any]]:
+    return _usar(
+        "hospitalarios",
+        lambda: _Local.hospitalarios(db, search),
+        lambda: _Central.hospitalarios(db, search),
+    )
+
+
+def prestador_hospitalario(db: DbSession, prestador_id: uuid.UUID) -> bool:
+    return _usar(
+        "es_hospitalario",
+        lambda: _Local.es_hospitalario(db, prestador_id),
+        lambda: _Central.es_hospitalario(db, prestador_id),
     )
 
 

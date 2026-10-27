@@ -82,7 +82,26 @@ export interface CorreoVisita {
   etiqueta: string | null
 }
 
-export interface VisitaDetalle extends VisitaResumen {
+/** El parentesco del PACIENTE con el titular de la póliza. */
+export type Parentesco = 'conyuge' | 'hijo' | 'padre_madre' | 'otro'
+
+/**
+ * Póliza y titular del caso (26/10/2026). Nulos en los casos de antes y, el
+ * titular, cuando el paciente lo es.
+ */
+export interface PolizaYTitular {
+  poliza_numero: string | null
+  paciente_es_titular: boolean
+  titular_parentesco: Parentesco | null
+  titular_nombre_principal: string | null
+  titular_nombre_secundario: string | null
+  titular_apellido_paterno: string | null
+  titular_apellido_materno: string | null
+  titular_tipo_documento_codigo: string | null
+  titular_numero_documento: string | null
+}
+
+export interface VisitaDetalle extends VisitaResumen, PolizaYTitular {
   /** Las cuatro partes, para reabrir el formulario con cada una en su casilla. */
   paciente_nombre_principal: string
   paciente_nombre_secundario: string | null
@@ -132,6 +151,16 @@ export interface VisitaFormulario {
   paciente_tipo_documento_codigo: string
   paciente_numero_documento: string
   sede_id: string | null
+  // Póliza y titular: la póliza es obligatoria; el titular, si no es el paciente.
+  poliza_numero: string
+  paciente_es_titular: boolean
+  titular_parentesco: Parentesco | null
+  titular_nombre_principal: string | null
+  titular_nombre_secundario: string | null
+  titular_apellido_paterno: string | null
+  titular_apellido_materno: string | null
+  titular_tipo_documento_codigo: string | null
+  titular_numero_documento: string | null
   // La hora la fija la coordinación AL DERIVAR (26/10/2026): el alta ya no la
   // manda y el servidor pone la del registro como provisional. Solo viaja al
   // reprogramar un caso vencido. La entrega sale siempre del SLA del servidor.
@@ -423,7 +452,7 @@ export async function obtenerDashboardSupervision() {
   return data
 }
 
-export interface VisitaSupervisionDetalle extends VisitaSupervision {
+export interface VisitaSupervisionDetalle extends VisitaSupervision, PolizaYTitular {
   /** Las cuatro partes: esta vista enseña el caso tal como se capturó. */
   paciente_nombre_principal: string
   paciente_nombre_secundario: string | null

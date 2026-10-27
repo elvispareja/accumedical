@@ -3,7 +3,16 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, LargeBinary, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    LargeBinary,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -61,6 +70,21 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
             "estado IN ('programada','asignada','auditando','cancelada','culminada','no_auditado')",
             name="estado",
         ),
+        CheckConstraint(
+            "titular_parentesco IS NULL OR titular_parentesco IN "
+            "('conyuge','hijo','padre_madre','otro')",
+            name="parentesco",
+        ),
+        # Si el paciente NO es el titular, el titular va completo: sus dos
+        # partes obligatorias del nombre, su identificación y el parentesco.
+        CheckConstraint(
+            "paciente_es_titular OR (titular_nombre_principal IS NOT NULL "
+            "AND titular_apellido_paterno IS NOT NULL "
+            "AND titular_tipo_documento_codigo IS NOT NULL "
+            "AND titular_numero_documento IS NOT NULL "
+            "AND titular_parentesco IS NOT NULL)",
+            name="titular",
+        ),
         Index("uq_conc_visitas_codigo_interno", "codigo_interno", unique=True),
         # El índice de la bandeja: lo de MI aseguradora, ordenado por fecha.
         Index(
@@ -103,6 +127,23 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
         ForeignKey("tipos_documento.codigo", ondelete="RESTRICT"), nullable=False
     )
     paciente_numero_documento: Mapped[str] = mapped_column(String(20), nullable=False)
+    # **Póliza y titular** (26/10/2026). El número de póliza lo pone la compañía;
+    # nulo solo en los casos de antes de que existiera. Si el paciente no es el
+    # titular, el titular va aparte, en cuatro partes como toda persona, con su
+    # identificación y el parentesco del paciente con él.
+    poliza_numero: Mapped[str | None] = mapped_column(String(40))
+    paciente_es_titular: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    titular_parentesco: Mapped[str | None] = mapped_column(String(20))
+    titular_nombre_principal: Mapped[str | None] = mapped_column(String(100))
+    titular_nombre_secundario: Mapped[str | None] = mapped_column(String(100))
+    titular_apellido_paterno: Mapped[str | None] = mapped_column(String(100))
+    titular_apellido_materno: Mapped[str | None] = mapped_column(String(100))
+    titular_tipo_documento_codigo: Mapped[str | None] = mapped_column(
+        ForeignKey("tipos_documento.codigo", ondelete="RESTRICT")
+    )
+    titular_numero_documento: Mapped[str | None] = mapped_column(String(20))
     # NULL cuando el prestador no tiene sedes: se visita su dirección principal.
     sede_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("prestador_sedes.id", ondelete="RESTRICT")

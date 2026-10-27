@@ -499,8 +499,14 @@ def _detalle(
         paciente_apellido_materno=visita.paciente_apellido_materno,
         observaciones=fila[0].observaciones,
         correos=_correos_out(db, visita_id),
+        **_poliza_out(visita),
         tiene_informe=bool(fila[0].informe),
     )
+
+
+def _poliza_out(visita) -> dict:
+    """Póliza y titular del caso, para todos los detalles (compañía, supervisión, auditor)."""
+    return {campo: getattr(visita, campo) for campo in service.CAMPOS_POLIZA}
 
 
 def _correos_out(db: DbSession, visita_id: uuid.UUID) -> list[CorreoVisita]:
@@ -601,6 +607,7 @@ def mis_casos(
             VisitaSupervisionDetalle(
                 **_resumen_supervision(fila).model_dump(),
                 **personas.partes_prefijadas(visita, "paciente_"),
+                **_poliza_out(visita),
                 observaciones=visita.observaciones,
                 correos=_correos_out(db, visita.id),
                 tiene_comprobante=bool(visita.comprobante_horario_path),
@@ -1378,6 +1385,7 @@ def obtener_supervision(
     return VisitaSupervisionDetalle(
         **_resumen_supervision(fila).model_dump(),
         **personas.partes_prefijadas(fila[0], "paciente_"),
+        **_poliza_out(fila[0]),
         observaciones=fila[0].observaciones,
         correos=_correos_out(db, visita_id),
         # `tiene_informe` ya viene del resumen de supervisión: repetirlo aquí
@@ -1646,6 +1654,7 @@ def _detalle_supervision(db: DbSession, visita_id: uuid.UUID) -> VisitaSupervisi
     return VisitaSupervisionDetalle(
         **_resumen_supervision(fila).model_dump(),
         **personas.partes_prefijadas(fila[0], "paciente_"),
+        **_poliza_out(fila[0]),
         observaciones=fila[0].observaciones,
         correos=_correos_out(db, visita_id),
         # `tiene_informe` ya viene del resumen de supervisión: repetirlo aquí

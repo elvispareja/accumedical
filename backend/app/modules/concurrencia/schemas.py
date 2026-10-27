@@ -75,6 +75,10 @@ class PrestadorElegible(BaseModel):
     contactos: list[ContactoElegible]
 
 
+#: El parentesco del PACIENTE con el titular de la póliza.
+Parentesco = Literal["conyuge", "hijo", "padre_madre", "otro"]
+
+
 class VisitaCrear(BaseModel):
     prestador_id: str
     # El paciente, obligatorio: es a quién se va a auditar. Su nombre va en
@@ -89,6 +93,18 @@ class VisitaCrear(BaseModel):
     # Nulo significa casa matriz: se visita la dirección propia del prestador.
     # Si viene una sede, el servicio comprueba contra la base que sea suya.
     sede_id: str | None = None
+    # **Póliza y titular** (26/10/2026). El número de póliza es obligatorio en
+    # el alta. Si el paciente no es el titular, van los datos del titular y el
+    # parentesco; el servicio los exige y valida la identificación.
+    poliza_numero: Annotated[str, Field(min_length=1, max_length=40)]
+    paciente_es_titular: bool = True
+    titular_parentesco: Parentesco | None = None
+    titular_nombre_principal: personas.NombreOpcional = None
+    titular_nombre_secundario: personas.NombreOpcional = None
+    titular_apellido_paterno: personas.NombreOpcional = None
+    titular_apellido_materno: personas.NombreOpcional = None
+    titular_tipo_documento_codigo: Annotated[str, Field(max_length=10)] | None = None
+    titular_numero_documento: Annotated[str, Field(max_length=20)] | None = None
     # Ya NO lo pone la aseguradora (26/10/2026): la hora de la visita la fija la
     # coordinación de Accumedical al asignar al auditor. Si llega, se ignora en
     # el alta de compañía; queda para el alta desde supervisión.
@@ -101,6 +117,12 @@ class VisitaCrear(BaseModel):
     )(personas.validar_solo_letras)
     _opcionales = field_validator(
         "paciente_nombre_secundario", "paciente_apellido_materno"
+    )(personas.opcional_o_nulo)
+    _titular = field_validator(
+        "titular_nombre_principal",
+        "titular_nombre_secundario",
+        "titular_apellido_paterno",
+        "titular_apellido_materno",
     )(personas.opcional_o_nulo)
 
 
@@ -175,6 +197,15 @@ class VisitaActualizar(BaseModel):
     paciente_tipo_documento_codigo: Annotated[str, Field(min_length=1, max_length=10)] | None = None
     paciente_numero_documento: Annotated[str, Field(min_length=1, max_length=20)] | None = None
     sede_id: str | None = None
+    poliza_numero: Annotated[str, Field(min_length=1, max_length=40)] | None = None
+    paciente_es_titular: bool | None = None
+    titular_parentesco: Parentesco | None = None
+    titular_nombre_principal: personas.NombreOpcional = None
+    titular_nombre_secundario: personas.NombreOpcional = None
+    titular_apellido_paterno: personas.NombreOpcional = None
+    titular_apellido_materno: personas.NombreOpcional = None
+    titular_tipo_documento_codigo: Annotated[str, Field(max_length=10)] | None = None
+    titular_numero_documento: Annotated[str, Field(max_length=20)] | None = None
     # Mover esto es reprogramar: el servidor recalcula la entrega con el SLA y
     # devuelve el plazo de llegada a la hora nueva.
     desde: dt.datetime | None = None
@@ -186,6 +217,12 @@ class VisitaActualizar(BaseModel):
     )(personas.validar_solo_letras)
     _opcionales = field_validator(
         "paciente_nombre_secundario", "paciente_apellido_materno"
+    )(personas.opcional_o_nulo)
+    _titular = field_validator(
+        "titular_nombre_principal",
+        "titular_nombre_secundario",
+        "titular_apellido_paterno",
+        "titular_apellido_materno",
     )(personas.opcional_o_nulo)
 
 
@@ -228,6 +265,17 @@ class VisitaDetalle(VisitaResumen):
     paciente_apellido_materno: str | None
     observaciones: str | None
     correos: list[CorreoVisita]
+    # Póliza y titular (26/10/2026); nulos el número y el titular en los casos
+    # de antes, y el titular cuando el paciente lo es.
+    poliza_numero: str | None = None
+    paciente_es_titular: bool = True
+    titular_parentesco: str | None = None
+    titular_nombre_principal: str | None = None
+    titular_nombre_secundario: str | None = None
+    titular_apellido_paterno: str | None = None
+    titular_apellido_materno: str | None = None
+    titular_tipo_documento_codigo: str | None = None
+    titular_numero_documento: str | None = None
     # Si el auditor ya generó el informe de la visita: el texto no viaja aquí,
     # el PDF se pide a su propio endpoint autenticado.
     tiene_informe: bool = False
@@ -366,6 +414,17 @@ class VisitaSupervisionDetalle(VisitaSupervisionResumen):
     paciente_apellido_materno: str | None
     observaciones: str | None
     correos: list[CorreoVisita]
+    # Póliza y titular (26/10/2026); nulos el número y el titular en los casos
+    # de antes, y el titular cuando el paciente lo es.
+    poliza_numero: str | None = None
+    paciente_es_titular: bool = True
+    titular_parentesco: str | None = None
+    titular_nombre_principal: str | None = None
+    titular_nombre_secundario: str | None = None
+    titular_apellido_paterno: str | None = None
+    titular_apellido_materno: str | None = None
+    titular_tipo_documento_codigo: str | None = None
+    titular_numero_documento: str | None = None
     # Si hay imagen que comprueba un cambio de horario. La ruta no viaja: la
     # imagen se pide a su propio endpoint autenticado.
     tiene_comprobante: bool

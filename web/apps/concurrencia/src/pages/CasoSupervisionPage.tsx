@@ -11,6 +11,7 @@ import {
   prorrogarVisita,
   urlInformePdfSupervision,
   type AuditorElegible,
+  type Parentesco,
   type VisitaSupervisionDetalle,
 } from '@concurrencia/api'
 import { EstadoVisitaBadge } from '@concurrencia/components/visitas'
@@ -144,6 +145,13 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
   return <CasoCargado caso={detalle.data} />
 }
 
+const PARENTESCO: Record<Parentesco, string> = {
+  conyuge: 'CÓNYUGE',
+  hijo: 'HIJO/A',
+  padre_madre: 'PADRE/MADRE',
+  otro: 'OTRO',
+}
+
 /** Solo en la agenda se deriva o se cambia la hora (igual que el servidor). */
 const ESTADOS_DERIVABLES = ['programada', 'asignada']
 
@@ -152,8 +160,64 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
   const seccion = 'font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg'
   return (
     <div className="space-y-6">
+      {/* Póliza y titular (26/10/2026), tal como los capturó la compañía. */}
       <div className="space-y-3">
-        <p className={seccion}>Paciente</p>
+        <p className={seccion}>Póliza y titular</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="sl-poliza">Número de póliza</Label>
+            <Input id="sl-poliza" value={caso.poliza_numero ?? '—'} disabled />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="sl-es-titular">¿El paciente es el titular?</Label>
+            <Input
+              id="sl-es-titular"
+              value={caso.paciente_es_titular ? 'SÍ' : 'NO'}
+              disabled
+            />
+          </div>
+        </div>
+        {!caso.paciente_es_titular && (
+          <>
+            <CamposNombre
+              valores={nombreDesdeApi({
+                nombre_principal: caso.titular_nombre_principal ?? '',
+                nombre_secundario: caso.titular_nombre_secundario,
+                apellido_paterno: caso.titular_apellido_paterno ?? '',
+                apellido_materno: caso.titular_apellido_materno,
+              })}
+              onCambiar={() => {}}
+              idPrefijo="sl-titular"
+              deshabilitado
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="sl-titular-doc">Identificación del titular</Label>
+                <Input
+                  id="sl-titular-doc"
+                  value={caso.titular_numero_documento ?? '—'}
+                  disabled
+                />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <p className={seccion}>
+          {caso.paciente_es_titular ? 'Paciente (es el titular)' : 'Paciente (quien está internado)'}
+        </p>
+        {!caso.paciente_es_titular && caso.titular_parentesco && (
+          <div className="space-y-2">
+            <Label htmlFor="sl-parentesco">Parentesco con el titular</Label>
+            <Input
+              id="sl-parentesco"
+              value={PARENTESCO[caso.titular_parentesco]}
+              disabled
+            />
+          </div>
+        )}
         {/* Las MISMAS cuatro casillas con las que se capturó, no el nombre ya
             compuesto en una sola: esta vista enseña el caso tal como se creó, y
             se creó en cuatro. El componente es el mismo del formulario. */}

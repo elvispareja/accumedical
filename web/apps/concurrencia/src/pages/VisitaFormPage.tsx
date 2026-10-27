@@ -29,6 +29,7 @@ import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Modal } from '@/shared/components/ui/modal'
+import { GrupoDeOpciones } from '@/shared/components/ui/opciones'
 import { Select } from '@/shared/components/ui/select'
 import { useToast } from '@/shared/components/ui/toast'
 import { FORMATOS, filtrarDocumento, problemaConDocumento } from '@/shared/identificacion'
@@ -100,7 +101,22 @@ interface Formulario {
   /** Correos transcritos a mano, aparte de los contactos, con quién es cada uno. */
   correos: { _key: string; valor: string; etiqueta: string }[]
   observaciones: string
+  // Póliza y titular (26/10/2026): la póliza es obligatoria; si el paciente no
+  // es el titular, van el titular completo y el parentesco.
+  poliza: string
+  paciente_es_titular: 'si' | 'no'
+  parentesco: '' | 'conyuge' | 'hijo' | 'padre_madre' | 'otro'
+  titular: NombrePersona
+  titular_tipo_documento_codigo: string
+  titular_numero_documento: string
 }
+
+const PARENTESCOS = [
+  { valor: 'conyuge', etiqueta: 'Cónyuge' },
+  { valor: 'hijo', etiqueta: 'Hijo/a' },
+  { valor: 'padre_madre', etiqueta: 'Padre/Madre' },
+  { valor: 'otro', etiqueta: 'Otro' },
+] as const
 
 const VACIO: Formulario = {
   paciente: NOMBRE_VACIO,
@@ -112,6 +128,12 @@ const VACIO: Formulario = {
   contactos_elegidos: [],
   correos: [],
   observaciones: '',
+  poliza: '',
+  paciente_es_titular: 'si',
+  parentesco: '',
+  titular: NOMBRE_VACIO,
+  titular_tipo_documento_codigo: '',
+  titular_numero_documento: '',
 }
 
 function mensajeDeError(error: unknown, porDefecto: string): string {
@@ -317,6 +339,7 @@ export function VisitaFormPage({
   useEffect(() => {
     if (!detalle.data) return
     setForm({
+      ...VACIO,
       paciente: nombreDesdeApi({
         nombre_principal: detalle.data.paciente_nombre_principal,
         nombre_secundario: detalle.data.paciente_nombre_secundario,
@@ -336,6 +359,19 @@ export function VisitaFormPage({
         etiqueta: c.etiqueta ?? '',
       })),
       observaciones: detalle.data.observaciones ?? '',
+      poliza: detalle.data.poliza_numero ?? '',
+      paciente_es_titular: detalle.data.paciente_es_titular ? 'si' : 'no',
+      parentesco: detalle.data.titular_parentesco ?? '',
+      titular: detalle.data.paciente_es_titular
+        ? NOMBRE_VACIO
+        : nombreDesdeApi({
+            nombre_principal: detalle.data.titular_nombre_principal ?? '',
+            nombre_secundario: detalle.data.titular_nombre_secundario,
+            apellido_paterno: detalle.data.titular_apellido_paterno ?? '',
+            apellido_materno: detalle.data.titular_apellido_materno,
+          }),
+      titular_tipo_documento_codigo: detalle.data.titular_tipo_documento_codigo ?? '',
+      titular_numero_documento: detalle.data.titular_numero_documento ?? '',
     })
   }, [detalle.data])
 
@@ -499,6 +535,16 @@ export function VisitaFormPage({
     form.paciente_tipo_documento_codigo,
     form.paciente_numero_documento,
   )
+  // Titular y paciente distintos no pueden tener la misma identificación: si es
+  // la misma persona, se marca «Sí».
+  const problemaTitular =
+    problemaConDocumento(form.titular_tipo_documento_codigo, form.titular_numero_documento) ??
+    (form.paciente_es_titular === 'no' &&
+    form.titular_numero_documento.trim() !== '' &&
+    form.titular_tipo_documento_codigo === form.paciente_tipo_documento_codigo &&
+    form.titular_numero_documento.trim() === form.paciente_numero_documento.trim()
+      ? 'Es la misma identificación del paciente: si es la misma persona, marca «Sí»'
+      : null)
 
   // La búsqueda va SOLA (pedido del usuario, 26/10/2026: sin botón «Buscar
   // paciente»): en cuanto el documento está completo y es válido, y tras una
@@ -610,6 +656,23 @@ export function VisitaFormPage({
     return correos
   }
 
+  /** Lo que viaja de la póliza y el titular; el titular, solo si no es el paciente. */
+  function polizaYTitular() {
+    const esTitular = form.paciente_es_titular === 'si'
+    const titular = nombreHaciaApi(form.titular)
+    return {
+      poliza_numero: form.poliza.trim().toUpperCase(),
+      paciente_es_titular: esTitular,
+      titular_parentesco: esTitular ? null : form.parentesco || null,
+      titular_nombre_principal: esTitular ? null : titular.nombre_principal,
+      titular_nombre_secundario: esTitular ? null : titular.nombre_secundario,
+      titular_apellido_paterno: esTitular ? null : titular.apellido_paterno,
+      titular_apellido_materno: esTitular ? null : titular.apellido_materno,
+      titular_tipo_documento_codigo: esTitular ? null : form.titular_tipo_documento_codigo,
+      titular_numero_documento: esTitular ? null : form.titular_numero_documento.trim(),
+    }
+  }
+
   const guardar = useMutation({
     mutationFn: async () => {
       const nombre = nombreHaciaApi(form.paciente)
@@ -628,6 +691,7 @@ export function VisitaFormPage({
         ...(vencido && form.desde ? { desde: aISO(form.desde) } : {}),
         correos: correosAEnviar(),
         observaciones: form.observaciones.trim() || null,
+        ...polizaYTitular(),
       }
       if (supervision) return crearVisitaSupervision({ ...cuerpo, aseguradora_id: aseguradoraId })
       return id ? actualizarVisita(id, cuerpo) : crearVisita(cuerpo)
@@ -698,6 +762,17 @@ export function VisitaFormPage({
       )
     }
     if (problemaDocumento) return toast.error(problemaDocumento)
+    if (!form.poliza.trim()) return toast.error('Indica el número de póliza')
+    if (form.paciente_es_titular === 'no') {
+      if (!form.titular_tipo_documento_codigo || !form.titular_numero_documento.trim()) {
+        return toast.error('Indica la identificación del titular')
+      }
+      if (problemaTitular) return toast.error(problemaTitular)
+      if (faltaObligatorio(form.titular)) {
+        return toast.error('El titular necesita nombre principal y apellido paterno')
+      }
+      if (!form.parentesco) return toast.error('Elige el parentesco del paciente con el titular')
+    }
     if (!form.prestador_id) return toast.error('Elige el prestador que se va a visitar')
     if (elegido && elegido.sedes.length > 0 && !form.sede_id) {
       return toast.error('Elige la sede: la sede principal o una de sus sedes')
@@ -797,7 +872,7 @@ export function VisitaFormPage({
         {supervision && (
           <Bloque
             titulo="Aseguradora"
-            descripcion="El caso nace de esta compañía; su red define qué prestadores puedes elegir."
+            descripcion="El caso nace de esta compañía."
           >
             <Select
               value={aseguradoraId}
@@ -816,7 +891,130 @@ export function VisitaFormPage({
             </Select>
           </Bloque>
         )}
-        <Bloque titulo="Paciente">
+        <Bloque titulo="Póliza y titular">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="poliza">
+                Número de póliza <span className="text-peligro">*</span>
+              </Label>
+              <Input
+                id="poliza"
+                value={form.poliza}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, poliza: e.target.value.replace(/[^A-Za-z0-9/._-]/g, '') }))
+                }
+                placeholder="LU-2026-0048317"
+                maxLength={40}
+                disabled={soloLectura}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>¿El paciente es el titular de la póliza?</Label>
+              <GrupoDeOpciones
+                etiqueta="¿El paciente es el titular de la póliza?"
+                valor={form.paciente_es_titular}
+                opciones={[
+                  { valor: 'si', etiqueta: 'Sí' },
+                  { valor: 'no', etiqueta: 'No' },
+                ]}
+                onCambiar={(valor) => setForm((p) => ({ ...p, paciente_es_titular: valor }))}
+                disabled={soloLectura}
+              />
+            </div>
+          </div>
+
+          {form.paciente_es_titular === 'no' && (
+            <>
+              <div className="mt-5 grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="titular_tipo">
+                    Tipo de identificación del titular <span className="text-peligro">*</span>
+                  </Label>
+                  <Select
+                    id="titular_tipo"
+                    value={form.titular_tipo_documento_codigo}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, titular_tipo_documento_codigo: e.target.value }))
+                    }
+                    disabled={soloLectura}
+                  >
+                    <option value="">Elige el tipo</option>
+                    {tipos.data?.map((t) => (
+                      <option key={t.codigo} value={t.codigo}>
+                        {t.nombre}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="titular_numero">
+                    Número de identificación del titular <span className="text-peligro">*</span>
+                  </Label>
+                  <Input
+                    id="titular_numero"
+                    inputMode={
+                      FORMATOS[form.titular_tipo_documento_codigo]?.soloDigitos ? 'numeric' : 'text'
+                    }
+                    value={form.titular_numero_documento}
+                    onChange={(e) =>
+                      setForm((p) => ({
+                        ...p,
+                        titular_numero_documento: filtrarDocumento(
+                          e.target.value,
+                          p.titular_tipo_documento_codigo,
+                        ),
+                      }))
+                    }
+                    placeholder="0912345678"
+                    className="tabular"
+                    disabled={soloLectura}
+                  />
+                  <p
+                    className={cn(
+                      'text-xs',
+                      problemaTitular ? 'text-peligro' : 'text-tenue-fg',
+                    )}
+                    aria-live="polite"
+                  >
+                    {problemaTitular ?? FORMATOS[form.titular_tipo_documento_codigo]?.ayuda ?? ''}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4">
+                <CamposNombre
+                  idPrefijo="titular"
+                  valores={form.titular}
+                  deshabilitado={soloLectura}
+                  onCambiar={(campo, valor) =>
+                    setForm((p) => ({ ...p, titular: { ...p.titular, [campo]: valor } }))
+                  }
+                />
+              </div>
+            </>
+          )}
+        </Bloque>
+
+        <Bloque
+          titulo={
+            form.paciente_es_titular === 'si'
+              ? 'Paciente (es el titular)'
+              : 'Paciente (quien está internado)'
+          }
+        >
+          {form.paciente_es_titular === 'no' && (
+            <div className="mb-5 space-y-2">
+              <Label>
+                Parentesco con el titular <span className="text-peligro">*</span>
+              </Label>
+              <GrupoDeOpciones
+                etiqueta="Parentesco con el titular"
+                valor={form.parentesco}
+                opciones={PARENTESCOS.map((p) => ({ valor: p.valor, etiqueta: p.etiqueta }))}
+                onCambiar={(valor) => setForm((p) => ({ ...p, parentesco: valor }))}
+                disabled={soloLectura}
+              />
+            </div>
+          )}
           <div className="grid gap-5 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="paciente_tipo">
@@ -921,14 +1119,7 @@ export function VisitaFormPage({
         </Bloque>
 
         <Bloque
-          titulo="A quién se visita"
-          descripcion={
-            soloLectura
-              ? 'El prestador al que se programó la visita.'
-              : supervision
-                ? 'Solo aparecen los prestadores con convenio vigente con la aseguradora elegida.'
-                : 'Solo aparecen los prestadores con convenio vigente con tu aseguradora.'
-          }
+          titulo="Hospital / Clínica"
         >
           {/* Mirar no es elegir: en solo lectura no se pinta la lista de la
               red con su buscador —enseñaría prestadores a los que NO se fue—,
@@ -956,7 +1147,7 @@ export function VisitaFormPage({
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
                   placeholder="Buscar por nombre o código"
-                  aria-label="Buscar prestador"
+                  aria-label="Buscar hospital, clínica o centro médico"
                   mayusculas={false}
                   className="pl-9"
                 />
@@ -964,7 +1155,7 @@ export function VisitaFormPage({
 
               {supervision && !aseguradoraId ? (
                 <p className="rounded-md border border-dashed border-borde px-4 py-8 text-center text-sm text-tenue-fg">
-                  Elige primero la aseguradora: su red es la que define los destinos.
+                  Elige primero la aseguradora.
                 </p>
               ) : prestadores.isPending ? (
                 <div className="space-y-2" role="status" aria-label="Cargando prestadores">
@@ -979,10 +1170,8 @@ export function VisitaFormPage({
               ) : visibles.length === 0 ? (
                 <p className="rounded-md border border-dashed border-borde px-4 py-8 text-center text-sm text-tenue-fg">
                   {(prestadores.data ?? []).length === 0
-                    ? supervision
-                      ? 'Esa aseguradora todavía no tiene prestadores con convenio vigente.'
-                      : 'Tu aseguradora todavía no tiene prestadores con convenio vigente.'
-                    : 'Ningún prestador coincide con la búsqueda.'}
+                    ? 'Todavía no hay hospitales, clínicas ni centros médicos registrados.'
+                    : 'Ningún hospital, clínica o centro médico coincide con la búsqueda.'}
                 </p>
               ) : (
                 <div

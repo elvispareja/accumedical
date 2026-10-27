@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 import uuid
 from decimal import Decimal
 from typing import Any
@@ -59,26 +60,27 @@ def prestadores_de_la_red(
     db: DbSession, aseguradora_id: uuid.UUID, *, search: str | None = None
 ) -> list[dict[str, Any]]:
     """
-    Los prestadores con convenio VIVO con esta aseguradora, cada uno con sus
-    sedes y contactos. Es la única lista sobre la que se puede programar una
-    visita: no se ofrece —ni se acepta— un prestador que no esté en la red.
-    Fuente: `nucleo` (local o API central).
+    A dónde se puede mandar al médico auditor: TODOS los hospitales, clínicas y
+    centros médicos activos, con sus sedes y contactos, tengan o no convenio con la aseguradora
+    (pedido del usuario, 26/10/2026; antes era solo la red de la compañía). Los
+    demás tipos de prestador (laboratorio, médico, farmacia…) no se ofrecen ni se
+    aceptan. Fuente: `nucleo` (local o API central). `aseguradora_id` queda en la
+    firma porque las dos rutas la reciben y por si la regla vuelve a depender de ella.
     """
-    return nucleo.prestadores_de_la_red(db, aseguradora_id, search)
+    return nucleo.prestadores_hospitalarios(db, search)
 
 
 def _validar_destino(
     db: DbSession, aseguradora_id: uuid.UUID, prestador_id: uuid.UUID, sede_id: uuid.UUID | None
 ) -> None:
     """
-    Comprueba contra la base que el prestador esté en la red y que la sede sea
-    suya. No se confía en lo que mande el navegador: si el convenio se terminó
-    mientras el formulario estaba abierto, el guardado se rechaza.
+    Comprueba contra la base que el prestador sea un hospital o una clínica activo
+    y que la sede sea suya. No se confía en lo que mande el navegador.
     """
-    if not nucleo.prestador_en_red(db, aseguradora_id, prestador_id):
+    if not nucleo.prestador_hospitalario(db, prestador_id):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Ese prestador no tiene convenio vigente con tu aseguradora",
+            detail="Ese prestador no es un hospital, clínica o centro médico activo",
         )
 
     suyas = nucleo.sedes_activas(db, prestador_id)
@@ -446,6 +448,76 @@ def fijar_correos(
     return {"creados": creados, "eliminados": eliminados, "reetiquetados": reetiquetados}
 
 
+#: Lo que se guarda de la póliza y el titular (26/10/2026).
+CAMPOS_TITULAR = (
+    "titular_parentesco",
+    "titular_nombre_principal",
+    "titular_nombre_secundario",
+    "titular_apellido_paterno",
+    "titular_apellido_materno",
+    "titular_tipo_documento_codigo",
+    "titular_numero_documento",
+)
+CAMPOS_POLIZA = ("poliza_numero", "paciente_es_titular", *CAMPOS_TITULAR)
+_POLIZA = re.compile(r"[A-Z0-9/._-]{1,40}")
+
+
+def poliza_y_titular(
+    db: DbSession, datos: dict[str, Any], paciente_tipo: str, paciente_numero: str
+) -> dict[str, Any]:
+    """
+    **Póliza y titular del caso**, ya validados y normalizados (26/10/2026).
+
+    El número de póliza va en MAYÚSCULAS, con letras, dígitos y `/ . _ -`. Si
+    el paciente ES el titular, los campos del titular se guardan vacíos; si no,
+    hacen falta su nombre principal, su apellido paterno, su identificación
+    —con el formato del catálogo— y el parentesco del paciente con él. Titular
+    y paciente distintos no pueden compartir identificación.
+    """
+    poliza = (datos.get("poliza_numero") or "").strip().upper()
+    if not _POLIZA.fullmatch(poliza):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Indica el número de póliza (letras, números y / . _ -)",
+        )
+    es_titular = datos.get("paciente_es_titular", True) is not False
+    if es_titular:
+        return {"poliza_numero": poliza, "paciente_es_titular": True} | dict.fromkeys(
+            CAMPOS_TITULAR
+        )
+
+    faltan = [
+        etiqueta
+        for campo, etiqueta in (
+            ("titular_parentesco", "el parentesco"),
+            ("titular_nombre_principal", "el nombre principal del titular"),
+            ("titular_apellido_paterno", "el apellido paterno del titular"),
+            ("titular_tipo_documento_codigo", "el tipo de identificación del titular"),
+            ("titular_numero_documento", "el número de identificación del titular"),
+        )
+        if not (datos.get(campo) or "").strip()
+    ]
+    if faltan:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Falta " + ", ".join(faltan)
+        )
+    tipo = datos["titular_tipo_documento_codigo"]
+    numero = datos["titular_numero_documento"].strip()
+    validar_documento(db, tipo, numero)
+    if tipo == paciente_tipo and numero == paciente_numero.strip():
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El titular tiene la misma identificación del paciente: si es la misma "
+            "persona, marca que el paciente es el titular",
+        )
+    return {
+        "poliza_numero": poliza,
+        "paciente_es_titular": False,
+        **{campo: datos.get(campo) for campo in CAMPOS_TITULAR},
+        "titular_numero_documento": numero,
+    }
+
+
 def crear(
     db: DbSession, aseguradora_id: uuid.UUID, datos: dict[str, Any], autor: uuid.UUID
 ) -> Visita:
@@ -463,8 +535,12 @@ def crear(
     validar_documento(
         db, datos["paciente_tipo_documento_codigo"], datos["paciente_numero_documento"].strip()
     )
+    poliza = poliza_y_titular(
+        db, datos, datos["paciente_tipo_documento_codigo"], datos["paciente_numero_documento"]
+    )
 
     visita = Visita(
+        **poliza,
         aseguradora_id=aseguradora_id,
         prestador_id=prestador_id,
         # Las cuatro partes ya llegan normalizadas por el validador de `personas`.
@@ -528,6 +604,16 @@ def actualizar(
             (cambios.get("paciente_numero_documento") or visita.paciente_numero_documento).strip(),
         )
     resultante = dict(cambios)
+    # Póliza y titular: si se toca cualquiera de sus campos, se valida el estado
+    # RESULTANTE entero (lo guardado más lo que llega), igual que el destino.
+    if any(campo in cambios for campo in CAMPOS_POLIZA):
+        actual = {campo: getattr(visita, campo) for campo in CAMPOS_POLIZA}
+        tipo = (
+            cambios.get("paciente_tipo_documento_codigo") or visita.paciente_tipo_documento_codigo
+        )
+        numero = cambios.get("paciente_numero_documento") or visita.paciente_numero_documento
+        nuevos = {k: v for k, v in cambios.items() if k in CAMPOS_POLIZA}
+        resultante.update(poliza_y_titular(db, actual | nuevos, tipo, numero))
     # Reprogramar es mover la hora de llegada, y de ahí salen los otros dos
     # plazos: la entrega se recalcula con el SLA vigente y el límite de llegada
     # vuelve a ser la hora nueva —las prórrogas de la cita anterior no siguen
