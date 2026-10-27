@@ -200,6 +200,12 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
           />
           {caso.lugar && <p className="text-xs text-tenue-fg">Dirección: {caso.lugar}</p>}
         </div>
+        {/* Debajo del destino (pedido del usuario, 26/10/2026): lo que anotó la
+            compañía suele ser sobre esa visita. */}
+        <div className="space-y-2">
+          <Label htmlFor="sl-observaciones">Observaciones</Label>
+          <Input id="sl-observaciones" value={caso.observaciones ?? '—'} disabled />
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -269,10 +275,6 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
             </div>
           ))
         )}
-        <div className="space-y-2">
-          <Label htmlFor="sl-observaciones">Observaciones</Label>
-          <Input id="sl-observaciones" value={caso.observaciones ?? '—'} disabled />
-        </div>
       </div>
 
       <div className="space-y-2">
