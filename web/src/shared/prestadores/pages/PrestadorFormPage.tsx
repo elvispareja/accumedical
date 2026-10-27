@@ -646,6 +646,14 @@ export function PrestadorFormPage() {
                   onCambiar={cambiarContacto}
                   onQuitar={quitarContacto}
                   descripcionVacio="Añade a quién dirigirse en este prestador."
+                  etiquetaSedePrincipal={[
+                    'SEDE PRINCIPAL',
+                    provincias.data?.find((p) => p.codigo === form.provincia_codigo)?.nombre,
+                    ciudades.data?.find((c) => c.codigo === form.ciudad_codigo)?.nombre,
+                  ]
+                    .filter(Boolean)
+                    .join(' - ')
+                    .toLocaleUpperCase()}
                   // Solo las sedes ya guardadas: una nueva aún no tiene id al que atarse.
                   sedes={(form.sedes ?? [])
                     .filter((s) => s.id)

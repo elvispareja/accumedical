@@ -142,6 +142,7 @@ export function ContactosPanel({
   onQuitar,
   descripcionVacio,
   sedes,
+  etiquetaSedePrincipal,
 }: {
   contactos: ContactoFormulario[]
   tiposDocumento: { codigo: string; nombre: string }[]
@@ -155,7 +156,10 @@ export function ContactosPanel({
    * cuál pertenece (pedido del usuario, 26/10/2026); vacío = la sede principal.
    */
   sedes?: { id: string; nombre: string }[]
+  /** Cómo se nombra la sede principal: «SEDE PRINCIPAL - PICHINCHA - QUITO». */
+  etiquetaSedePrincipal?: string
 }) {
+  const principal = etiquetaSedePrincipal || 'SEDE PRINCIPAL'
   const [busqueda, setBusqueda] = useState('')
   const [filtroSede, setFiltroSede] = useState<string>(TODAS)
   // La ventana: qué contacto se edita, cómo estaba al abrirla (para «Cancelar»)
@@ -175,7 +179,7 @@ export function ContactosPanel({
   }, [contactos, esperandoNuevo])
 
   const nombreDeSede = (id: string | undefined) =>
-    !id ? 'Sede principal' : (sedes?.find((s) => s.id === id)?.nombre ?? '—')
+    !id ? principal : (sedes?.find((s) => s.id === id)?.nombre ?? '—')
 
   const visibles = useMemo(() => {
     const termino = busqueda.trim().toLocaleLowerCase()
@@ -241,7 +245,7 @@ export function ContactosPanel({
               aria-label="Filtrar por sede"
             >
               <option value={TODAS}>Todas las sedes</option>
-              <option value="">Sede principal</option>
+              <option value="">{principal}</option>
               {sedes.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.nombre}
@@ -362,7 +366,7 @@ export function ContactosPanel({
                 value={contacto.sede_id ?? ''}
                 onChange={(e) => onCambiar(contacto._key, 'sede_id', e.target.value)}
               >
-                <option value="">Sede principal</option>
+                <option value="">{principal}</option>
                 {sedes.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.nombre}
