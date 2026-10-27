@@ -8,7 +8,6 @@ import {
   asignarAuditor,
   listarAuditores,
   obtenerVisitaSupervision,
-  prorrogarVisita,
   urlInformePdfSupervision,
   type AuditorElegible,
   type Parentesco,
@@ -152,11 +151,7 @@ const PARENTESCO: Record<Parentesco, string> = {
   otro: 'OTRO',
 }
 
-/** Solo en la agenda se deriva o se cambia la hora (igual que el servidor). */
-const ESTADOS_DERIVABLES = ['programada', 'asignada']
-
 function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
-  const derivable = ESTADOS_DERIVABLES.includes(caso.estado)
   const seccion = 'font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg'
   return (
     <div className="space-y-6">
@@ -305,7 +300,9 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
             hora, sin rango. Editables solo mientras el caso está en la agenda.
             Sin «Entrega del informe» ni «Plazo de llegada» («esas dos cosas ya
             no van»): el servidor los sigue calculando de esta hora. */}
-        {derivable ? (
+        {/* Con el auditor ya asignado, arriba solo se lee: la hora se cambia con
+            «Nuevo horario» (pedido del usuario, 27/10/2026). */}
+        {caso.estado === 'programada' ? (
           <Derivar caso={caso} />
         ) : (
           <div className="grid gap-4 sm:grid-cols-3">
@@ -364,7 +361,7 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
         </div>
       )}
 
-      <Extender caso={caso} />
+      <NuevoHorario caso={caso} />
     </div>
   )
 }
@@ -447,7 +444,7 @@ function Derivar({ caso }: { caso: VisitaSupervisionDetalle }) {
             min={hora || aLocal(new Date().toISOString())}
             onChange={(e) => setHoraFin(e.target.value)}
           />
-          <p className="text-xs text-tenue-fg">Pasada esta hora sin llegar, el caso vence.</p>
+          <p className="text-xs text-tenue-fg">Hasta qué hora puede llegar el auditor.</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="sl-auditor">
@@ -503,72 +500,87 @@ function Derivar({ caso }: { caso: VisitaSupervisionDetalle }) {
 }
 
 /**
- * **La prórroga**: más horas para que el auditor llegue, contadas DESDE AHORA.
- * A las 16:00 se conceden dos y el plazo queda en las 18:00, no en la hora
- * original más dos; se puede repetir cuantas veces haga falta.
- *
- * Es de Accumedical, no de la compañía: es quien coordina a los auditores y
- * quien sabe a qué hora va el auditor. No mueve la entrega
- * del informe, que sigue donde la puso el SLA.
+ * **Nuevo horario** (pedido del usuario, 27/10/2026; reemplaza a «Extender»):
+ * con el auditor ya asignado solo se mueve la ventana —desde y hasta qué hora
+ * ir al hospital—, con el mismo auditor. Al auditor le llega el horario nuevo;
+ * la compañía no se entera. La entrega del informe no se mueve: es del SLA.
  */
-function Extender({ caso }: { caso: VisitaSupervisionDetalle }) {
+function NuevoHorario({ caso }: { caso: VisitaSupervisionDetalle }) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const [abierto, setAbierto] = useState(false)
-  const [horas, setHoras] = useState('2')
+  const [hora, setHora] = useState(() => aLocal(caso.desde))
+  const [horaFin, setHoraFin] = useState(() => aLocal(caso.llegada_limite))
 
   const guardar = useMutation({
-    mutationFn: () => prorrogarVisita(caso.id, Number(horas.replace(',', '.'))),
-    onSuccess: (resultado) => {
+    mutationFn: () =>
+      asignarAuditor(
+        caso.id,
+        caso.auditor_id ?? '',
+        new Date(hora).toISOString(),
+        new Date(horaFin).toISOString(),
+      ),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['supervision'] })
       queryClient.invalidateQueries({ queryKey: ['supervision-visita', caso.id] })
-      toast.exito(
-        `Plazo extendido hasta las ${new Date(resultado.llegada_limite).toLocaleTimeString(
-          'es-EC',
-          { hour: '2-digit', minute: '2-digit' },
-        )}`,
-      )
+      toast.exito(`Nuevo horario guardado; se le avisa a ${caso.auditor_nombre ?? 'el auditor'}`)
       setAbierto(false)
     },
     onError: (error) =>
       toast.error(
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-          'No se pudo extender el plazo',
+          'No se pudo guardar el horario',
       ),
   })
 
-  // Con el auditor ya dentro, o con el caso terminado, no hay plazo que mover.
-  // Programado tampoco: aún no tiene hora, se la pone la derivación (26/10/2026).
-  if (caso.estado !== 'asignada') return null
+  // Solo con el auditor asignado y sin haber llegado: después ya no hay visita
+  // que mover.
+  if (caso.estado !== 'asignada' || !caso.auditor_id) return null
 
   if (!abierto) {
     return (
-      <Boton type="button" variante="contorno" onClick={() => setAbierto(true)}>
+      <Boton
+        type="button"
+        variante="contorno"
+        onClick={() => {
+          setHora(aLocal(caso.desde))
+          setHoraFin(aLocal(caso.llegada_limite))
+          setAbierto(true)
+        }}
+      >
         <Clock aria-hidden="true" />
-        Extender
+        Nuevo horario
       </Boton>
     )
   }
   return (
     <div className="space-y-3 rounded-md border border-marca/40 bg-marca-suave/30 p-4">
       <p className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
-        Extender el plazo de llegada
+        Nuevo horario
       </p>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="ex-horas">
-            Horas más <span className="text-peligro">*</span>
+          <Label htmlFor="nh-desde">
+            Ir al hospital desde <span className="text-peligro">*</span>
           </Label>
           <Input
-            id="ex-horas"
-            inputMode="decimal"
-            value={horas}
-            onChange={(e) => setHoras(e.target.value)}
-            className="tabular"
+            id="nh-desde"
+            type="datetime-local"
+            value={hora}
+            onChange={(e) => setHora(e.target.value)}
           />
-          <p className="text-xs text-tenue-fg">
-            Se cuentan desde ahora, no desde la hora original.
-          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="nh-hasta">
+            Hasta <span className="text-peligro">*</span>
+          </Label>
+          <Input
+            id="nh-hasta"
+            type="datetime-local"
+            value={horaFin}
+            min={hora || aLocal(new Date().toISOString())}
+            onChange={(e) => setHoraFin(e.target.value)}
+          />
         </div>
       </div>
       <div className="flex gap-2">
@@ -576,21 +588,21 @@ function Extender({ caso }: { caso: VisitaSupervisionDetalle }) {
           type="button"
           cargando={guardar.isPending}
           onClick={() => {
-            const cuantas = Number(horas.replace(',', '.'))
-            if (!Number.isFinite(cuantas) || cuantas <= 0) {
-              return toast.error('Indica cuántas horas más, en números')
+            if (!hora || !horaFin) return toast.error('Indica desde y hasta qué hora ir al hospital')
+            if (new Date(horaFin) <= new Date(hora)) {
+              return toast.error('La hora «hasta» debe ser posterior a la hora «desde»')
             }
             guardar.mutate()
           }}
         >
-          Extender
+          Guardar
         </Boton>
         <Boton type="button" variante="fantasma" onClick={() => setAbierto(false)}>
           Cancelar
         </Boton>
       </div>
       <p className="text-xs text-tenue-fg">
-        La entrega del informe no se mueve: sigue donde la puso el SLA.
+        Mismo auditor; se le avisa del horario nuevo. La aseguradora no ve el horario.
       </p>
     </div>
   )

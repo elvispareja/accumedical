@@ -512,9 +512,12 @@ def enviar_informe(db: DbSession, visita_id: uuid.UUID, pdf: bytes) -> tuple[int
     return len(destinatarios), enviados
 
 
-def notificar_derivacion(db: DbSession, visita_id: uuid.UUID) -> None:
+def notificar_derivacion(
+    db: DbSession, visita_id: uuid.UUID, nuevo_horario: bool = False
+) -> None:
     """
     Avisa al auditor que el caso ahora es suyo, con los mismos datos exactos.
+    Con `nuevo_horario`, que el caso sigue siendo suyo pero cambió la hora de ir.
     Solo cuando hay auditor —desasignar no manda nada— y también DESPUÉS del
     commit, por la misma razón que el alta. La notificación push a su app móvil
     llegará cuando la app tenga build propio (docs/08): Expo Go ya no las admite.
@@ -530,7 +533,11 @@ def notificar_derivacion(db: DbSession, visita_id: uuid.UUID) -> None:
     lineas = [
         f"Hola, {auditor.nombre_principal}:",
         "",
-        "El supervisor de Concurrencia te derivó este caso. Los datos exactos:",
+        (
+            "El supervisor de Concurrencia cambió el horario de este caso. Los datos exactos:"
+            if nuevo_horario
+            else "El supervisor de Concurrencia te derivó este caso. Los datos exactos:"
+        ),
         "",
         *_datos_del_caso(fila),
         "",
@@ -541,7 +548,11 @@ def notificar_derivacion(db: DbSession, visita_id: uuid.UUID) -> None:
     try:
         mail.enviar(
             para=auditor.email,
-            asunto=f"Caso {visita.codigo_interno} derivado a ti · {prestador_nombre}",
+            asunto=(
+                f"Caso {visita.codigo_interno}: nuevo horario · {prestador_nombre}"
+                if nuevo_horario
+                else f"Caso {visita.codigo_interno} derivado a ti · {prestador_nombre}"
+            ),
             texto="\n".join(lineas),
         )
         log.info("derivacion_notificada", visita=visita.codigo_interno, para=auditor.email)

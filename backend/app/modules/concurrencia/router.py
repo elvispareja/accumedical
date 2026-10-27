@@ -1559,10 +1559,14 @@ def asignar_auditor(
     diff = service.asignar_auditor(
         db, visita, auditor_id, ctx.user.id, desde=datos.desde, hasta=datos.hasta
     )
+    # Con el MISMO auditor solo cambió la ventana: es el «Nuevo horario» de la
+    # ficha (27/10/2026), no una derivación. La compañía no se entera —ni de la
+    # hora, que no ve, ni de una «derivación» que no hubo—; el auditor sí.
+    nuevo_auditor = "auditor_id" in diff["despues"]
     if diff["despues"]:
         audit.registrar(
             db,
-            accion="visita_derivada",
+            accion="visita_derivada" if nuevo_auditor else "visita_reprogramada",
             request=request,
             user_id=ctx.user.id,
             session_id=ctx.sesion.id,
@@ -1574,14 +1578,19 @@ def asignar_auditor(
         # La campana de la COMPAÑÍA, en la misma transacción que la derivación:
         # su coordinación es quien esperaba saber que el caso ya tiene médico.
         # Quitar la asignación no avisa: no hay nada que celebrar ahí.
-        if auditor_id is not None:
+        if auditor_id is not None and nuevo_auditor:
             notificaciones.avisar_derivacion_en_campana(db, visita)
     db.commit()
 
     # DESPUÉS de responder y solo si la derivación CAMBIÓ hacia un auditor: se le
     # avisa por correo con los datos exactos. Desasignar no manda nada.
     if diff["despues"] and datos.auditor_id:
-        background.add_task(notificaciones.en_fondo, notificaciones.notificar_derivacion, visita_id)
+        background.add_task(
+            notificaciones.en_fondo,
+            notificaciones.notificar_derivacion,
+            visita_id,
+            not nuevo_auditor,
+        )
     # La fila recién derivada, releída con sus joins para devolverla entera.
     return _resumen_supervision(service.fila_supervision(db, visita_id))
 
