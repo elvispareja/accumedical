@@ -77,8 +77,6 @@ export function InicioScreen({ sesion, onSalir }: { sesion: Sesion; onSalir: () 
     auditando: { texto: 'Auditando', color: colores.verde },
     cancelada: { texto: 'Cancelada', color: colores.tenue },
     culminada: { texto: 'Culminada', color: colores.verde },
-    // Lo pone solo el servidor: la ventana venció sin marcar «Ya llegué».
-    no_auditado: { texto: 'No auditado', color: colores.rojo },
   }
 
   const [saliendo, setSaliendo] = useState(false)

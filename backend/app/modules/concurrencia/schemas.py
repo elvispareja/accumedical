@@ -16,7 +16,7 @@ from app.shared import personas
 # cuando la ventana vence. Por eso este Literal es SOLO de lectura y no aparece
 # en ningún esquema de escritura: no hay forma de mandarlo.
 Estado = Literal[
-    "programada", "asignada", "auditando", "cancelada", "culminada", "no_auditado"
+    "programada", "asignada", "auditando", "cancelada", "culminada"
 ]
 
 
@@ -378,7 +378,8 @@ class CifrasVisitasOut(BaseModel):
     auditando: int = 0
     canceladas: int
     culminadas: int
-    no_auditadas: int = 0
+    # Abiertos con el SLA ya vencido (solo Accumedical; a la compañía, cero).
+    fuera_sla: int = 0
     # Visitas programadas cuya ventana toca el día de HOY, hora de Ecuador.
     hoy: int
 
@@ -403,6 +404,8 @@ class VisitaSupervisionResumen(VisitaResumen):
     # —los de antes de que existiera—, y quien pinta la fila necesita saberlo
     # para no ofrecer un PDF que no está.
     tiene_informe: bool = False
+    # Sigue abierto y ya pasó la entrega pactada (`service.fuera_de_sla`).
+    fuera_sla: bool = False
 
 
 class VisitaSupervisionDetalle(VisitaSupervisionResumen):

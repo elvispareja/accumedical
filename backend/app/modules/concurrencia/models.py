@@ -31,7 +31,6 @@ ESTADOS = (
     "auditando",
     "cancelada",
     "culminada",
-    "no_auditado",
 )
 
 
@@ -54,21 +53,22 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
         # el pedido y la visita puede fijarse después de ella.
         # Prorrogar solo da MÁS tiempo, nunca menos del ya concedido.
         CheckConstraint("llegada_limite >= desde", name="limite"),
-        # Seis estados, y **ninguno se elige**: cada uno lo pone una acción.
+        # Cinco estados, y **ninguno se elige**: cada uno lo pone una acción.
         #
         #   programada  nace así al crearse
         #   asignada    el coordinador la deriva a un auditor
         #   auditando   el auditor marca «Ya llegué» en la app
         #   culminada   el auditor envía el informe
         #   cancelada   el operador la cancela, mientras nadie haya llegado
-        #   no_auditado venció el plazo de llegada sin que nadie llegara (lo
-        #               aplica una tarea). **Es interno de Accumedical**: a la
-        #               compañía se le sigue enseñando el estado que tenía.
+        #
+        # «No auditado» ya no existe (27/10/2026, pedido del usuario): lo que
+        # se vigila es el SLA —`hasta`—, y «fuera del SLA» no es un estado
+        # sino una condición de los casos abiertos (`service.fuera_de_sla`).
         #
         # Por eso no hay ningún desplegable de estado en la interfaz: el estado
         # es una consecuencia de lo que pasó, no un campo que se teclea.
         CheckConstraint(
-            "estado IN ('programada','asignada','auditando','cancelada','culminada','no_auditado')",
+            "estado IN ('programada','asignada','auditando','cancelada','culminada')",
             name="estado",
         ),
         CheckConstraint(
@@ -188,8 +188,7 @@ class Visita(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     # auditor. Regenerarlo lo reemplaza; la película la lleva AuditLog.
     informe: Mapped[str | None] = mapped_column(Text)
     informe_actualizado_at: Mapped[dt.datetime | None] = mapped_column(TS)
-    # Cuándo tocó «Ya llegué» el auditor. Nulo = nunca llegó: si el plazo de
-    # llegada vence así, la tarea del servidor marca el caso como no_auditado.
+    # Cuándo tocó «Ya llegué» el auditor. Nulo = todavía no ha llegado.
     llegada_at: Mapped[dt.datetime | None] = mapped_column(TS)
 
 

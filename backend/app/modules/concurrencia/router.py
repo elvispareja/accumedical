@@ -184,9 +184,7 @@ def _resumen(fila, *, interno: bool = False) -> VisitaResumen:
         desde=visita.desde if interno else None,
         hasta=visita.hasta if interno else None,
         llegada_limite=visita.llegada_limite if interno else None,
-        # `no_auditado` es interno: a la compañía se le enseña el estado que el
-        # caso tenía al vencer (`service.estado_visible`).
-        estado=service.estado_visible(visita.estado, visita.auditor_id, interno=interno),
+        estado=visita.estado,
         total_correos=total_correos,
     )
 
@@ -204,6 +202,10 @@ def _resumen_supervision(fila) -> VisitaSupervisionResumen:
         # directorio): nunca «Sin asignar», que mentiría sobre quién auditó.
         auditor_nombre=auditor_nombre or ("(usuario retirado)" if visita.auditor_id else None),
         tiene_informe=bool(visita.informe),
+        fuera_sla=(
+            visita.estado in service.ESTADOS_ABIERTOS
+            and visita.hasta < dt.datetime.now(dt.UTC)
+        ),
     )
 
 
@@ -245,7 +247,6 @@ def dashboard(
         auditando=datos["auditando"],
         canceladas=datos["canceladas"],
         culminadas=datos["culminadas"],
-        no_auditadas=datos["no_auditadas"],
         hoy=datos["hoy"],
         proximas=[_resumen(f) for f in datos["proximas"]],
     )
@@ -454,7 +455,7 @@ def buscar_paciente(
 def listar_visitas(
     search: str | None = Query(default=None, max_length=120),
     estado: str | None = Query(
-        default=None, pattern="^(programada|asignada|auditando|cancelada|culminada|no_auditado)$"
+        default=None, pattern="^(programada|asignada|auditando|cancelada|culminada)$"
     ),
     desde: dt.date | None = Query(default=None),
     hasta: dt.date | None = Query(default=None),
@@ -668,8 +669,7 @@ def registrar_llegada(
 ) -> dict[str, dt.datetime]:
     """
     El botón «Ya llegué» de la app: deja constancia en el servidor de que el
-    auditor llegó al hospital. Es lo que evita que la tarea periódica marque el
-    caso como no_auditado al vencer la ventana. Idempotente: la primera llegada
+    auditor llegó al hospital. Idempotente: la primera llegada
     es la que vale.
     """
     visita = _caso_del_auditor(ctx, db, visita_id)
@@ -1217,9 +1217,11 @@ def informe_pdf_supervision(
 def listar_supervision(
     search: str | None = Query(default=None, max_length=120),
     estado: str | None = Query(
-        default=None, pattern="^(programada|asignada|auditando|cancelada|culminada|no_auditado)$"
+        default=None, pattern="^(programada|asignada|auditando|cancelada|culminada)$"
     ),
     sin_asignar: bool = Query(default=False),
+    # Abiertos con la entrega pactada ya vencida (`service.fuera_de_sla`).
+    fuera_sla: bool = Query(default=False),
     desde: dt.date | None = Query(default=None),
     hasta: dt.date | None = Query(default=None),
     # Los casos de UNA persona, para su ficha de paciente. Los dos juntos o
@@ -1253,6 +1255,7 @@ def listar_supervision(
         search=search,
         estado=estado,
         sin_asignar=sin_asignar,
+        fuera_sla=fuera_sla,
         desde=desde,
         hasta=hasta,
         documento=documento,
@@ -1610,10 +1613,6 @@ def reprogramar(
         visita.desde = datos.desde
         visita.llegada_limite = datos.desde
         visita.updated_by = ctx.user.id
-        # Reprogramar un caso vencido lo devuelve a la agenda: misma regla que
-        # cuando lo reprograma el operador desde su ficha (ver el servicio).
-        estado_anterior = visita.estado
-        revivido = service.revivir_al_reprogramar(visita)
         detalle = {
             # ISO explícito: la columna es JSONB y un datetime crudo no se escribe.
             "antes": {
@@ -1625,9 +1624,6 @@ def reprogramar(
                 "hasta": visita.hasta.isoformat(),
             },
         }
-        if revivido is not None:
-            detalle["antes"]["estado"] = estado_anterior
-            detalle["despues"]["estado"] = revivido
         audit.registrar(
             db,
             accion="visita_reprogramada",
@@ -1919,9 +1915,7 @@ def prorrogar_visita(
 ) -> ProrrogaOut:
     """
     **La prórroga es de Accumedical**, no de la compañía: es quien coordina a
-    los auditores y quien ve el `no_auditado` que la compañía no ve. Le da al
-    auditor más tiempo para llegar, contado desde AHORA, y devuelve el caso a la
-    agenda si ya había vencido.
+    los auditores. Le da al auditor más tiempo para llegar, contado desde AHORA.
     """
     _solo_supervision(ctx)
     visita = service.obtener_para_supervision(db, visita_id)

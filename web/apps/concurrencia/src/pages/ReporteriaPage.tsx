@@ -365,14 +365,14 @@ const SERIES_SLA: SerieGrafico[] = [
   },
   {
     clave: 'fuera_de_plazo',
-    etiqueta: 'Fuera de plazo',
+    etiqueta: 'Entregado fuera del SLA',
     fondo: 'bg-[#fab219]',
     relleno: 'fill-[#fab219]',
     icono: AlertTriangle,
   },
   {
     clave: 'vencido',
-    etiqueta: 'Vencido sin entregar',
+    etiqueta: 'Fuera del SLA sin informe',
     fondo: 'bg-[#d03b3b]',
     relleno: 'fill-[#d03b3b]',
     icono: XCircle,

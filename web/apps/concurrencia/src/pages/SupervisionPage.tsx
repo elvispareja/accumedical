@@ -29,6 +29,7 @@ import {
 } from '@concurrencia/components/cifras'
 import {
   EstadoVisitaBadge,
+  FueraDeSla,
   Ventana,
 } from '@concurrencia/components/visitas'
 import { Boton } from '@/shared/components/ui/button'
@@ -60,6 +61,7 @@ export function SupervisionPage() {
   const [busquedaAplicada, setBusquedaAplicada] = useState('')
   const [estado, setEstado] = useState('')
   const [soloSinAsignar, setSoloSinAsignar] = useState(false)
+  const [soloFueraSla, setSoloFueraSla] = useState(false)
   // El rango, en `YYYY-MM-DD`. Acota por la VENTANA del caso: entra el que
   // toque cualquier día del rango, no solo el que empiece dentro.
   const [desde, setDesde] = useState('')
@@ -98,6 +100,7 @@ export function SupervisionPage() {
         busquedaAplicada,
         estado,
         soloSinAsignar,
+        soloFueraSla,
         desde,
         hasta,
         aseguradoraId,
@@ -111,6 +114,7 @@ export function SupervisionPage() {
         search: busquedaAplicada,
         estado,
         sin_asignar: soloSinAsignar,
+        fuera_sla: soloFueraSla,
         desde,
         hasta,
         aseguradora_id: aseguradoraId,
@@ -154,6 +158,7 @@ export function SupervisionPage() {
     setBusqueda('')
     setBusquedaAplicada('')
     setSoloSinAsignar(filtro.sinAsignar ?? false)
+    setSoloFueraSla(filtro.fueraSla ?? false)
     setEstado(filtro.estado ?? '')
     setDesde(filtro.desde ?? '')
     setHasta(filtro.hasta ?? '')
@@ -169,6 +174,7 @@ export function SupervisionPage() {
     busquedaAplicada ||
       estado ||
       soloSinAsignar ||
+      soloFueraSla ||
       desde ||
       hasta ||
       aseguradoraId ||
@@ -396,7 +402,10 @@ export function SupervisionPage() {
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <EstadoVisitaBadge estado={fila.estado} />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <EstadoVisitaBadge estado={fila.estado} />
+                          {fila.fuera_sla && <FueraDeSla />}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         {/* Solo se ENSEÑA quién tiene el caso (pedido del

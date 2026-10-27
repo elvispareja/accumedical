@@ -38,25 +38,35 @@ export const ESTADOS_VISITA: { valor: EstadoVisita; etiqueta: string; caja: stri
     caja: 'border-exito/30 bg-exito/10 text-exito',
     punto: 'bg-exito',
   },
-  // Lo aplica solo el servidor: la ventana venció sin que el auditor llegara.
-  {
-    valor: 'no_auditado',
-    etiqueta: 'No auditado',
-    caja: 'border-peligro/30 bg-peligro/10 text-peligro',
-    punto: 'bg-peligro',
-  },
 ]
 
 /**
  * Un caso CERRADO se lee, no se toca: culminado, el auditor ya mandó su informe;
  * cancelado, no hay visita que preparar. Espejo de `MOTIVOS_SIN_EDICION` en el
  * servicio, que es quien manda: esto solo evita ofrecer una puerta cerrada.
- *
- * `no_auditado` queda fuera a propósito: la ventana venció sin que nadie
- * llegara, y corregir el caso antes de reprogramarlo tiene sentido.
  */
 export function sePuedeEditar(estado: string | undefined): boolean {
   return estado !== 'culminada' && estado !== 'cancelada'
+}
+
+/**
+ * **Fuera del SLA** (pedido del usuario, 27/10/2026; reemplaza a «No
+ * auditado»): el caso sigue abierto y ya pasó la entrega pactada con la
+ * compañía. No es un estado —un caso asignado o auditando puede estarlo—, así
+ * que va junto a la insignia de estado, no en su lugar. Solo para Accumedical.
+ */
+export function FueraDeSla() {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5',
+        'border-peligro/30 bg-peligro/10 font-display text-[0.6875rem] font-medium text-peligro',
+      )}
+    >
+      <span className="size-1.5 rounded-full bg-peligro" aria-hidden="true" />
+      Fuera del SLA
+    </span>
+  )
 }
 
 export function EstadoVisitaBadge({ estado }: { estado: string }) {

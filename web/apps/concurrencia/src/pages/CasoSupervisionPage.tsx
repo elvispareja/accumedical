@@ -14,7 +14,7 @@ import {
   type Parentesco,
   type VisitaSupervisionDetalle,
 } from '@concurrencia/api'
-import { EstadoVisitaBadge } from '@concurrencia/components/visitas'
+import { EstadoVisitaBadge, FueraDeSla } from '@concurrencia/components/visitas'
 import { CamposNombre, desdeApi as nombreDesdeApi } from '@/shared/personas/CamposNombre'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
@@ -334,13 +334,13 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
           <p className="font-display text-sm font-medium">Estado</p>
           <div className="flex flex-wrap items-center gap-2">
             <EstadoVisitaBadge estado={caso.estado} />
-            {caso.estado === 'no_auditado' && (
-              <span className="text-sm text-tenue-fg">
-                El plazo de llegada venció sin el auditor.{' '}
-                <strong className="font-medium">La compañía no ve este estado</strong>: para
-                ella el caso sigue pendiente. Con «Extender» le das al auditor más horas para
-                llegar.
-              </span>
+            {caso.fuera_sla && (
+              <>
+                <FueraDeSla />
+                <span className="text-sm text-tenue-fg">
+                  Pasó la entrega pactada y aún no hay informe. La compañía no ve esta marca.
+                </span>
+              </>
             )}
           </div>
         </div>
@@ -508,7 +508,7 @@ function Derivar({ caso }: { caso: VisitaSupervisionDetalle }) {
  * original más dos; se puede repetir cuantas veces haga falta.
  *
  * Es de Accumedical, no de la compañía: es quien coordina a los auditores y
- * quien ve el `no_auditado` que a la compañía se le oculta. No mueve la entrega
+ * quien sabe a qué hora va el auditor. No mueve la entrega
  * del informe, que sigue donde la puso el SLA.
  */
 function Extender({ caso }: { caso: VisitaSupervisionDetalle }) {
@@ -539,7 +539,7 @@ function Extender({ caso }: { caso: VisitaSupervisionDetalle }) {
 
   // Con el auditor ya dentro, o con el caso terminado, no hay plazo que mover.
   // Programado tampoco: aún no tiene hora, se la pone la derivación (26/10/2026).
-  if (!['asignada', 'no_auditado'].includes(caso.estado)) return null
+  if (caso.estado !== 'asignada') return null
 
   if (!abierto) {
     return (

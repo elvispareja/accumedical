@@ -11,7 +11,6 @@ export type EstadoVisita =
   | 'auditando'
   | 'cancelada'
   | 'culminada'
-  | 'no_auditado'
 
 /**
  * Un contacto del prestador, para marcar a quién se avisa. Lo que se guarda es
@@ -162,8 +161,8 @@ export interface VisitaFormulario {
   titular_tipo_documento_codigo: string | null
   titular_numero_documento: string | null
   // La hora la fija la coordinación AL DERIVAR (26/10/2026): el alta ya no la
-  // manda y el servidor pone la del registro como provisional. Solo viaja al
-  // reprogramar un caso vencido. La entrega sale siempre del SLA del servidor.
+  // manda y el servidor pone la del registro como provisional. La entrega sale
+  // siempre del SLA del servidor.
   desde?: string
   correos: CorreoVisita[]
   observaciones: string | null
@@ -258,7 +257,8 @@ export interface CifrasVisitas {
   auditando: number
   canceladas: number
   culminadas: number
-  no_auditadas: number
+  /** Abiertos con la entrega pactada (SLA) ya vencida. Solo supervisión. */
+  fuera_sla: number
   /** Visitas programadas cuya ventana toca el día de HOY, hora de Ecuador. */
   hoy: number
 }
@@ -365,6 +365,8 @@ export interface VisitaSupervision extends VisitaResumen {
   auditor_nombre: string | null
   /** Si el caso ya tiene informe emitido: sin él no hay PDF que ofrecer. */
   tiene_informe: boolean
+  /** Sigue abierto y ya pasó su entrega pactada: el SLA corre desde el pedido. */
+  fuera_sla: boolean
 }
 
 export interface PaginaSupervision {
@@ -413,6 +415,7 @@ export async function listarSupervision(filtros: {
   search?: string
   estado?: string
   sin_asignar?: boolean
+  fuera_sla?: boolean
   /** `YYYY-MM-DD`. Acota por la ventana de la visita, no por su inicio. */
   desde?: string
   hasta?: string
@@ -432,6 +435,7 @@ export async function listarSupervision(filtros: {
       search: filtros.search || undefined,
       estado: filtros.estado || undefined,
       sin_asignar: filtros.sin_asignar || undefined,
+      fuera_sla: filtros.fuera_sla || undefined,
       desde: filtros.desde || undefined,
       hasta: filtros.hasta || undefined,
       paciente_tipo_documento: filtros.paciente_tipo_documento || undefined,

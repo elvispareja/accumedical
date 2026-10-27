@@ -18,6 +18,8 @@ export interface FiltroDeCuadro {
   estado?: string
   /** El cuadro «Sin asignar» de supervisión: casos sin auditor. */
   sinAsignar?: boolean
+  /** El cuadro «Fuera del SLA» de supervisión: abiertos con la entrega vencida. */
+  fueraSla?: boolean
   desde?: string
   hasta?: string
 }
@@ -42,7 +44,7 @@ export function CuadrosDeVisitas({
   className,
 }: {
   cifras?: CifrasVisitas
-  /** Supervisión suma un octavo cuadro, «Sin asignar»: quedan 4 y 4. */
+  /** Supervisión suma «Fuera del SLA» y «Sin asignar»: quedan 4 y 4. */
   conSinAsignar?: boolean
   cargando?: boolean
   error?: boolean
@@ -50,17 +52,17 @@ export function CuadrosDeVisitas({
   alFiltrar: (filtro: FiltroDeCuadro) => void
   className?: string
 }) {
-  // Con el octavo cuadro la rejilla es de 4 en 4 (pedido del usuario); sin él,
-  // los siete caben en una fila en pantallas muy anchas.
+  // Con los ocho de supervisión la rejilla es de 4 en 4 (pedido del usuario);
+  // los seis de la compañía caben en una fila en pantallas muy anchas.
   const rejilla = conSinAsignar
     ? 'grid grid-cols-2 gap-3 sm:grid-cols-4'
-    : 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7'
-  if (cargando) return <Esqueleto className={cn(rejilla, className)} cuantos={conSinAsignar ? 8 : 7} />
+    : 'grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6'
+  if (cargando) return <Esqueleto className={cn(rejilla, className)} cuantos={conSinAsignar ? 8 : 6} />
   if (error) return <EstadoError className={className} onReintentar={onReintentar} />
   if (!cifras) return null
 
-  // Siete cuadros: los seis estados y el de hoy. Ninguno se puede esconder sin
-  // que las cuentas dejen de cuadrar con el total.
+  // Los cinco estados y el de hoy. Ninguno se puede esconder sin que las
+  // cuentas dejen de cuadrar con el total.
   return (
     <div className={cn(rejilla, className)}>
       <Cifra
@@ -124,14 +126,18 @@ export function CuadrosDeVisitas({
         punto="bg-tenue-fg/60"
         alPulsar={() => alFiltrar({ estado: 'cancelada' })}
       />
-      <Cifra
-        indice={6}
-        etiqueta="No auditadas"
-        valor={cifras.no_auditadas}
-        detalle="vencieron sin llegada"
-        punto="bg-peligro"
-        alPulsar={() => alFiltrar({ estado: 'no_auditado' })}
-      />
+      {/* Fuera del SLA (27/10/2026, reemplaza a «No auditadas»): no es un
+          estado, atraviesa asignadas y auditando. Solo Accumedical lo ve. */}
+      {conSinAsignar && (
+        <Cifra
+          indice={6}
+          etiqueta="Fuera del SLA"
+          valor={cifras.fuera_sla}
+          detalle="sin informe a tiempo"
+          punto="bg-peligro"
+          alPulsar={() => alFiltrar({ fueraSla: true })}
+        />
+      )}
       {conSinAsignar && (
         <Cifra
           indice={7}

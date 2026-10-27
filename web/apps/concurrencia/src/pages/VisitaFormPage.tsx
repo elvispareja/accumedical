@@ -11,8 +11,6 @@ import {
   actualizarVisita,
   buscarPaciente,
   buscarPacienteSupervision,
-  obtenerSla,
-  obtenerSlaSupervision,
   crearVisita,
   crearVisitaSupervision,
   type CorreoVisita,
@@ -45,16 +43,6 @@ import {
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 
-/** «29 sep 2026, 13:00», para enseñar un plazo que no se teclea. */
-function formatoLargo(fecha: Date): string {
-  return new Intl.DateTimeFormat('es-EC', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(fecha)
-}
 const BANDEJA = '/dashboard'
 
 /**
@@ -84,8 +72,6 @@ const QUE_SIGUE: Record<string, string> = {
   auditando: 'El auditor está en el prestador; culminará al enviar su informe.',
   culminada: 'El auditor envió su informe.',
   cancelada: 'El caso se canceló.',
-  no_auditado:
-    'La ventana venció sin que el auditor llegara. Dale una fecha nueva y vuelve a la agenda.',
 }
 
 interface Formulario {
@@ -333,9 +319,6 @@ export function VisitaFormPage({
   // Un caso cerrado —culminado o cancelado— se lee, no se toca. El servidor lo
   // corta igual con un 409 aunque se teclee la dirección.
   const cerrado = editando && !sePuedeEditar(estadoActual)
-  // Vencido sin que el auditor llegara: se edita, y darle una ventana futura
-  // es lo que lo devuelve a la agenda.
-  const vencido = estadoActual === 'no_auditado'
   const soloLectura = vista || cerrado || soloSupervisa
 
   // Crear no es lo suyo: si el supervisor teclea /nueva a mano, a su panel.
@@ -472,48 +455,6 @@ export function VisitaFormPage({
       toast.error('No pudimos consultar el paciente; escribe sus datos')
     }
   }
-
-  /**
-   * **La entrega del informe no se teclea**: es la hora de llegada más las
-   * horas de SLA que la compañía tiene pactadas para Concurrencia. Se calcula
-   * aquí solo para enseñarla mientras se elige la hora; quien manda es el
-   * servidor, que la vuelve a calcular al guardar con la misma regla.
-   */
-  const sla = useQuery({
-    queryKey: ['concurrencia-sla', supervision ? aseguradoraId : 'propia'],
-    queryFn: () => (supervision ? obtenerSlaSupervision(aseguradoraId) : obtenerSla()),
-    enabled: !soloLectura && (!supervision || Boolean(aseguradoraId)),
-    retry: false,
-  })
-
-  const entrega = useMemo(() => {
-    if (editando && detalle.data) {
-      return {
-        texto: detalle.data.hasta ? formatoLargo(new Date(detalle.data.hasta)) : '—',
-        ayuda: 'Se fijó al programar el caso, con el SLA de la compañía.',
-      }
-    }
-    if (sla.isError) {
-      return {
-        texto: '—',
-        ayuda: 'Esta compañía no tiene horas de SLA pactadas para Concurrencia.',
-      }
-    }
-    if (!sla.data || !form.desde) {
-      return {
-        texto: '—',
-        ayuda: supervision && !aseguradoraId
-          ? 'Elige la aseguradora y la hora de llegada.'
-          : 'Se calcula al poner la hora de llegada.',
-      }
-    }
-    const llegada = new Date(form.desde)
-    const vence = new Date(llegada.getTime() + sla.data.horas * 3600_000)
-    return {
-      texto: formatoLargo(vence),
-      ayuda: `${sla.data.horas} h de SLA desde la llegada.`,
-    }
-  }, [editando, detalle.data, sla.data, sla.isError, form.desde, supervision, aseguradoraId])
 
   // Hasta saber de quién es el caso, no se pide nada más. En edición no aplica:
   // el paciente ya está identificado desde que se creó.
@@ -694,8 +635,7 @@ export function VisitaFormPage({
         // La sede principal se guarda como ausencia de sede.
         sede_id: form.sede_id === MATRIZ ? null : form.sede_id || null,
         // Sin hora (26/10/2026): la fija la coordinación al derivar y la
-        // compañía no la ve. Solo viaja al reprogramar un caso vencido.
-        ...(vencido && form.desde ? { desde: aISO(form.desde) } : {}),
+        // compañía no la ve.
         correos: correosAEnviar(),
         observaciones: form.observaciones.trim() || null,
         ...polizaYTitular(),
@@ -807,7 +747,6 @@ export function VisitaFormPage({
     if (elegido && elegido.sedes.length > 0 && !form.sede_id) {
       return toast.error('Elige la sede: la sede principal o una de sus sedes')
     }
-    if (vencido && !form.desde) return toast.error('Indica cuándo debe llegar el auditor')
     const correos = form.correos.map((c) => c.valor.trim()).filter(Boolean)
     if (new Set(correos.map((c) => c.toLocaleLowerCase())).size !== correos.length) {
       return toast.error('Hay un correo repetido')
@@ -885,9 +824,7 @@ export function VisitaFormPage({
               Cancelar
             </Boton>
             <Boton type="submit" form="form-visita" cargando={guardar.isPending}>
-              {/* Sobre un caso vencido, guardar ES reprogramar: el botón lo
-                  dice, porque el efecto no es el de siempre. */}
-              {vencido ? 'Reprogramar visita' : editando ? 'Guardar cambios' : 'Programar visita'}
+              {editando ? 'Guardar cambios' : 'Programar visita'}
             </Boton>
           </div>
         )}
@@ -1360,49 +1297,6 @@ export function VisitaFormPage({
                 </span>
               </p>
             )}
-          </Bloque>
-        )}
-
-        {/* Fuera el bloque «Cuándo» (pedido del usuario, 26/10/2026; los
-            parámetros nuevos los dirá él). Solo queda para REPROGRAMAR una
-            visita vencida, que sin fecha nueva no vuelve a la agenda. */}
-        {vencido && (
-          <Bloque
-            titulo="Cuándo"
-            descripcion="A qué hora debe llegar el médico auditor. La entrega del informe sale del SLA de la compañía."
-            retraso={0.1}
-          >
-            <div className="grid gap-5 sm:grid-cols-2">
-              {vencido && (
-                <p className="sm:col-span-2 rounded-md border border-dashed border-peligro/40 bg-peligro-suave/40 px-3 py-2.5 text-sm">
-                  Esta visita <strong className="font-medium">venció sin que el auditor llegara</strong>.
-                  Ponle una fecha y una hora nuevas, y el caso vuelve a la agenda: le reaparece al
-                  auditor que ya tenía o, si no tenía, Accumedical lo deriva otra vez.
-                </p>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="desde">
-                  Cuándo debe llegar el auditor <span className="text-peligro">*</span>
-                </Label>
-                <Input
-                  id="desde"
-                  type="datetime-local"
-                  value={form.desde}
-                  onChange={(e) => setForm((previo) => ({ ...previo, desde: e.target.value }))}
-                  required
-                />
-              </div>
-              {/* La entrega NO se teclea: sale del SLA que la compañía tiene
-                  pactado para Concurrencia. Se enseña calculada para que quien
-                  programa sepa para cuándo es, sin poder moverla. */}
-              <div className="space-y-2">
-                <Label htmlFor="entrega">Entrega del informe</Label>
-                <Input id="entrega" value={entrega.texto} disabled />
-                <p className="text-xs text-tenue-fg" aria-live="polite">
-                  {entrega.ayuda}
-                </p>
-              </div>
-            </div>
           </Bloque>
         )}
 

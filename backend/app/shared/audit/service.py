@@ -68,8 +68,11 @@ ACCIONES = (
     # Concurrencia: el auditor marca «Ya llegué» al hospital desde su app.
     "llegada_registrada",
     # Concurrencia: el plazo de llegada venció sin el auditor y el SERVIDOR
-    # marca el caso.
+    # marcaba el caso (hasta el 27/10/2026; se queda por los registros viejos).
     "visita_no_auditada",
+    # Concurrencia: un caso abierto pasó su entrega pactada (SLA) sin informe;
+    # el SERVIDOR lo registra y avisa a la coordinación una sola vez.
+    "visita_fuera_sla",
     # Concurrencia: la coordinación le da al auditor más horas para llegar.
     "visita_prorrogada",
 )

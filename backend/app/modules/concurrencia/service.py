@@ -7,8 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import Select, String, and_, cast, func, or_, select, union, update
-from sqlalchemy import false as sa_false
+from sqlalchemy import Select, String, and_, cast, func, or_, select, union
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import aliased
 
@@ -98,41 +97,17 @@ def _validar_destino(
         )
 
 
-def estado_visible(estado: str, auditor_id: uuid.UUID | None, *, interno: bool) -> str:
+def fuera_de_sla():
     """
-    **`no_auditado` es interno de Accumedical.** A la compañía se le sigue
-    enseñando el estado que el caso tenía al vencer —`asignada` si ya había
-    auditor, `programada` si no—, porque para ella el caso sigue pendiente y
-    porque el vencimiento suele resolverse con una prórroga en un par de horas.
+    **Fuera del SLA** (27/10/2026, pedido del usuario; reemplaza a «no
+    auditado»): el caso sigue abierto y ya pasó la entrega pactada, `hasta`.
+    El reloj corre desde que llegó el pedido: el alta de la compañía o, si lo
+    creó nuestra coordinación, la fecha y hora del «Requerimiento» (`crear`).
 
-    Lo que sí ve es el final: si acaba cancelándose o culminando, eso no se
-    traduce. Y el filtro de su bandeja usa esta misma equivalencia, para que
-    filtrar «Asignada» encuentre lo que la lista enseña como asignada.
+    No es un estado sino una condición: el caso sigue asignado o en auditoría y
+    el auditor lo puede terminar. Es de Accumedical: la compañía no lo ve.
     """
-    if interno or estado != "no_auditado":
-        return estado
-    return "asignada" if auditor_id is not None else "programada"
-
-
-def condicion_de_estado(estado: str, *, interno: bool):
-    """El filtro de estado, con la misma equivalencia que `estado_visible`."""
-    if interno:
-        return Visita.estado == estado
-    if estado == "asignada":
-        return or_(
-            Visita.estado == "asignada",
-            and_(Visita.estado == "no_auditado", Visita.auditor_id.is_not(None)),
-        )
-    if estado == "programada":
-        return or_(
-            Visita.estado == "programada",
-            and_(Visita.estado == "no_auditado", Visita.auditor_id.is_(None)),
-        )
-    # Un filtro por el estado interno, desde fuera, no encuentra nada: ese
-    # estado no existe para quien pregunta.
-    if estado == "no_auditado":
-        return sa_false()
-    return Visita.estado == estado
+    return and_(Visita.estado.in_(ESTADOS_ABIERTOS), Visita.hasta < func.now())
 
 
 def horas_de_sla(db: DbSession, aseguradora_id: uuid.UUID) -> Decimal:
@@ -291,7 +266,7 @@ def listar(
             )
         )
     if estado:
-        consulta = consulta.where(condicion_de_estado(estado, interno=False))
+        consulta = consulta.where(Visita.estado == estado)
     # **La compañía filtra por el día en que REGISTRÓ el caso**, no por la hora
     # de la visita: esa la fija la coordinación y ella no la ve (26/10/2026);
     # filtrar por ella la delataría. El día es el de Ecuador, no el de UTC: un
@@ -567,8 +542,7 @@ def crear(
     sede_id = _a_uuid(datos.get("sede_id"), "sede") if datos.get("sede_id") else None
     _validar_destino(db, aseguradora_id, prestador_id, sede_id)
     # La aseguradora ya no pone hora (26/10/2026): el caso nace con la hora del
-    # registro como provisional y la coordinación fija la real al asignar. Un
-    # caso sin asignar no vence (`marcar_no_auditadas` solo mira `asignada`).
+    # registro como provisional y la coordinación fija la real al asignar.
     ahora = dt.datetime.now(dt.UTC)
     desde = datos.get("desde") or ahora
     # **El SLA corre desde que llega el pedido** (27/10/2026): desde que la
@@ -625,9 +599,6 @@ def actualizar(
     prestador o la ventana convertiría ese informe en mentira; cancelado, no hay
     visita que preparar. La pantalla tampoco lo ofrece —el menú de la fila se
     queda solo con «Ver»—, pero la regla vive aquí, que es donde manda.
-
-    `no_auditado` **sí se edita**: la ventana venció sin que nadie llegara, y
-    corregir el caso antes de reprogramarlo es lo que se quiere poder hacer.
     """
     motivo = MOTIVOS_SIN_EDICION.get(visita.estado)
     if motivo is not None:
@@ -684,37 +655,9 @@ def actualizar(
             diff["despues"][campo] = valor
             setattr(visita, campo, valor)
 
-    # Guardar una ventana futura sobre un caso vencido ES reprogramarlo.
-    revivido = revivir_al_reprogramar(visita)
-    if revivido is not None:
-        diff["antes"]["estado"] = "no_auditado"
-        diff["despues"]["estado"] = revivido
-
     if diff["despues"]:
         visita.updated_by = autor
     return diff
-
-
-def revivir_al_reprogramar(visita: Visita) -> str | None:
-    """
-    **Reprogramar es lo que devuelve a la agenda un caso NO AUDITADO.**
-
-    Ese estado dice que el plazo de llegada venció sin que el auditor llegara; el auditor
-    ya no puede marcar nada, porque el caso desapareció de su trabajo por
-    delante. Así que darle una ventana FUTURA —lo haga el operador editando o el
-    coordinador con «Nueva fecha»— lo revive:
-
-      · con auditor todavía asignado → `asignada`, y le reaparece en su app;
-      · sin auditor                  → `programada`, para que lo deriven otra vez.
-
-    Solo con la ventana en el futuro: corregirle el nombre al paciente de un
-    caso vencido no resucita nada. Devuelve el estado nuevo, o `None` si no
-    tocaba mover nada.
-    """
-    if visita.estado != "no_auditado" or visita.llegada_limite <= dt.datetime.now(dt.UTC):
-        return None
-    visita.estado = "asignada" if visita.auditor_id is not None else "programada"
-    return visita.estado
 
 
 def pacientes_registrados(
@@ -860,59 +803,41 @@ def coordenadas_de_destinos(
     return nucleo.coordenadas(db, visitas)
 
 
-def marcar_no_auditadas(db: DbSession) -> list[str]:
+def avisar_fuera_de_sla(db: DbSession) -> list[str]:
     """
-    La regla del NO AUDITADO: toda visita **pendiente** —programada o ya
-    derivada a un auditor— cuyo PLAZO DE LLEGADA venció sin que nadie registrara
-    la llegada pasa a `no_auditado`, de una sola vez. El plazo es `desde` más
-    las prórrogas que haya dado el coordinador, no la entrega del informe: así
-    un auditor que nunca fue se detecta el mismo día y no al vencer el SLA.
+    El aviso de **fuera del SLA**: cada caso abierto que pasa su entrega
+    pactada sin informe avisa UNA vez por la campana a la coordinación de
+    Accumedical, que es quien puede moverlo. No cambia el estado.
 
-    Mira los dos estados a propósito: si solo mirara `programada`, un caso
-    derivado que nadie llegó a visitar no vencería nunca. Los `auditando` quedan
-    fuera porque ahí el médico SÍ llegó; ese caso termina cuando envía el
-    informe, y mientras tanto se ve tal cual en el panel.
-
-    Cada transición queda en AuditLog como acción del SISTEMA (sin usuario) y
-    avisa por la campana **a la coordinación de Accumedical**, que es quien
-    puede prorrogar. No hace commit; lo hace quien llama.
+    Una sola vez por caso: el AuditLog `visita_fuera_sla` (acción del SISTEMA,
+    sin usuario) es a la vez la constancia y la marca de «ya avisado». No hace
+    commit; lo hace quien llama.
     """
     from app.modules.concurrencia import notificaciones
     from app.shared.audit import service as audit
+    from app.shared.audit.models import AuditLog
 
-    filas = db.execute(
-        update(Visita)
-        .where(
+    ya_avisados = select(AuditLog.entidad_id).where(
+        AuditLog.entidad == "conc_visitas", AuditLog.accion == "visita_fuera_sla"
+    )
+    visitas = db.scalars(
+        select(Visita).where(
             Visita.deleted_at.is_(None),
-            # Solo las DERIVADAS (26/10/2026): la hora la pone la coordinación al
-            # asignar, así que una programada sin auditor no tiene plazo que vencer.
-            Visita.estado == "asignada",
-            Visita.llegada_limite < func.now(),
-            Visita.llegada_at.is_(None),
+            fuera_de_sla(),
+            cast(Visita.id, String).not_in(ya_avisados),
         )
-        .values(estado="no_auditado", updated_at=func.now())
-        .returning(Visita.id, Visita.codigo_interno)
     ).all()
-    for visita_id, codigo in filas:
+    for visita in visitas:
         audit.registrar(
             db,
-            accion="visita_no_auditada",
+            accion="visita_fuera_sla",
             module_code="concurrencia",
             entidad="conc_visitas",
-            entidad_id=str(visita_id),
-            detalle={"visita": codigo, "motivo": "plazo de llegada vencido sin el auditor"},
+            entidad_id=str(visita.id),
+            detalle={"visita": visita.codigo_interno, "entrega": visita.hasta.isoformat()},
         )
-        # Solo a la coordinación de Accumedical: es quien lo resuelve, con una
-        # prórroga o buscando otro auditor, y la compañía ni se entera porque
-        # para ella el caso sigue pendiente.
-        visita = db.get(Visita, visita_id)
-        if visita is not None:
-            notificaciones.avisar_vencimiento_en_campana(db, visita)
-    return [codigo for _id, codigo in filas]
-
-
-# ────────────── Las notas dictadas del auditor y su informe ──────────────────
-
+        notificaciones.avisar_fuera_de_sla_en_campana(db, visita)
+    return [v.codigo_interno for v in visitas]
 
 def visita_del_auditor(db: DbSession, visita_id: uuid.UUID, auditor_id: uuid.UUID) -> Visita:
     """
@@ -1036,30 +961,24 @@ def cifras_de_visitas(
     hay, y pulsar una acota la lista de abajo. Si siguieran al rango, el cuadro
     y su filtro dirían lo mismo y el panel dejaría de dar la foto completa.
 
-    Sin `interno`, los vencidos **no se cuentan aparte**: se suman al cubo del
-    estado que la compañía sigue viendo, y la cifra de no auditadas viaja en
-    cero. La cuenta cuadra con su lista porque usa la misma equivalencia
-    (`estado_visible`).
+    «Fuera del SLA» atraviesa los estados (un caso asignado o en auditoría
+    puede estarlo) y es de Accumedical: sin `interno` viaja en cero.
     """
     condiciones = [Visita.deleted_at.is_(None)]
     if aseguradora_id is not None:
         condiciones.append(Visita.aseguradora_id == aseguradora_id)
 
     totales: dict[str, int] = {}
-    for estado, auditor_id, cuantas in db.execute(
-        select(Visita.estado, Visita.auditor_id.is_not(None), func.count())
-        .where(*condiciones)
-        .group_by(Visita.estado, Visita.auditor_id.is_not(None))
+    for estado, cuantas in db.execute(
+        select(Visita.estado, func.count()).where(*condiciones).group_by(Visita.estado)
     ).all():
-        clave = estado_visible(estado, True if auditor_id else None, interno=interno)
-        totales[clave] = totales.get(clave, 0) + cuantas
+        totales[estado] = cuantas
 
     hoy_ec = dt.datetime.now(dt.UTC).astimezone(_ZONA_EC).date()
     inicio_hoy = dt.datetime.combine(hoy_ec, dt.time.min, tzinfo=_ZONA_EC)
     fin_hoy = inicio_hoy + dt.timedelta(days=1)
-    # Las que TOCAN hoy: las que siguen pendientes —programada, ya derivada o
-    # vencida a la espera de prórroga— y las que se están auditando ahora
-    # mismo. Una cancelada de hoy no «toca».
+    # Las que TOCAN hoy: las que siguen pendientes —programada o ya derivada—
+    # y las que se están auditando ahora mismo. Una cancelada de hoy no «toca».
     #
     # **A la compañía, «hoy» son los casos que REGISTRÓ hoy** (26/10/2026): la
     # hora de la visita la fija la coordinación y ella no la ve, así que contar
@@ -1071,7 +990,7 @@ def cifras_de_visitas(
     hoy = db.scalar(
         select(func.count()).where(
             *condiciones,
-            Visita.estado.in_(("programada", "asignada", "auditando", "no_auditado")),
+            Visita.estado.in_(ESTADOS_ABIERTOS),
             *cuando,
         )
     ) or 0
@@ -1090,7 +1009,11 @@ def cifras_de_visitas(
         "auditando": totales.get("auditando", 0),
         "canceladas": totales.get("cancelada", 0),
         "culminadas": totales.get("culminada", 0),
-        "no_auditadas": totales.get("no_auditado", 0),
+        "fuera_sla": (
+            db.scalar(select(func.count()).where(*condiciones, fuera_de_sla())) or 0
+            if interno
+            else 0
+        ),
         "hoy": hoy,
     }
 
@@ -1133,6 +1056,7 @@ def listar_supervision(
     search: str | None = None,
     estado: str | None = None,
     sin_asignar: bool = False,
+    fuera_sla: bool = False,
     desde: dt.date | None = None,
     hasta: dt.date | None = None,
     documento: tuple[str, str] | None = None,
@@ -1157,6 +1081,8 @@ def listar_supervision(
         consulta = consulta.where(Visita.estado == estado)
     if sin_asignar:
         consulta = consulta.where(Visita.auditor_id.is_(None))
+    if fuera_sla:
+        consulta = consulta.where(fuera_de_sla())
     # El rango se compara contra la VENTANA de la visita, igual que en la
     # bandeja de la compañía: entra la que toque cualquier día del rango, no
     # solo la que empiece dentro. Un caso del lunes al miércoles sale al filtrar
@@ -1266,7 +1192,7 @@ def cuentas_activadas(db: DbSession, ids: set[uuid.UUID]) -> set[uuid.UUID]:
 
 #: Los estados en que un caso sigue abierto: quien participa en uno así no se
 #: puede desactivar ni perder Concurrencia (14/10/2026). Cancelado, culminado
-#: y no auditado ya no esperan nada de nadie.
+#: ya no esperan nada de nadie.
 ESTADOS_ABIERTOS = ("programada", "asignada", "auditando")
 
 
@@ -1537,7 +1463,6 @@ ETIQUETA_ESTADO = {
     "auditando": "en auditoría",
     "culminada": "culminado",
     "cancelada": "cancelado",
-    "no_auditado": "no auditado",
 }
 
 
@@ -1556,10 +1481,9 @@ def asignar_auditor(
     el desplegable abierto, el guardado se rechaza.
     """
     # **La asignación queda fija en cuanto el caso sale de la agenda**
-    # (14/10/2026, pedido del usuario): en auditoría, culminado, cancelado o no
-    # auditado ya no se cambia ni se quita el auditor —es quien llegó, auditó o
-    # debía ir, y eso es trazabilidad—. Un no auditado vuelve a «asignada» con
-    # la prórroga, y ahí sí se puede reasignar.
+    # (14/10/2026, pedido del usuario): en auditoría, culminado o cancelado ya
+    # no se cambia ni se quita el auditor —es quien llegó o auditó, y eso es
+    # trazabilidad—.
     if visita.estado not in ESTADOS_DERIVABLES:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -1580,9 +1504,8 @@ def asignar_auditor(
     diff: dict[str, Any] = {"antes": {}, "despues": {}}
     # **La ventana de la visita la fija la coordinación al derivar** (26/10/2026):
     # DESDE qué hora y HASTA qué hora puede llegar el auditor al hospital. El
-    # «hasta» es el plazo de llegada (`llegada_limite`: pasado sin llegar, el
-    # caso vence). La entrega del informe no depende de la visita: el SLA corre
-    # desde que llegó el pedido (`crear`).
+    # «hasta» es el plazo de llegada (`llegada_limite`). La entrega del informe
+    # no depende de la visita: el SLA corre desde que llegó el pedido (`crear`).
     # La compañía no ve nada de esto.
     if auditor_id is not None:
         if desde is None or hasta is None:
@@ -1598,7 +1521,7 @@ def asignar_auditor(
         # Solo si la ventana CAMBIA: reasignar con la misma no debe borrar una
         # prórroga ya concedida sobre el plazo de llegada.
         if desde != visita.desde or hasta != visita.llegada_limite:
-            # Una ventana ya cerrada vencería el caso en el acto (`marcar_no_auditadas`).
+            # Una ventana ya cerrada no le sirve de nada al auditor.
             if hasta < dt.datetime.now(dt.UTC):
                 raise HTTPException(
                     status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1642,9 +1565,6 @@ def extender(db: DbSession, visita: Visita, horas: Decimal, autor: uuid.UUID) ->
     16:00 y concede 2 horas, el plazo queda en las 18:00, y se puede repetir
     cuantas veces haga falta hasta que el auditor llegue.
 
-    Un caso ya vencido vuelve a la agenda con la prórroga: sin eso, el auditor
-    seguiría sin poder marcar su llegada y la prórroga no serviría de nada.
-
     No toca la entrega del informe: son dos plazos distintos y mezclarlos
     borraría la prueba de si el informe llegó tarde.
     """
@@ -1653,7 +1573,7 @@ def extender(db: DbSession, visita: Visita, horas: Decimal, autor: uuid.UUID) ->
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"La prórroga va de una hora a {MAX_HORAS_PRORROGA}",
         )
-    if visita.estado not in ("programada", "asignada", "no_auditado"):
+    if visita.estado not in ESTADOS_DERIVABLES:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail=(
@@ -1671,9 +1591,6 @@ def extender(db: DbSession, visita: Visita, horas: Decimal, autor: uuid.UUID) ->
         visita.llegada_limite,
         dt.datetime.now(dt.UTC) + dt.timedelta(hours=float(horas)),
     )
-    if visita.estado == "no_auditado":
-        # Vuelve a la agenda, y al auditor le reaparece en su app.
-        visita.estado = "asignada" if visita.auditor_id is not None else "programada"
     visita.updated_by = autor
     db.flush()
     return visita.llegada_limite
@@ -1688,9 +1605,6 @@ def cancelar(db: DbSession, visita: Visita, autor: uuid.UUID) -> None:
     si al asegurado le dan el alta mientras el médico audita, la compañía no
     tiene por qué esperar a un informe que ya no sirve. Lo que no se toca es lo
     acabado: una culminada o una cancelada se quedan como están.
-
-    Un caso vencido —`no_auditado`, que la compañía no ve como tal— también se
-    cancela: para ella sigue siendo un caso pendiente.
     """
     if visita.estado in ("culminada", "cancelada"):
         raise HTTPException(

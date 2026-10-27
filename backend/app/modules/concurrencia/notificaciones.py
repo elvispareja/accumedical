@@ -24,7 +24,7 @@ ETIQUETA_ESTADO = {
     "asignada": "Asignada",
     "auditando": "Auditando",
     "culminada": "Culminada",
-    "no_auditado": "No auditado",
+    "fuera_sla": "Fuera del SLA",
 }
 
 
@@ -237,24 +237,19 @@ def avisar_culminacion_en_campana(db: DbSession, visita) -> int:
     )
 
 
-def avisar_vencimiento_en_campana(db: DbSession, visita) -> int:
+def avisar_fuera_de_sla_en_campana(db: DbSession, visita) -> int:
     """
-    El aviso cuando un caso vence sin que el auditor llegara. **Solo a la
-    coordinación de Accumedical**: `no_auditado` es interno —la compañía sigue
-    viendo su caso como pendiente— y es Accumedical quien tiene que resolverlo,
-    prorrogando el plazo o buscando otro auditor.
+    El aviso cuando un caso abierto pasa su entrega pactada sin informe. **Solo
+    a la coordinación de Accumedical**: es quien tiene que moverlo, y «fuera del
+    SLA» es interno (la compañía no lo ve).
 
-    Avisar a la compañía de esto sería contarle un problema de casa ajena que
-    probablemente se arregle en un par de horas, y encima contradiría lo que su
-    propia pantalla le enseña.
-
-    Dentro de la transacción de la tarea que vence los casos.
+    Dentro de la transacción de la tarea que lo detecta (`avisar_fuera_de_sla`).
     """
     destinos = [
         (quien, f"/concurrencia/supervision/{visita.id}")
         for quien in _coordinadores_de_plataforma(db)
     ]
-    return _escribir_aviso(db, visita, destinos, "no_auditado")
+    return _escribir_aviso(db, visita, destinos, "fuera_sla")
 
 
 def _coordinadores_de_plataforma(db: DbSession) -> list[User]:

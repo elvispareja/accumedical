@@ -73,10 +73,10 @@ INTERVALO_PURGA_SEG = 3600
 # Un solo worker ejecuta la purga aunque uvicorn corra con --workers 4.
 LOCK_PURGA = 815_243_001
 
-# La regla del NO AUDITADO de Concurrencia: cada pocos minutos, toda visita
-# programada cuya ventana venció sin llegada del auditor pasa a `no_auditado`.
-INTERVALO_NO_AUDITADAS_SEG = 300
-LOCK_NO_AUDITADAS = 815_243_002
+# El aviso de FUERA DEL SLA de Concurrencia: cada pocos minutos, todo caso
+# abierto que pasó su entrega pactada sin informe avisa a la coordinación.
+INTERVALO_FUERA_SLA_SEG = 300
+LOCK_FUERA_SLA = 815_243_002
 
 # Publicación en la API central (pacientes → personas, visitas culminadas →
 # eventos). Solo corre si CENTRAL_* está configurado; si la central cae, la
@@ -138,27 +138,27 @@ def _purgar() -> None:
     _con_candado(LOCK_PURGA, trabajo)
 
 
-async def _no_auditadas_periodica() -> None:
+async def _fuera_de_sla_periodica() -> None:
     # La primera pasada va de inmediato: un arranque tras horas apagado debe
-    # poner al día los casos vencidos sin esperar al primer intervalo.
+    # poner al día los avisos sin esperar al primer intervalo.
     while True:
         try:
-            await asyncio.to_thread(_marcar_no_auditadas)
+            await asyncio.to_thread(_avisar_fuera_de_sla)
         except Exception:  # noqa: BLE001 - la tarea nunca debe tumbar la app
-            log.exception("no_auditadas_fallo")
-        await asyncio.sleep(INTERVALO_NO_AUDITADAS_SEG)
+            log.exception("fuera_sla_fallo")
+        await asyncio.sleep(INTERVALO_FUERA_SLA_SEG)
 
 
-def _marcar_no_auditadas() -> None:
+def _avisar_fuera_de_sla() -> None:
     from app.modules.concurrencia import service as concurrencia_service
 
     def trabajo(db: Session) -> None:
-        casos = concurrencia_service.marcar_no_auditadas(db)
+        casos = concurrencia_service.avisar_fuera_de_sla(db)
         db.commit()
         if casos:
-            log.info("visitas_no_auditadas", casos=casos)
+            log.info("visitas_fuera_sla", casos=casos)
 
-    _con_candado(LOCK_NO_AUDITADAS, trabajo)
+    _con_candado(LOCK_FUERA_SLA, trabajo)
 
 
 async def _central_periodica() -> None:
@@ -233,8 +233,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     transcripcion.precalentar()
     tarea = asyncio.create_task(_purga_periodica())
-    tarea_no_auditadas = asyncio.create_task(_no_auditadas_periodica())
-    tareas = [tarea, tarea_no_auditadas]
+    tarea_fuera_sla = asyncio.create_task(_fuera_de_sla_periodica())
+    tareas = [tarea, tarea_fuera_sla]
     # La réplica va primero: los eventos de Concurrencia referencian aseguradoras
     # y prestadores que deben existir ya en la central.
     if settings.replicacion_central_configurada:
