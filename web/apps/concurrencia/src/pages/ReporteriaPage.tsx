@@ -14,6 +14,7 @@ import {
   type ReporteSla,
 } from '@concurrencia/api'
 import { FechaConEtiqueta } from '@concurrencia/components/filtros'
+import { GrupoDeOpciones } from '@/shared/components/ui/opciones'
 import {
   Columnas,
   Dona,
@@ -45,9 +46,47 @@ import { Select } from '@/shared/components/ui/select'
  * —días de Ecuador sobre cuándo llegó el pedido, y la aseguradora— valen para
  * todo.
  */
+/** Atajos de periodo (pedido del usuario, 27/10/2026): diario, semanal, mensual y anual. */
+type Periodo = 'hoy' | 'semana' | 'mes' | 'anio' | 'todo' | 'personalizado'
+
+const PERIODOS: { valor: Periodo; etiqueta: string }[] = [
+  { valor: 'hoy', etiqueta: 'Hoy' },
+  { valor: 'semana', etiqueta: 'Esta semana' },
+  { valor: 'mes', etiqueta: 'Este mes' },
+  { valor: 'anio', etiqueta: 'Este año' },
+  { valor: 'todo', etiqueta: 'Todo' },
+]
+
+/** `YYYY-MM-DD` del día local, como lo esperan los filtros. */
+function iso(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Desde y hasta de cada atajo. La semana empieza el lunes; todos llegan hasta hoy. */
+function rangoDe(periodo: Periodo): { desde?: string; hasta?: string } {
+  const hoy = new Date()
+  const hasta = iso(hoy)
+  switch (periodo) {
+    case 'hoy':
+      return { desde: hasta, hasta }
+    case 'semana': {
+      const lunes = new Date(hoy)
+      lunes.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7))
+      return { desde: iso(lunes), hasta }
+    }
+    case 'mes':
+      return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), hasta }
+    case 'anio':
+      return { desde: iso(new Date(hoy.getFullYear(), 0, 1)), hasta }
+    default:
+      return {}
+  }
+}
+
 export function ReporteriaPage() {
   const { data: sesion } = useSesion()
   const [filtros, setFiltros] = useState<FiltrosReporte>({})
+  const [periodo, setPeriodo] = useState<Periodo>('todo')
 
   const rol = sesion?.modulos.find((m) => m.codigo === 'concurrencia')?.rol
   const esCoordinador = Boolean(sesion) && !sesion?.aseguradora && rol === 'supervisor'
@@ -89,6 +128,15 @@ export function ReporteriaPage() {
   }
 
   const poner = (cambio: Partial<FiltrosReporte>) => setFiltros((f) => ({ ...f, ...cambio }))
+  // Elegir un atajo fija las dos fechas; tocar una fecha a mano lo desmarca.
+  const elegirPeriodo = (p: Periodo) => {
+    setPeriodo(p)
+    poner({ desde: undefined, hasta: undefined, ...rangoDe(p) })
+  }
+  const ponerFecha = (cambio: Partial<FiltrosReporte>) => {
+    setPeriodo('personalizado')
+    poner(cambio)
+  }
 
   return (
     <div>
@@ -102,13 +150,21 @@ export function ReporteriaPage() {
         </p>
       </header>
 
-      {/* Los filtros, en una fila, para todo lo de abajo. */}
-      <div className="mt-6 grid items-center gap-3 sm:grid-cols-[13rem_13rem_minmax(0,1fr)]">
+      {/* Los filtros, para todo lo de abajo: primero el periodo (lo que más se
+          toca), luego las fechas a mano y la aseguradora. */}
+      <GrupoDeOpciones
+        etiqueta="Periodo"
+        valor={periodo}
+        opciones={PERIODOS}
+        onCambiar={elegirPeriodo}
+        className="mt-6 max-w-xl"
+      />
+      <div className="mt-3 grid items-center gap-3 sm:grid-cols-[13rem_13rem_minmax(0,1fr)]">
         <FechaConEtiqueta etiqueta="Desde">
           <Input
             type="date"
             value={filtros.desde ?? ''}
-            onChange={(e) => poner({ desde: e.target.value })}
+            onChange={(e) => ponerFecha({ desde: e.target.value })}
             aria-label="Desde esta fecha"
             className="pl-16"
           />
@@ -118,7 +174,7 @@ export function ReporteriaPage() {
             type="date"
             value={filtros.hasta ?? ''}
             min={filtros.desde || undefined}
-            onChange={(e) => poner({ hasta: e.target.value })}
+            onChange={(e) => ponerFecha({ hasta: e.target.value })}
             aria-label="Hasta esta fecha"
             className="pl-16"
           />
