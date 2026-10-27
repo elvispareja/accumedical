@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Eye, MapPin, Pencil, Plus, Power, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { useCiudades, useProvincias } from '@/shared/catalogos/hooks'
 import { Boton } from '@/shared/components/ui/button'
@@ -83,28 +83,57 @@ function FormularioSede({
   sede,
   onCambiar,
   soloLectura,
+  nombrePrestador,
+  otras,
 }: {
   sede: SedeFormulario
   onCambiar: (clave: string, cambios: Partial<SedeFormulario>) => void
   soloLectura: boolean
+  nombrePrestador: string
+  /** Las demás sedes del prestador: con otra en la misma ciudad, el nombre lleva la dirección. */
+  otras: SedeFormulario[]
 }) {
   const provincias = useProvincias()
   const ciudades = useCiudades(sede.provincia_codigo || null)
+
+  // El nombre NO se teclea (pedido del usuario, 26/10/2026): se arma solo con
+  // «PRESTADOR - PROVINCIA - CIUDAD» y, si ya hay otra sede en esa ciudad,
+  // «- DIRECCIÓN» para distinguirlas.
+  const nombreProvincia = provincias.data?.find((p) => p.codigo === sede.provincia_codigo)?.nombre
+  const nombreCiudad = ciudades.data?.find((c) => c.codigo === sede.ciudad_codigo)?.nombre
+  const otraEnLaCiudad = Boolean(sede.ciudad_codigo) && otras.some((o) => o.ciudad_codigo === sede.ciudad_codigo)
+  const nombreArmado = [
+    nombrePrestador.trim(),
+    nombreProvincia,
+    nombreCiudad,
+    otraEnLaCiudad ? sede.direccion.trim() : '',
+  ]
+    .filter(Boolean)
+    .join(' - ')
+    .toLocaleUpperCase()
+    .slice(0, 150)
+  useEffect(() => {
+    if (soloLectura || nombreArmado === sede.nombre) return
+    onCambiar(sede._key, { nombre: nombreArmado })
+    // `onCambiar` se rehace en cada pintado del padre; lo que manda es el nombre armado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nombreArmado, soloLectura])
 
   return (
     <fieldset disabled={soloLectura}>
       <div className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor={`sede-nombre-${sede._key}`}>
-            Nombre de la sede <span className="text-peligro">*</span>
-          </Label>
+          <Label htmlFor={`sede-nombre-${sede._key}`}>Nombre de la sede</Label>
           <Input
             id={`sede-nombre-${sede._key}`}
             value={sede.nombre}
-            onChange={(e) => onCambiar(sede._key, { nombre: e.target.value })}
-            placeholder="Sede Matriz"
-            maxLength={150}
+            disabled
+            placeholder="Se arma solo: prestador - provincia - ciudad"
           />
+          <p className="text-xs text-tenue-fg">
+            Se completa solo con el prestador, la provincia y la ciudad
+            {otraEnLaCiudad ? ' y, como ya hay otra sede en esa ciudad, con la dirección' : ''}.
+          </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -255,11 +284,14 @@ const POR_PAGINA = 5
  */
 export function SedesPanel({
   sedes,
+  nombrePrestador,
   onAgregar,
   onCambiar,
   onQuitar,
 }: {
   sedes: SedeFormulario[]
+  /** Con él se arma el nombre de cada sede. */
+  nombrePrestador: string
   onAgregar: (sede: SedeFormulario) => void
   onCambiar: (clave: string, cambios: Partial<SedeFormulario>) => void
   onQuitar: (clave: string) => void
@@ -475,6 +507,8 @@ export function SedesPanel({
             <FormularioSede
               sede={ventana.borrador}
               soloLectura={soloLectura}
+              nombrePrestador={nombrePrestador}
+              otras={sedes.filter((s) => s._key !== ventana.borrador._key)}
               onCambiar={(_, cambios) =>
                 setVentana((v) => (v ? { ...v, borrador: { ...v.borrador, ...cambios } } : v))
               }

@@ -664,6 +664,7 @@ export function PrestadorFormPage() {
               >
                 <SedesPanel
                   sedes={form.sedes ?? []}
+                  nombrePrestador={form.nombre ?? ''}
                   onAgregar={agregarSede}
                   onCambiar={cambiarSede}
                   onQuitar={quitarSede}
