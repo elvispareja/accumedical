@@ -318,6 +318,16 @@ export function SedesPanel({
         : sedes.map((s) => (s._key === borrador._key ? borrador : s))
     const problema = validar(lista)
     if (problema) return setError(problema)
+    // Si con esta ya hay dos o más sedes en la misma ciudad, las que estaban
+    // también llevan su dirección en el nombre (pedido del usuario, 26/10/2026):
+    // si no, la primera quedaría «PRESTADOR - PROVINCIA - CIUDAD» a secas.
+    for (const otra of sedes) {
+      if (otra._key === borrador._key || otra.ciudad_codigo !== borrador.ciudad_codigo) continue
+      const direccion = otra.direccion.trim().toLocaleUpperCase()
+      if (direccion && !otra.nombre.endsWith(` - ${direccion}`)) {
+        onCambiar(otra._key, { nombre: `${otra.nombre} - ${direccion}`.slice(0, 150) })
+      }
+    }
     if (modo === 'nueva') {
       onAgregar(borrador)
       // A la última página, donde queda la nueva.
