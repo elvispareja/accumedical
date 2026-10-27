@@ -4,6 +4,7 @@ import {
   RecordingPresets,
   setAudioModeAsync,
   useAudioRecorder,
+  useAudioRecorderState,
 } from 'expo-audio'
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import {
@@ -11,6 +12,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -106,8 +108,22 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
   // El dictado: se graba en la app y se transcribe en el servidor (Whisper
   // local); el texto cae solo en la caja elegida —la nota o las correcciones
   // del informe—, listo para revisar y confirmar.
-  const grabadora = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
+  // Con el nivel de entrada (metering): si mientras se graba el micrófono no
+  // capta NADA, es que está bloqueado, y se dice antes de subir silencio.
+  const grabadora = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true })
+  const estadoGrabadora = useAudioRecorderState(grabadora, 250)
+  const nivelMaximo = useRef<number | null>(null)
   const [grabando, setGrabando] = useState(false)
+  // El aviso del micrófono (27/10/2026, pedido del usuario): dentro de la app,
+  // como los permisos de una app nueva, y con un botón que lleva al ajuste.
+  const [avisoMicrofono, setAvisoMicrofono] = useState<null | 'permiso' | 'mudo'>(null)
+  const [puedePedirPermiso, setPuedePedirPermiso] = useState(true)
+  useEffect(() => {
+    const nivel = estadoGrabadora.metering
+    if (grabando && typeof nivel === 'number') {
+      nivelMaximo.current = Math.max(nivelMaximo.current ?? -160, nivel)
+    }
+  }, [grabando, estadoGrabadora.metering])
   const [transcribiendo, setTranscribiendo] = useState(false)
   const [destinoDictado, setDestinoDictado] = useState<'nota' | 'correccion'>('nota')
 
@@ -117,10 +133,12 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
     if (!grabando) {
       const permiso = await AudioModule.requestRecordingPermissionsAsync()
       if (!permiso.granted) {
-        setAviso('Sin permiso de micrófono: actívalo en los ajustes del teléfono.')
+        setPuedePedirPermiso(permiso.canAskAgain)
+        setAvisoMicrofono('permiso')
         return
       }
       setDestinoDictado(destino)
+      nivelMaximo.current = null
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true })
       await grabadora.prepareToRecordAsync()
       grabadora.record()
@@ -134,6 +152,12 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
       setAviso('No se obtuvo el audio. Vuelve a intentarlo.')
       return
     }
+    // Silencio digital (-160 dB): el micrófono está bloqueado. No se sube.
+    // Si el teléfono no informa el nivel, no se decide aquí: lo mide el servidor.
+    if (nivelMaximo.current !== null && nivelMaximo.current <= -100) {
+      setAvisoMicrofono('mudo')
+      return
+    }
     setTranscribiendo(true)
     try {
       const { texto: dictado } = await dictar(caso.id, uri)
@@ -144,6 +168,11 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
         escribir((previo) => (previo.trim() ? `${previo.trim()} ${dictado}` : dictado))
       }
     } catch (error) {
+      // El servidor midió silencio total: el mismo aviso que si lo viera la app.
+      if (error instanceof ErrorDeApi && error.message.includes('silencio total')) {
+        setAvisoMicrofono('mudo')
+        return
+      }
       // El texto crudo del error importa: «Network request failed» y un 415
       // se arreglan en sitios distintos, y el teléfono es el único que lo sabe.
       setAviso(
@@ -864,7 +893,129 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
 
         {aviso && <Text style={estilos.aviso}>{aviso}</Text>}
       </ScrollView>
+      <AvisoMicrofono
+        tipo={avisoMicrofono}
+        puedePedirPermiso={puedePedirPermiso}
+        onCerrar={() => setAvisoMicrofono(null)}
+        onPermitido={() => setAvisoMicrofono(null)}
+        estilos={estilos}
+      />
     </KeyboardAvoidingView>
+  )
+}
+
+/** El ajuste donde se desbloquea el micrófono: privacidad en Android, la app en iPhone. */
+async function abrirAjustesDelMicrofono(tipo: 'permiso' | 'mudo') {
+  if (Platform.OS === 'android' && tipo === 'mudo') {
+    try {
+      // Android 12+: ahí está «Acceso al micrófono» de todo el teléfono.
+      await Linking.sendIntent('android.settings.PRIVACY_SETTINGS')
+      return
+    } catch {
+      // Un Android sin esa pantalla: los ajustes de la app.
+    }
+  }
+  await Linking.openSettings()
+}
+
+/**
+ * **El aviso del micrófono**, dentro de la app. Ninguna app puede encender sola
+ * el interruptor «Acceso al micrófono» de Android: lo que sí hace es explicar
+ * qué pasa y abrir el ajuste exacto, y volver con un toque.
+ */
+function AvisoMicrofono({
+  tipo,
+  puedePedirPermiso,
+  onCerrar,
+  onPermitido,
+  estilos,
+}: {
+  tipo: null | 'permiso' | 'mudo'
+  puedePedirPermiso: boolean
+  onCerrar: () => void
+  onPermitido: () => void
+  estilos: ReturnType<typeof crearEstilos>
+}) {
+  async function permitir() {
+    const permiso = await AudioModule.requestRecordingPermissionsAsync()
+    if (permiso.granted) onPermitido()
+    else await abrirAjustesDelMicrofono('permiso')
+  }
+
+  const android = Platform.OS === 'android'
+  const pasos =
+    tipo === 'permiso'
+      ? [
+          puedePedirPermiso
+            ? 'Toca «Permitir micrófono» y acepta el aviso del teléfono.'
+            : 'Toca «Abrir ajustes», entra a Permisos → Micrófono y elige «Permitir mientras se usa la app».',
+          'Vuelve aquí y toca otra vez el micrófono.',
+        ]
+      : android
+        ? [
+            'Desliza desde arriba de la pantalla y activa «Acceso al micrófono» (o tócalo en «Abrir ajustes»).',
+            'Cierra llamadas o apps que estén usando el micrófono.',
+            'Vuelve aquí y dicta otra vez.',
+          ]
+        : [
+            'Toca «Abrir ajustes» y activa el micrófono para esta app.',
+            'Cierra llamadas o apps que estén usando el micrófono.',
+            'Vuelve aquí y dicta otra vez.',
+          ]
+
+  return (
+    <Modal visible={tipo !== null} transparent animationType="fade" onRequestClose={onCerrar}>
+      <View style={estilos.modalFondo}>
+        <View style={estilos.modalTarjeta} accessibilityViewIsModal>
+          <View style={estilos.modalIcono}>
+            <Ionicons
+              name={tipo === 'permiso' ? 'mic-outline' : 'mic-off-outline'}
+              size={28}
+              color="#ffffff"
+            />
+          </View>
+          <Text style={estilos.modalTitulo}>
+            {tipo === 'permiso'
+              ? 'Accumedical necesita el micrófono'
+              : 'El micrófono no está captando sonido'}
+          </Text>
+          <Text style={estilos.vacio}>
+            {tipo === 'permiso'
+              ? 'Para dictar tus notas, la app necesita permiso para usar el micrófono.'
+              : 'El teléfono grabó silencio total. Casi siempre es porque el acceso al micrófono está desactivado.'}
+          </Text>
+          {pasos.map((paso, i) => (
+            <View key={paso} style={estilos.filaDato}>
+              <Text style={estilos.modalNumero}>{i + 1}</Text>
+              <Text style={estilos.dato}>{paso}</Text>
+            </View>
+          ))}
+          <Pressable
+            onPress={
+              tipo === 'permiso' && puedePedirPermiso
+                ? permitir
+                : () => abrirAjustesDelMicrofono(tipo ?? 'mudo')
+            }
+            accessibilityRole="button"
+            style={estilos.boton}
+          >
+            <Ionicons
+              name={tipo === 'permiso' && puedePedirPermiso ? 'mic' : 'settings-outline'}
+              size={16}
+              color="#ffffff"
+            />
+            <Text style={estilos.botonTexto}>
+              {tipo === 'permiso' && puedePedirPermiso ? 'Permitir micrófono' : 'Abrir ajustes'}
+            </Text>
+          </Pressable>
+          <Pressable onPress={onCerrar} accessibilityRole="button" style={estilos.botonSecundario}>
+            <Text style={estilos.botonSecundarioTexto}>
+              {tipo === 'permiso' ? 'Ahora no' : 'Ya lo activé'}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   )
 }
 
@@ -1019,5 +1170,41 @@ function crearEstilos(c: Paleta) {
     notaTexto: { fontSize: 14, color: c.tinta, lineHeight: 20 },
     aviso: { fontSize: 13, color: c.naranja, lineHeight: 19, marginTop: 4 },
     exito: { fontSize: 13, color: c.verde, fontWeight: '600', lineHeight: 19 },
+    modalFondo: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      justifyContent: 'center',
+      padding: espaciado.lg,
+    },
+    modalTarjeta: {
+      backgroundColor: c.superficie,
+      borderRadius: 16,
+      padding: espaciado.lg,
+      gap: espaciado.sm,
+      borderWidth: 1,
+      borderColor: c.borde,
+    },
+    modalIcono: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: c.azul,
+      alignItems: 'center',
+      justifyContent: 'center',
+      alignSelf: 'center',
+    },
+    modalTitulo: { fontSize: 17, fontWeight: '700', color: c.tinta, textAlign: 'center' },
+    modalNumero: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      overflow: 'hidden',
+      backgroundColor: c.oro,
+      color: '#ffffff',
+      fontSize: 12,
+      fontWeight: '700',
+      textAlign: 'center',
+      lineHeight: 22,
+    },
   })
 }
