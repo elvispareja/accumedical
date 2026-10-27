@@ -193,34 +193,18 @@ export function ReporteriaPage() {
         </Select>
       </div>
 
+      {/* Arriba, todos los círculos; abajo, las columnas (pedido del usuario,
+          27/10/2026). Un solo estado de carga para los tres reportes. */}
       <Seccion
-        titulo="SLA de entrega del informe"
-        nota="Desde que llegó el pedido —el alta de la aseguradora o el «Requerimiento» de la coordinación— hasta la primera entrega del informe."
-        cargando={sla.isPending}
-        error={sla.isError}
-        recargando={sla.isFetching && !sla.isPending}
+        titulo="Resumen"
+        nota="SLA desde que llegó el pedido hasta la primera entrega del informe; sexo y edad de los casos ya auditados, según su informe."
+        cargando={sla.isPending || sexo.isPending || edad.isPending}
+        error={sla.isError || sexo.isError || edad.isError}
+        recargando={sla.isFetching || sexo.isFetching || edad.isFetching}
       >
-        {sla.data && <GraficosSla datos={sla.data} />}
-      </Seccion>
-
-      <Seccion
-        titulo="Casos auditados por sexo"
-        nota="Solo los casos ya auditados: el sexo sale del informe (línea «GÉNERO»)."
-        cargando={sexo.isPending}
-        error={sexo.isError}
-        recargando={sexo.isFetching && !sexo.isPending}
-      >
-        {sexo.data && <GraficosSexo datos={sexo.data} />}
-      </Seccion>
-
-      <Seccion
-        titulo="Casos auditados por edad"
-        nota="Solo los casos ya auditados: la edad sale del informe (línea «EDAD»). Los menores de un año cuentan en 1 – 20."
-        cargando={edad.isPending}
-        error={edad.isError}
-        recargando={edad.isFetching && !edad.isPending}
-      >
-        {edad.data && <GraficosEdad datos={edad.data} />}
+        {sla.data && sexo.data && edad.data && (
+          <Tablero sla={sla.data} sexo={sexo.data} edad={edad.data} />
+        )}
       </Seccion>
     </div>
   )
@@ -319,7 +303,7 @@ const SERIES_EDAD: SerieGrafico[] = [
   { clave: 'no_consta', etiqueta: 'No consta', fondo: 'bg-[#898781]', relleno: 'fill-[#898781]' },
 ]
 
-// ───────────────────────────── SLA ─────────────────────────────
+// ──────────────────────────── Tablero ────────────────────────────
 
 const diaEc = new Intl.DateTimeFormat('es-EC', {
   timeZone: 'America/Guayaquil',
@@ -329,11 +313,41 @@ const diaEc = new Intl.DateTimeFormat('es-EC', {
 // AAAA-MM-DD en Ecuador: la clave del día, que además ordena bien.
 const claveDia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guayaquil' })
 
-function GraficosSla({ datos }: { datos: ReporteSla }) {
-  const total = datos.total
+/** Los conteos de edad, sin el total: lo que se reparte en la torta y las columnas. */
+function rangosDeEdad(f: Omit<ReporteEdad['total'], 'auditados'>) {
+  return {
+    de_1_a_20: f.de_1_a_20,
+    de_21_a_40: f.de_21_a_40,
+    de_41_a_60: f.de_41_a_60,
+    mas_de_60: f.mas_de_60,
+    no_consta: f.no_consta,
+  }
+}
+
+function SinAuditados() {
+  return (
+    <p className="py-10 text-center text-sm text-tenue-fg">Aún no hay casos auditados en el periodo.</p>
+  )
+}
+
+/**
+ * Fila de arriba: los tres círculos (estado del SLA, sexo, edad). Debajo, las
+ * columnas de dos en dos: cumplimiento por aseguradora, casos por día, y sexo y
+ * edad por aseguradora.
+ */
+function Tablero({
+  sla,
+  sexo,
+  edad,
+}: {
+  sla: ReporteSla
+  sexo: ReporteSexo
+  edad: ReporteEdad
+}) {
+  const total = sla.total
   // Casos por día en que llegó el pedido, apilados por estado (sin cancelados).
   const porDia = new Map<string, Columna>()
-  for (const c of [...datos.casos].sort((a, b) => a.inicio_sla.localeCompare(b.inicio_sla))) {
+  for (const c of [...sla.casos].sort((a, b) => a.inicio_sla.localeCompare(b.inicio_sla))) {
     if (c.estado_sla === 'cancelado') continue
     const fecha = new Date(c.inicio_sla)
     const clave = claveDia.format(fecha)
@@ -341,147 +355,128 @@ function GraficosSla({ datos }: { datos: ReporteSla }) {
     col.valores[c.estado_sla] = (col.valores[c.estado_sla] ?? 0) + 1
     porDia.set(clave, col)
   }
+  const auditados = sexo.total.auditados
+  const notaAuditados = `${auditados} ${auditados === 1 ? 'caso auditado' : 'casos auditados'}.`
 
-  // Los tres en una fila (pedido del usuario, 27/10/2026).
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <TarjetaGrafico
-        titulo="Estado del SLA"
-        nota={`${total.casos} ${total.casos === 1 ? 'caso' : 'casos'} en el periodo.`}
-      >
-        <Dona
-          etiqueta="Estado del SLA"
-          series={SERIES_SLA}
-          valores={{
-            a_tiempo: total.a_tiempo,
-            fuera_de_plazo: total.fuera_de_plazo,
-            vencido: total.vencido,
-            en_plazo: total.en_plazo,
-          }}
-          centro={{
-            valor: total.cumplimiento === null ? '—' : `${Math.round(total.cumplimiento)} %`,
-            detalle: 'cumplimiento',
-          }}
-          tamano={180}
-          leyendaAbajo
-        />
-      </TarjetaGrafico>
-
-      <TarjetaGrafico
-        titulo="Cumplimiento por aseguradora"
-        nota="A tiempo entre lo entregado y lo vencido."
-      >
-        <Columnas
-          etiqueta="Cumplimiento por aseguradora"
-          series={SERIE_CUMPLIMIENTO}
-          maximo={100}
-          formato={(n) => `${n} %`}
-          vacio="Aún no hay casos entregados ni vencidos."
-          columnas={datos.por_aseguradora
-            .filter((f) => f.cumplimiento !== null)
-            .map((f) => ({
-              etiqueta: f.aseguradora,
-              valores: { cumplimiento: Math.round(f.cumplimiento ?? 0) },
-            }))}
-        />
-      </TarjetaGrafico>
-
-      <TarjetaGrafico
-        titulo="Casos por día"
-        nota="Por el día en que llegó el pedido, con su estado del SLA."
-      >
-        <Columnas
-          etiqueta="Casos por día y estado del SLA"
-          series={SERIES_SLA}
-          columnas={[...porDia.values()]}
-        />
-      </TarjetaGrafico>
-    </div>
-  )
-}
-
-// ───────────────────────────── Sexo ─────────────────────────────
-
-function GraficosSexo({ datos }: { datos: ReporteSexo }) {
-  const { auditados, femenino, masculino, no_consta } = datos.total
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <TarjetaGrafico
-        titulo="Distribución por sexo"
-        nota={`${auditados} ${auditados === 1 ? 'caso auditado' : 'casos auditados'}.`}
-      >
-        {auditados === 0 ? (
-          <p className="py-10 text-center text-sm text-tenue-fg">
-            Aún no hay casos auditados en el periodo.
-          </p>
-        ) : (
+    <>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <TarjetaGrafico
+          titulo="Estado del SLA"
+          nota={`${total.casos} ${total.casos === 1 ? 'caso' : 'casos'} en el periodo.`}
+        >
           <Dona
-            etiqueta="Distribución por sexo"
+            etiqueta="Estado del SLA"
+            series={SERIES_SLA}
+            valores={{
+              a_tiempo: total.a_tiempo,
+              fuera_de_plazo: total.fuera_de_plazo,
+              vencido: total.vencido,
+              en_plazo: total.en_plazo,
+            }}
+            centro={{
+              valor: total.cumplimiento === null ? '—' : `${Math.round(total.cumplimiento)} %`,
+              detalle: 'cumplimiento',
+            }}
+            tamano={180}
+            leyendaAbajo
+          />
+        </TarjetaGrafico>
+
+        <TarjetaGrafico titulo="Distribución por sexo" nota={notaAuditados}>
+          {auditados === 0 ? (
+            <SinAuditados />
+          ) : (
+            <Dona
+              etiqueta="Distribución por sexo"
+              series={SERIES_SEXO}
+              valores={{
+                femenino: sexo.total.femenino,
+                masculino: sexo.total.masculino,
+                no_consta: sexo.total.no_consta,
+              }}
+              torta
+              tamano={180}
+              leyendaAbajo
+            />
+          )}
+        </TarjetaGrafico>
+
+        <TarjetaGrafico titulo="Distribución por edad" nota={notaAuditados}>
+          {edad.total.auditados === 0 ? (
+            <SinAuditados />
+          ) : (
+            <Dona
+              etiqueta="Distribución por edad"
+              series={SERIES_EDAD}
+              valores={rangosDeEdad(edad.total)}
+              torta
+              tamano={180}
+              leyendaAbajo
+            />
+          )}
+        </TarjetaGrafico>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <TarjetaGrafico
+          titulo="Cumplimiento del SLA por aseguradora"
+          nota="A tiempo entre lo entregado y lo vencido."
+        >
+          <Columnas
+            etiqueta="Cumplimiento por aseguradora"
+            series={SERIE_CUMPLIMIENTO}
+            maximo={100}
+            formato={(n) => `${n} %`}
+            vacio="Aún no hay casos entregados ni vencidos."
+            columnas={sla.por_aseguradora
+              .filter((f) => f.cumplimiento !== null)
+              .map((f) => ({
+                etiqueta: f.aseguradora,
+                valores: { cumplimiento: Math.round(f.cumplimiento ?? 0) },
+              }))}
+          />
+        </TarjetaGrafico>
+
+        <TarjetaGrafico
+          titulo="Casos por día"
+          nota="Por el día en que llegó el pedido, con su estado del SLA."
+        >
+          <Columnas
+            etiqueta="Casos por día y estado del SLA"
+            series={SERIES_SLA}
+            columnas={[...porDia.values()]}
+          />
+        </TarjetaGrafico>
+
+        <TarjetaGrafico titulo="Sexo por aseguradora" nota="Casos auditados.">
+          <Columnas
+            etiqueta="Casos auditados por sexo y aseguradora"
             series={SERIES_SEXO}
-            valores={{ femenino, masculino, no_consta }}
-            torta
+            vacio="Aún no hay casos auditados en el periodo."
+            columnas={sexo.por_aseguradora.map((f) => ({
+              etiqueta: f.aseguradora,
+              valores: { femenino: f.femenino, masculino: f.masculino, no_consta: f.no_consta },
+            }))}
           />
-        )}
-      </TarjetaGrafico>
+        </TarjetaGrafico>
 
-      <TarjetaGrafico titulo="Sexo por aseguradora">
-        <Columnas
-          etiqueta="Casos auditados por sexo y aseguradora"
-          series={SERIES_SEXO}
-          vacio="Aún no hay casos auditados en el periodo."
-          columnas={datos.por_aseguradora.map((f) => ({
-            etiqueta: f.aseguradora,
-            valores: { femenino: f.femenino, masculino: f.masculino, no_consta: f.no_consta },
-          }))}
-        />
-      </TarjetaGrafico>
-    </div>
-  )
-}
-
-// ───────────────────────────── Edad ─────────────────────────────
-
-function GraficosEdad({ datos }: { datos: ReporteEdad }) {
-  const { auditados, ...rangos } = datos.total
-  const valoresDe = (f: Omit<ReporteEdad['total'], 'auditados'>) => ({
-    de_1_a_20: f.de_1_a_20,
-    de_21_a_40: f.de_21_a_40,
-    de_41_a_60: f.de_41_a_60,
-    mas_de_60: f.mas_de_60,
-    no_consta: f.no_consta,
-  })
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <TarjetaGrafico
-        titulo="Distribución por edad"
-        nota={`${auditados} ${auditados === 1 ? 'caso auditado' : 'casos auditados'}.`}
-      >
-        {auditados === 0 ? (
-          <p className="py-10 text-center text-sm text-tenue-fg">
-            Aún no hay casos auditados en el periodo.
-          </p>
-        ) : (
-          <Dona
-            etiqueta="Distribución por edad"
+        <TarjetaGrafico
+          titulo="Edad por aseguradora"
+          nota="Casos auditados. Los menores de un año cuentan en 1 – 20."
+        >
+          <Columnas
+            etiqueta="Casos auditados por edad y aseguradora"
             series={SERIES_EDAD}
-            valores={valoresDe(rangos)}
-            torta
+            vacio="Aún no hay casos auditados en el periodo."
+            columnas={edad.por_aseguradora.map((f) => ({
+              etiqueta: f.aseguradora,
+              valores: rangosDeEdad(f),
+            }))}
           />
-        )}
-      </TarjetaGrafico>
-
-      <TarjetaGrafico titulo="Edad por aseguradora">
-        <Columnas
-          etiqueta="Casos auditados por edad y aseguradora"
-          series={SERIES_EDAD}
-          vacio="Aún no hay casos auditados en el periodo."
-          columnas={datos.por_aseguradora.map((f) => ({
-            etiqueta: f.aseguradora,
-            valores: valoresDe(f),
-          }))}
-        />
-      </TarjetaGrafico>
-    </div>
+        </TarjetaGrafico>
+      </div>
+    </>
   )
 }
 
