@@ -53,20 +53,59 @@ def precalentar() -> None:
     threading.Thread(target=_tarea, daemon=True).start()
 
 
+#: Por debajo de este pico el audio es silencio digital: el teléfono no grabó.
+_PICO_MUDO = 0.001
+
+
+def _registrar_silencio(ruta: str) -> float | None:
+    """
+    Sin texto: ¿el audio vino mudo (el teléfono no grabó) o había voz y el
+    filtro de voz la descartó? Se registra la duración y el PICO de amplitud
+    (0 = silencio total, 1 = máximo), nunca el contenido. Devuelve el pico, o
+    `None` si no se pudo medir.
+    """
+    try:
+        from faster_whisper import decode_audio
+
+        muestras = decode_audio(ruta)
+        pico = float(abs(muestras).max()) if len(muestras) else 0.0
+        log.info("stt_sin_voz", segundos=round(len(muestras) / 16000, 1), pico=round(pico, 4))
+        return pico
+    except Exception as error:  # noqa: BLE001 - es solo diagnóstico
+        log.warning("stt_sin_voz_no_medido", error=type(error).__name__)
+        return None
+
+
 def transcribir(ruta: str) -> str:
     """
     El audio a texto, en español. Serializado con un candado: la transcripción
     satura CPU y dos a la vez solo se estorban. Nunca se loguea el contenido.
     """
+    pico = None
     try:
         with _candado:
             modelo = _cargar()
             segmentos, _info = modelo.transcribe(ruta, language="es", vad_filter=True)
             texto = " ".join(s.text.strip() for s in segmentos).strip()
+            if not texto:
+                pico = _registrar_silencio(ruta)
     except Exception as error:  # noqa: BLE001
         log.warning("stt_fallido", error=type(error).__name__)
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY,
             detail="No se pudo transcribir el dictado. Inténtalo de nuevo",
         ) from error
+    # Silencio DIGITAL (27/10/2026): no es que se hablara bajo, es que el
+    # teléfono no entregó sonido. Casi siempre el interruptor «Acceso al
+    # micrófono» de Android o el permiso de la app: se dice tal cual.
+    if pico is not None and pico < _PICO_MUDO:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "El teléfono envió el audio en silencio total: el micrófono no está "
+                "captando. Revisa que «Acceso al micrófono» esté activado en los ajustes "
+                "rápidos y que la app tenga permiso de micrófono, y que ninguna otra app "
+                "lo esté usando."
+            ),
+        )
     return texto
