@@ -365,8 +365,13 @@ export function TarjetaGrafico({
 }) {
   return (
     <div className={cn('rounded-md border border-borde bg-superficie p-5', className)}>
-      <p className="font-display text-sm font-semibold">{titulo}</p>
-      {nota && <p className="mt-0.5 text-xs text-tenue-fg">{nota}</p>}
+      {/* Alto fijo del encabezado: en una fila, todos los gráficos arrancan a la par. */}
+      <div className="min-h-[2.5rem]">
+        <p className="truncate font-display text-sm font-semibold" title={titulo}>
+          {titulo}
+        </p>
+        {nota && <p className="mt-0.5 truncate text-xs text-tenue-fg" title={nota}>{nota}</p>}
+      </div>
       <div className="mt-5">{children}</div>
     </div>
   )

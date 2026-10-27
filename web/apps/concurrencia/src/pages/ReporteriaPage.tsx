@@ -332,8 +332,8 @@ function SinAuditados() {
 
 /**
  * Fila de arriba: los tres círculos (estado del SLA, sexo, edad). Debajo, las
- * columnas de dos en dos: cumplimiento por aseguradora, casos por día, y sexo y
- * edad por aseguradora.
+ * cuatro columnas en una fila: cumplimiento por aseguradora, casos por día, y
+ * sexo y edad por aseguradora.
  */
 function Tablero({
   sla,
@@ -418,10 +418,12 @@ function Tablero({
         </TarjetaGrafico>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      {/* Las cuatro columnas en una sola fila (pedido del usuario, 27/10/2026);
+          en pantallas medianas, de dos en dos. */}
+      <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <TarjetaGrafico
-          titulo="Cumplimiento del SLA por aseguradora"
-          nota="A tiempo entre lo entregado y lo vencido."
+          titulo="Cumplimiento por aseguradora"
+          nota="A tiempo entre entregados y vencidos."
         >
           <Columnas
             etiqueta="Cumplimiento por aseguradora"
@@ -440,7 +442,7 @@ function Tablero({
 
         <TarjetaGrafico
           titulo="Casos por día"
-          nota="Por el día en que llegó el pedido, con su estado del SLA."
+          nota="Día en que llegó el pedido."
         >
           <Columnas
             etiqueta="Casos por día y estado del SLA"
@@ -463,7 +465,7 @@ function Tablero({
 
         <TarjetaGrafico
           titulo="Edad por aseguradora"
-          nota="Casos auditados. Los menores de un año cuentan en 1 – 20."
+          nota="Casos auditados."
         >
           <Columnas
             etiqueta="Casos auditados por edad y aseguradora"
