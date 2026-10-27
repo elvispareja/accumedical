@@ -3,6 +3,7 @@ import { Navigate, type RouteObject } from 'react-router-dom'
 import { BandejaPage } from '@concurrencia/pages/BandejaPage'
 import { CasoSupervisionPage } from '@concurrencia/pages/CasoSupervisionPage'
 import { PortadaPage } from '@concurrencia/pages/PortadaPage'
+import { ReporteriaPage } from '@concurrencia/pages/ReporteriaPage'
 import { VisitaFormPage } from '@concurrencia/pages/VisitaFormPage'
 import { NotificacionesDelModulo } from '@/core/notificaciones/pages/NotificacionesDelModulo'
 
@@ -21,6 +22,8 @@ export const rutasConcurrencia: RouteObject[] = [
   { path: 'bandeja', element: <BandejaPage /> },
   // Sus avisos, dentro de la app (D47). Antes que `:id`, que se lo tragaría.
   { path: 'notificaciones', element: <NotificacionesDelModulo slug="concurrencia" /> },
+  // Reportería del coordinador de Accumedical (27/10/2026). Antes que `:id`.
+  { path: 'reporteria', element: <ReporteriaPage /> },
   { path: 'nueva', element: <VisitaFormPage /> },
   // El alta del coordinador de plataforma: primero la aseguradora, luego el
   // mismo formulario. El backend igual exige rol supervisor de plataforma.

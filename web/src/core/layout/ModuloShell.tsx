@@ -114,7 +114,16 @@ export function ModuloShell({ slug: fijo, raiz: raizFija }: { slug?: string; rai
   // como coordinador de plataforma (D45).
   return (
     <ArmazonLateral
-      nav={<NavegacionModulo raiz={raiz} />}
+      nav={
+        <NavegacionModulo
+          raiz={raiz}
+          // Reportería (27/10/2026): por ahora solo el coordinador de
+          // Accumedical en Concurrencia —sin aseguradora, rol supervisor—.
+          conReporteria={
+            slug === 'concurrencia' && !sesion?.aseguradora && modulo.rol === 'supervisor'
+          }
+        />
+      }
       marca={
         sesion?.aseguradora?.tiene_logo && !logoRoto ? (
           <MarcaDeAseguradora nombre={sesion.aseguradora.nombre} alFallar={() => setLogoRoto(true)} />
