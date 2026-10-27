@@ -313,7 +313,7 @@ export function BandejaPage({
                         <div className="max-w-[13rem] 2xl:max-w-[18rem]">
                           <span className="flex items-center gap-1.5">
                             <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
-                            <span className="truncate">{fila.sede_nombre ?? 'Sede principal'}</span>
+                            <span className="truncate">{fila.sede_nombre ?? 'SEDE PRINCIPAL'}</span>
                           </span>
                           {/* Dónde está, no en qué calle: en una columna estrecha
                               la ciudad se lee entera y la dirección se cortaría. */}

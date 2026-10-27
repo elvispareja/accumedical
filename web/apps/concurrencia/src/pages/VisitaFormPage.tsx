@@ -141,6 +141,17 @@ function zona(
 
 
 /** `datetime-local` no lleva zona; el navegador la pone al convertir a ISO. */
+/**
+ * «NOMBRE - PROVINCIA - CIUDAD» en mayúsculas. Las sedes nuevas ya traen la
+ * provincia y la ciudad en su nombre (se arma en admin); a las viejas se les
+ * agrega para que todas se lean igual.
+ */
+function nombreDeSitio(nombre: string, provincia: string | null, ciudad: string | null): string {
+  const base = nombre.toLocaleUpperCase()
+  const resto = [provincia, ciudad].filter(Boolean).map((t) => t!.toLocaleUpperCase())
+  return resto.every((t) => base.includes(t)) ? base : [base, ...resto].join(' - ')
+}
+
 function aISO(local: string): string {
   return new Date(local).toISOString()
 }
@@ -1029,13 +1040,14 @@ export function VisitaFormPage({
                   {/* Tener sedes no quita la sede principal de en medio: sigue
                       siendo un sitio al que se puede ir, y es el que la base
                       guarda como visita sin sede. */}
+                  {/* Todo en MAYÚSCULAS y como en admin (pedido del usuario,
+                      26/10/2026): «SEDE PRINCIPAL - PROVINCIA - CIUDAD». */}
                   <option value={MATRIZ}>
-                    Sede principal —{' '}
-                    {zona(elegido.ciudad_nombre, elegido.provincia_nombre, elegido.direccion)}
+                    {nombreDeSitio('SEDE PRINCIPAL', elegido.provincia_nombre, elegido.ciudad_nombre)}
                   </option>
                   {elegido.sedes.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.nombre} — {zona(s.ciudad_nombre, s.provincia_nombre, s.direccion)}
+                      {nombreDeSitio(s.nombre, s.provincia_nombre, s.ciudad_nombre)}
                     </option>
                   ))}
                 </Select>

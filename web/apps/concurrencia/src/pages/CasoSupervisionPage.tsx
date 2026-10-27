@@ -177,7 +177,7 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
           <Label htmlFor="sl-destino">Destino</Label>
           <Input
             id="sl-destino"
-            value={`${caso.sede_nombre ?? 'Sede principal'}${
+            value={`${caso.sede_nombre ?? 'SEDE PRINCIPAL'}${
               [caso.ciudad_nombre, caso.provincia_nombre].filter(Boolean).length
                 ? ` — ${[caso.ciudad_nombre, caso.provincia_nombre].filter(Boolean).join(', ')}`
                 : ''

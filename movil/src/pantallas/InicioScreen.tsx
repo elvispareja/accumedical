@@ -289,7 +289,7 @@ export function InicioScreen({ sesion, onSalir }: { sesion: Sesion; onSalir: () 
               <View style={estilos.filaDato}>
                 <Ionicons name="location-outline" size={15} color={colores.tenue} />
                 <Text style={estilos.dato} numberOfLines={2}>
-                  {item.sede_nombre ?? 'Sede principal'}
+                  {item.sede_nombre ?? 'SEDE PRINCIPAL'}
                   {[item.ciudad_nombre, item.provincia_nombre].filter(Boolean).length
                     ? ` · ${[item.ciudad_nombre, item.provincia_nombre].filter(Boolean).join(', ')}`
                     : ''}
