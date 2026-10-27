@@ -1,11 +1,9 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import {
-  Check,
   ChevronLeft,
   ChevronRight,
   Inbox,
-  Lock,
   MapPin,
   Pencil,
   Plus,
@@ -18,14 +16,11 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { cn } from '@/lib/utils'
 import {
-  asignarAuditor,
   listarAuditores,
   listarSupervision,
   obtenerDashboardSupervision,
   obtenerFiltrosSupervision,
   usuariosDeAseguradoraSupervision,
-  type AuditorElegible,
-  type VisitaSupervision,
 } from '@concurrencia/api'
 import { FechaConEtiqueta } from '@concurrencia/components/filtros'
 import {
@@ -38,24 +33,13 @@ import {
 } from '@concurrencia/components/visitas'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
-import { Label } from '@/shared/components/ui/label'
-import { Modal } from '@/shared/components/ui/modal'
 import { Select } from '@/shared/components/ui/select'
-import { useToast } from '@/shared/components/ui/toast'
 
 const EASE: [number, number, number, number] = [0.22, 0.61, 0.36, 1]
 const POR_PAGINA = 20
-/** Solo en la agenda se deriva, reasigna o desasigna (igual que el servidor). */
-const ESTADOS_DERIVABLES = ['programada', 'asignada']
-
-function mensajeDeError(error: unknown, porDefecto: string): string {
-  const detalle = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  return typeof detalle === 'string' ? detalle : porDefecto
-}
-
 /**
  * La bandeja del supervisor de plataforma: los casos que llegan de TODAS las
- * aseguradoras, para derivar cada uno a un médico auditor desde la propia fila.
+ * aseguradoras, para derivar cada uno a un médico auditor (desde la ficha del caso).
  * El backend solo sirve esta vista a personal de plataforma con rol supervisor.
  *
  * Arriba, **los mismos cuadros que ve el supervisor de una compañía de lo suyo**
@@ -69,8 +53,6 @@ function mensajeDeError(error: unknown, porDefecto: string): string {
  * global, que entra al módulo como él (D45).
  */
 export function SupervisionPage() {
-  const toast = useToast()
-  const queryClient = useQueryClient()
   const sinMovimiento = useReducedMotion()
   const navegar = useNavigate()
 
@@ -85,7 +67,6 @@ export function SupervisionPage() {
   const [aseguradoraId, setAseguradoraId] = useState('')
   const [personaId, setPersonaId] = useState('')
   const [usuarioId, setUsuarioId] = useState('')
-  const [asignando, setAsignando] = useState<VisitaSupervision | null>(null)
   const [pagina, setPagina] = useState(1)
 
   // El caso se abre siempre en el módulo: el administrador global entra como
@@ -162,32 +143,6 @@ export function SupervisionPage() {
     queryKey: ['supervision-filtros', 'aseguradora', aseguradoraId],
     queryFn: () => usuariosDeAseguradoraSupervision(aseguradoraId),
     enabled: Boolean(aseguradoraId),
-  })
-
-  const derivar = useMutation({
-    mutationFn: ({
-      visita,
-      auditorId,
-      desde,
-      hasta,
-    }: {
-      visita: VisitaSupervision
-      auditorId: string | null
-      desde?: string
-      hasta?: string
-    }) => asignarAuditor(visita.id, auditorId, desde, hasta),
-    onSuccess: (actualizada) => {
-      queryClient.invalidateQueries({ queryKey: ['supervision'] })
-      toast.exito(
-        actualizada.auditor_nombre
-          ? `${actualizada.codigo_interno} derivada a ${actualizada.auditor_nombre}`
-          : `${actualizada.codigo_interno} sin asignar`,
-      )
-    },
-    onError: (error) => {
-      queryClient.invalidateQueries({ queryKey: ['supervision'] })
-      toast.error(mensajeDeError(error, 'No se pudo derivar el caso'))
-    },
   })
 
   /**
@@ -444,44 +399,17 @@ export function SupervisionPage() {
                         <EstadoVisitaBadge estado={fila.estado} />
                       </td>
                       <td className="px-4 py-3">
-                        {/* Derivar abre un diálogo con los auditores agrupados
-                            por cercanía al destino; aquí solo se ve quién es.
-                            Fuera de la agenda (en auditoría, culminado,
-                            cancelado, no auditado) la asignación queda FIJA:
-                            se ve, pero no se cambia ni se quita. */}
-                        {ESTADOS_DERIVABLES.includes(fila.estado) ? (
-                        <button
-                          type="button"
-                          onClick={() => setAsignando(fila)}
-                          disabled={derivar.isPending || sinAuditores}
-                          aria-label={`Derivar ${fila.codigo_interno}`}
+                        {/* Solo se ENSEÑA quién tiene el caso (pedido del
+                            usuario, 26/10/2026): para derivar o cambiar de
+                            auditor se abre el caso con el lápiz. */}
+                        <span
                           className={cn(
-                            'flex h-9 w-48 items-center gap-2 rounded border border-borde bg-superficie pl-3 pr-3',
-                            'text-left text-sm transition-colors duration-150 hover:border-marca/50',
-                            'focus-visible:border-marca focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-anillo/35',
-                            'disabled:cursor-not-allowed disabled:opacity-60',
-                            !fila.auditor_id && 'text-tenue-fg',
+                            'block max-w-[12rem] truncate text-sm',
+                            !fila.auditor_nombre && 'text-tenue-fg',
                           )}
                         >
-                          <span className="min-w-0 flex-1 truncate">
-                            {fila.auditor_nombre ?? 'Sin asignar'}
-                          </span>
-                          <UserCheck className="size-4 shrink-0 text-tenue-fg" aria-hidden="true" />
-                        </button>
-                        ) : (
-                          <span
-                            title="Asignación fija: el caso ya salió de la agenda"
-                            className={cn(
-                              'flex h-9 w-48 items-center gap-2 rounded border border-dashed border-borde pl-3 pr-3 text-sm',
-                              !fila.auditor_nombre && 'text-tenue-fg',
-                            )}
-                          >
-                            <span className="min-w-0 flex-1 truncate">
-                              {fila.auditor_nombre ?? 'Sin asignar'}
-                            </span>
-                            <Lock className="size-3.5 shrink-0 text-tenue-fg" aria-label="Asignación fija" />
-                          </span>
-                        )}
+                          {fila.auditor_nombre ?? 'Sin asignar'}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         <Boton
@@ -501,43 +429,6 @@ export function SupervisionPage() {
           </div>
         )}
       </div>
-
-      {/* Derivar: primero la ventana de la visita y luego el auditor, agrupados
-          por cercanía al destino del caso. Elegir uno asigna y cierra. */}
-      <Modal
-        abierto={asignando !== null}
-        onCerrar={() => setAsignando(null)}
-        titulo={asignando ? `Derivar ${asignando.codigo_interno}` : ''}
-        descripcion={
-          asignando
-            ? [
-                asignando.prestador_nombre,
-                [asignando.ciudad_nombre, asignando.provincia_nombre].filter(Boolean).join(', '),
-              ]
-                .filter(Boolean)
-                .join(' · ')
-            : undefined
-        }
-        pie={
-          <Boton type="button" variante="contorno" onClick={() => setAsignando(null)}>
-            Cancelar
-          </Boton>
-        }
-      >
-        {asignando && (
-          <ElegirAuditor
-            caso={asignando}
-            auditores={auditores.data ?? []}
-            ocupado={derivar.isPending}
-            onElegir={(auditorId, desde, hasta) =>
-              derivar.mutate(
-                { visita: asignando, auditorId, desde, hasta },
-                { onSuccess: () => setAsignando(null) },
-              )
-            }
-          />
-        )}
-      </Modal>
 
       {/* ── Paginación ── */}
       {datos && datos.total > 0 && (
@@ -654,264 +545,9 @@ function Vacio({ hayFiltros }: { hayFiltros: boolean }) {
       {!hayFiltros && (
         <p className="mx-auto mt-3 flex max-w-sm items-center justify-center gap-1.5 text-xs text-tenue-fg">
           <UserCheck className="size-3.5" aria-hidden="true" />
-          Derivar un caso es elegir a su auditor en la propia fila.
+          Para derivar un caso, ábrelo con el lápiz y elige ventana y auditor.
         </p>
       )}
     </div>
-  )
-}
-
-
-/**
- * El cuerpo del diálogo de derivación: los auditores en tres secciones según
- * el destino del caso —en la ciudad, en la provincia, en otras provincias—,
- * con un buscador que filtra por nombre o por dónde están. Los grupos se
- * comparan por nombre de catálogo, el mismo del que salen ambos lados. Elegir
- * a cualquiera es válido: la cercanía ordena, no restringe.
- */
-function ElegirAuditor({
-  caso,
-  auditores,
-  ocupado,
-  onElegir,
-}: {
-  caso: VisitaSupervision
-  auditores: AuditorElegible[]
-  ocupado: boolean
-  onElegir: (auditorId: string | null, desde?: string, hasta?: string) => void
-}) {
-  const [busqueda, setBusqueda] = useState('')
-  // La ventana en que el auditor va al hospital: desde y hasta (26/10/2026;
-  // el «hasta» es el plazo de llegada). Un caso ya derivado trae la suya; uno
-  // programado nace sin ella y se fija aquí. La compañía no la ve.
-  const programado = caso.estado === 'programada'
-  const [hora, setHora] = useState(() => (programado ? '' : aLocal(caso.desde)))
-  const [horaFin, setHoraFin] = useState(() =>
-    programado ? '' : aLocal(caso.llegada_limite),
-  )
-  const [faltaHora, setFaltaHora] = useState<string | null>(null)
-
-  function elegir(auditorId: string) {
-    if (!hora || !horaFin) {
-      setFaltaHora('Indica desde y hasta qué hora debe ir el auditor antes de elegirlo.')
-      return
-    }
-    if (new Date(horaFin) <= new Date(hora)) {
-      setFaltaHora('La hora «hasta» debe ser posterior a la hora «desde».')
-      return
-    }
-    onElegir(auditorId, new Date(hora).toISOString(), new Date(horaFin).toISOString())
-  }
-
-  const normalizar = (texto: string) =>
-    texto
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .toLocaleLowerCase()
-  const termino = normalizar(busqueda.trim())
-  const filtrados = termino
-    ? auditores.filter((a) =>
-        normalizar(
-          `${a.nombre_completo} ${a.ciudad_nombre ?? ''} ${a.provincia_nombre ?? ''}`,
-        ).includes(termino),
-      )
-    : auditores
-
-  const enCiudad = caso.ciudad_nombre
-    ? filtrados.filter((a) => a.ciudad_nombre === caso.ciudad_nombre)
-    : []
-  const enProvincia = caso.provincia_nombre
-    ? filtrados.filter(
-        (a) => a.provincia_nombre === caso.provincia_nombre && !enCiudad.includes(a),
-      )
-    : []
-  const enOtras = filtrados.filter((a) => !enCiudad.includes(a) && !enProvincia.includes(a))
-  const conUbicacion = Boolean(caso.ciudad_nombre || caso.provincia_nombre)
-
-  return (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="derivar-hora">
-              Ir desde <span className="text-peligro">*</span>
-            </Label>
-            <Input
-              id="derivar-hora"
-              type="datetime-local"
-              value={hora}
-              onChange={(e) => {
-                setHora(e.target.value)
-                setFaltaHora(null)
-              }}
-              aria-invalid={Boolean(faltaHora) || undefined}
-              aria-describedby="derivar-hora-ayuda"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="derivar-hora-fin">
-              Hasta <span className="text-peligro">*</span>
-            </Label>
-            <Input
-              id="derivar-hora-fin"
-              type="datetime-local"
-              value={horaFin}
-              min={hora || aLocal(new Date().toISOString())}
-              onChange={(e) => {
-                setHoraFin(e.target.value)
-                setFaltaHora(null)
-              }}
-              aria-invalid={Boolean(faltaHora) || undefined}
-              aria-describedby="derivar-hora-ayuda"
-              required
-            />
-          </div>
-        </div>
-        <p
-          id="derivar-hora-ayuda"
-          className={cn('text-xs', faltaHora ? 'text-peligro' : 'text-tenue-fg')}
-          aria-live="polite"
-        >
-          {faltaHora ??
-            'Entre qué horas debe llegar el auditor al hospital; pasado el «hasta» sin llegar, el caso vence. La aseguradora no lo ve.'}
-        </p>
-      </div>
-
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
-          aria-hidden="true"
-        />
-        <Input
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar auditor por nombre o ciudad"
-          aria-label="Buscar auditor"
-          mayusculas={false}
-          className="pl-9"
-        />
-      </div>
-
-      {caso.auditor_id && (
-        <Boton
-          type="button"
-          variante="contorno"
-          tamano="sm"
-          disabled={ocupado}
-          onClick={() => onElegir(null)}
-        >
-          Quitar la asignación actual
-        </Boton>
-      )}
-
-      {conUbicacion ? (
-        <>
-          <SeccionAuditores
-            titulo={`En la ciudad${caso.ciudad_nombre ? ` · ${caso.ciudad_nombre}` : ''}`}
-            lista={enCiudad}
-            vacio="Ningún auditor en esta ciudad."
-            actual={caso.auditor_id}
-            ocupado={ocupado}
-            onElegir={elegir}
-          />
-          <SeccionAuditores
-            titulo={`En la provincia${caso.provincia_nombre ? ` · ${caso.provincia_nombre}` : ''}`}
-            lista={enProvincia}
-            vacio="Ningún otro auditor en esta provincia."
-            actual={caso.auditor_id}
-            ocupado={ocupado}
-            onElegir={elegir}
-          />
-          <SeccionAuditores
-            titulo="En otras provincias"
-            lista={enOtras}
-            vacio="Ninguno más."
-            actual={caso.auditor_id}
-            ocupado={ocupado}
-            onElegir={elegir}
-          />
-        </>
-      ) : (
-        <SeccionAuditores
-          titulo="Auditores"
-          lista={filtrados}
-          vacio="Ningún auditor coincide con la búsqueda."
-          actual={caso.auditor_id}
-          ocupado={ocupado}
-          onElegir={elegir}
-        />
-      )}
-    </div>
-  )
-}
-
-/** La hora guardada (UTC) como valor de un `datetime-local`, en la hora del equipo. */
-function aLocal(iso: string): string {
-  const d = new Date(iso)
-  const desfase = d.getTimezoneOffset() * 60000
-  return new Date(d.getTime() - desfase).toISOString().slice(0, 16)
-}
-
-function SeccionAuditores({
-  titulo,
-  lista,
-  vacio,
-  actual,
-  ocupado,
-  onElegir,
-}: {
-  titulo: string
-  lista: AuditorElegible[]
-  vacio: string
-  actual: string | null
-  ocupado: boolean
-  onElegir: (auditorId: string) => void
-}) {
-  return (
-    <section aria-label={titulo}>
-      <h3 className="font-display text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-tenue-fg">
-        {titulo}
-      </h3>
-      {lista.length === 0 ? (
-        <p className="mt-2 rounded-md border border-dashed border-borde px-3 py-2.5 text-xs text-tenue-fg">
-          {vacio}
-        </p>
-      ) : (
-        <div className="mt-2 space-y-2">
-          {lista.map((a) => {
-            const asignado = actual === a.id
-            return (
-              <button
-                key={a.id}
-                type="button"
-                disabled={ocupado}
-                onClick={() => onElegir(a.id)}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors duration-150',
-                  'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-marca',
-                  'disabled:cursor-not-allowed disabled:opacity-60',
-                  asignado ? 'border-marca/40 bg-marca-suave/40' : 'border-borde hover:bg-tenue/50',
-                )}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{a.nombre_completo}</span>
-                  <span className="block truncate text-xs text-tenue-fg">
-                    {[a.ciudad_nombre, a.provincia_nombre].filter(Boolean).join(', ') ||
-                      'Sin ubicación registrada'}
-                  </span>
-                </span>
-                {asignado && (
-                  <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-marca">
-                    <Check className="size-4" aria-hidden="true" />
-                    Asignado
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </section>
   )
 }
