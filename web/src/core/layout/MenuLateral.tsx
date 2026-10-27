@@ -261,12 +261,13 @@ export function ArmazonLateral({
     // La primera columna se mide por el ancho del propio `aside`, que es lo que
     // se anima al contraer: con un ancho fijo en la rejilla habría que mantener
     // los dos números a la vez.
-    <div className="min-h-dvh bg-fondo lg:grid lg:grid-cols-[auto_minmax(0,1fr)]">
+    // Al imprimir (o guardar en PDF) solo sale el contenido: sin menú ni barra.
+    <div className="min-h-dvh bg-fondo lg:grid lg:grid-cols-[auto_minmax(0,1fr)] print:block print:min-h-0 print:bg-white">
       {/* Menú lateral fijo en escritorio */}
       <aside
         id={ID_MENU_LATERAL}
         className={cn(
-          'sticky top-0 hidden h-dvh border-r border-borde bg-superficie lg:block',
+          'sticky top-0 hidden h-dvh border-r border-borde bg-superficie lg:block print:!hidden',
           !sinMovimiento && 'transition-[width] duration-200 ease-natural',
           compacto ? 'w-[4.5rem]' : 'w-60',
         )}
@@ -315,10 +316,12 @@ export function ArmazonLateral({
       </AnimatePresence>
 
       <div className="flex min-w-0 flex-col">
-        {franja && <div className={cn('sticky top-0 z-30 h-1', franja)} aria-hidden="true" />}
+        {franja && (
+          <div className={cn('sticky top-0 z-30 h-1 print:hidden', franja)} aria-hidden="true" />
+        )}
         <header
           className={cn(
-            'sticky z-30 flex h-16 items-center justify-between gap-3',
+            'sticky z-30 flex h-16 items-center justify-between gap-3 print:hidden',
             'border-b border-borde bg-fondo/85 px-4 backdrop-blur sm:px-6',
             franja ? 'top-1' : 'top-0',
           )}
@@ -343,7 +346,7 @@ export function ArmazonLateral({
           <div className="flex items-center gap-1.5">{topbarDerecha}</div>
         </header>
 
-        <main className="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-8 print:p-0">{children}</main>
       </div>
     </div>
   )

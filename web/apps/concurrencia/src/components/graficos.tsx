@@ -364,7 +364,8 @@ export function TarjetaGrafico({
   children: ReactNode
 }) {
   return (
-    <div className={cn('rounded-md border border-borde bg-superficie p-5', className)}>
+    // Al imprimir, una tarjeta no se parte entre dos páginas.
+    <div className={cn('break-inside-avoid rounded-md border border-borde bg-superficie p-5', className)}>
       {/* Alto fijo del encabezado: en una fila, todos los gráficos arrancan a la par. */}
       <div className="min-h-[2.5rem]">
         <p className="truncate font-display text-sm font-semibold" title={titulo}>

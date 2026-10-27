@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Hourglass, XCircle } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { AlertTriangle, CheckCircle2, Hourglass, Printer, XCircle } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { useSesion } from '@/core/auth/useSesion'
 import {
@@ -22,6 +22,8 @@ import {
   type Columna,
   type SerieGrafico,
 } from '@concurrencia/components/graficos'
+import { Marca } from '@/core/components/Marca'
+import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Select } from '@/shared/components/ui/select'
 
@@ -83,6 +85,80 @@ function rangoDe(periodo: Periodo): { desde?: string; hasta?: string } {
   }
 }
 
+const MESES = new Intl.DateTimeFormat('es-EC', { month: 'long' })
+const FECHA_LARGA = new Intl.DateTimeFormat('es-EC', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
+const GENERADO = new Intl.DateTimeFormat('es-EC', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+/** `YYYY-MM-DD` → la fecha local de ese día (sin corrimiento a UTC). */
+function deIso(valor: string) {
+  const [a, m, d] = valor.split('-').map(Number)
+  return new Date(a ?? 0, (m ?? 1) - 1, d ?? 1)
+}
+
+/** La semana del mes que se está cursando (semanas de lunes a domingo). */
+function semanaDelMes(d: Date) {
+  const primero = new Date(d.getFullYear(), d.getMonth(), 1)
+  return Math.ceil((d.getDate() + ((primero.getDay() + 6) % 7)) / 7)
+}
+
+/**
+ * **El título del PDF**, según el filtro (pedido del usuario, 27/10/2026):
+ * el día exacto, «semana N de octubre», el mes, el año, o «Reporte general»
+ * más el mes en curso; y el nombre de la aseguradora si se filtró por una.
+ */
+function tituloDelReporte(
+  periodo: Periodo,
+  filtros: FiltrosReporte,
+  aseguradora: string | undefined,
+  hoy = new Date(),
+) {
+  const mesAnio = (d: Date) => `${MESES.format(d)} ${d.getFullYear()}`
+  let base: string
+  switch (periodo) {
+    case 'hoy':
+      base = `Reporte del ${FECHA_LARGA.format(hoy)}`
+      break
+    case 'semana':
+      base = `Reporte de la semana ${semanaDelMes(hoy)} de ${mesAnio(hoy)}`
+      break
+    case 'mes':
+      base = `Reporte de ${mesAnio(hoy)}`
+      break
+    case 'anio':
+      base = `Reporte del año ${hoy.getFullYear()}`
+      break
+    case 'personalizado': {
+      const { desde, hasta } = filtros
+      if (desde && hasta) {
+        base =
+          desde === hasta
+            ? `Reporte del ${FECHA_LARGA.format(deIso(desde))}`
+            : `Reporte del ${FECHA_LARGA.format(deIso(desde))} al ${FECHA_LARGA.format(deIso(hasta))}`
+      } else if (desde) {
+        base = `Reporte desde el ${FECHA_LARGA.format(deIso(desde))}`
+      } else if (hasta) {
+        base = `Reporte hasta el ${FECHA_LARGA.format(deIso(hasta))}`
+      } else {
+        base = `Reporte general · ${mesAnio(hoy)}`
+      }
+      break
+    }
+    default:
+      base = `Reporte general · ${mesAnio(hoy)}`
+  }
+  return aseguradora ? `${base} · ${aseguradora}` : base
+}
+
 export function ReporteriaPage() {
   const { data: sesion } = useSesion()
   const [filtros, setFiltros] = useState<FiltrosReporte>({})
@@ -115,6 +191,40 @@ export function ReporteriaPage() {
     placeholderData: keepPreviousData,
   })
 
+  const nombreAseguradora = opciones.data?.aseguradoras.find(
+    (a) => a.id === filtros.aseguradora_id,
+  )?.nombre
+  const titulo = tituloDelReporte(periodo, filtros, nombreAseguradora)
+
+  // **Imprimir / PDF** (pedido del usuario, 27/10/2026). Mientras se imprime:
+  // siempre en modo claro (un PDF oscuro gasta tinta y se lee mal en papel) y
+  // con el título del reporte como nombre del archivo. Vale también para
+  // Ctrl+P. Al terminar, todo vuelve como estaba.
+  const tituloActual = useRef(titulo)
+  tituloActual.current = titulo
+  useEffect(() => {
+    let teniaOscuro = false
+    let tituloAnterior = document.title
+    const antes = () => {
+      const raiz = document.documentElement
+      teniaOscuro = raiz.classList.contains('dark')
+      raiz.classList.remove('dark')
+      tituloAnterior = document.title
+      document.title = tituloActual.current
+    }
+    const despues = () => {
+      if (teniaOscuro) document.documentElement.classList.add('dark')
+      document.title = tituloAnterior
+    }
+    window.addEventListener('beforeprint', antes)
+    window.addEventListener('afterprint', despues)
+    return () => {
+      window.removeEventListener('beforeprint', antes)
+      window.removeEventListener('afterprint', despues)
+    }
+  }, [])
+  const [generado, setGenerado] = useState(() => new Date())
+
   if (!sesion) return null
   if (!esCoordinador) {
     return (
@@ -140,7 +250,22 @@ export function ReporteriaPage() {
 
   return (
     <div>
-      <header>
+      {/* La hoja: horizontal, con sus colores tal cual. */}
+      <style>{`@page { size: A4 landscape; margin: 10mm; }
+        @media print { html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }`}</style>
+
+      {/* Solo en el PDF: la marca, el filtro como título y cuándo se generó. */}
+      <header className="mb-5 hidden border-b border-borde pb-4 print:block">
+        <div className="flex items-center justify-between gap-4">
+          <Marca className="text-marca" />
+          <p className="text-xs text-tenue-fg">Concurrencia · Reportería</p>
+        </div>
+        <h1 className="mt-4 font-display text-xl font-semibold tracking-tight">{titulo}</h1>
+        <p className="mt-0.5 text-xs text-tenue-fg">Generado el {GENERADO.format(generado)}</p>
+      </header>
+
+      <header className="flex flex-wrap items-end justify-between gap-4 print:hidden">
+        <div>
         <p className="font-display text-[0.6875rem] font-semibold uppercase tracking-[0.16em] text-tenue-fg">
           Concurrencia · Reportería
         </p>
@@ -148,10 +273,25 @@ export function ReporteriaPage() {
         <p className="mt-1 text-sm text-tenue-fg">
           Los casos de todas las aseguradoras, por la fecha en que llegó el pedido.
         </p>
+        </div>
+        <Boton
+          type="button"
+          variante="contorno"
+          onClick={() => {
+            setGenerado(new Date())
+            // Tras pintar la hora nueva: el diálogo de impresión congela la página.
+            window.setTimeout(() => window.print(), 50)
+          }}
+        >
+          <Printer aria-hidden="true" />
+          Imprimir / PDF
+        </Boton>
       </header>
 
       {/* Los filtros, para todo lo de abajo: primero el periodo (lo que más se
-          toca), luego las fechas a mano y la aseguradora. */}
+          toca), luego las fechas a mano y la aseguradora. En el PDF no salen:
+          los dice el título. */}
+      <div className="print:hidden">
       <GrupoDeOpciones
         etiqueta="Periodo"
         valor={periodo}
@@ -191,6 +331,7 @@ export function ReporteriaPage() {
             </option>
           ))}
         </Select>
+      </div>
       </div>
 
       {/* Arriba, todos los círculos; abajo, las columnas (pedido del usuario,
@@ -360,7 +501,8 @@ function Tablero({
 
   return (
     <>
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/* En la hoja, la misma rejilla que en pantalla grande (3 y 4 por fila). */}
+      <div className="grid gap-4 lg:grid-cols-3 print:grid-cols-3">
         <TarjetaGrafico
           titulo="Estado del SLA"
           nota={`${total.casos} ${total.casos === 1 ? 'caso' : 'casos'} en el periodo.`}
@@ -420,7 +562,7 @@ function Tablero({
 
       {/* Las cuatro columnas en una sola fila (pedido del usuario, 27/10/2026);
           en pantallas medianas, de dos en dos. */}
-      <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4 print:grid-cols-4">
         <TarjetaGrafico
           titulo="Cumplimiento por aseguradora"
           nota="A tiempo entre entregados y vencidos."
