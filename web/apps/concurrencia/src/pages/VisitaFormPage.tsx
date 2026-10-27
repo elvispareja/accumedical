@@ -328,7 +328,7 @@ export function VisitaFormPage({
       prestador_id: detalle.data.prestador_id,
       // Sin sede guardada, la visita era a la sede principal.
       sede_id: detalle.data.sede_id ?? MATRIZ,
-      desde: aLocal(detalle.data.desde),
+      desde: detalle.data.desde ? aLocal(detalle.data.desde) : '',
       contactos_elegidos: [],
       correos: detalle.data.correos.map((c) => ({
         _key: crypto.randomUUID(),
@@ -446,7 +446,7 @@ export function VisitaFormPage({
   const entrega = useMemo(() => {
     if (editando && detalle.data) {
       return {
-        texto: formatoLargo(new Date(detalle.data.hasta)),
+        texto: detalle.data.hasta ? formatoLargo(new Date(detalle.data.hasta)) : '—',
         ayuda: 'Se fijó al programar el caso, con el SLA de la compañía.',
       }
     }
@@ -623,9 +623,9 @@ export function VisitaFormPage({
         paciente_numero_documento: form.paciente_numero_documento.trim(),
         // La sede principal se guarda como ausencia de sede.
         sede_id: form.sede_id === MATRIZ ? null : form.sede_id || null,
-        // Sin el bloque «Cuándo» (pedido del usuario, 26/10/2026): mientras se
-        // definen los parámetros nuevos, la hora base es la del registro.
-        desde: form.desde ? aISO(form.desde) : new Date().toISOString(),
+        // Sin hora (26/10/2026): la fija la coordinación al derivar y la
+        // compañía no la ve. Solo viaja al reprogramar un caso vencido.
+        ...(vencido && form.desde ? { desde: aISO(form.desde) } : {}),
         correos: correosAEnviar(),
         observaciones: form.observaciones.trim() || null,
       }

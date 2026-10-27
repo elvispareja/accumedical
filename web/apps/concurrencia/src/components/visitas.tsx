@@ -77,8 +77,21 @@ export function EstadoVisitaBadge({ estado }: { estado: string }) {
   )
 }
 
-/** «12 mar 2026, 09:00 → 13:30» y, si cruza días, con la fecha de fin. */
-export function Ventana({ desde, hasta }: { desde: string; hasta: string }) {
+/**
+ * «12 mar 2026, 09:00 → 13:30» y, si cruza días, con la fecha de fin.
+ * `porFijar`: el caso aún no tiene hora —la pone la coordinación al derivar—,
+ * así que lo guardado es provisional y no se enseña como si fuera la cita.
+ */
+export function Ventana({
+  desde,
+  hasta,
+  porFijar = false,
+}: {
+  desde: string
+  hasta: string
+  porFijar?: boolean
+}) {
+  if (porFijar) return <span className="block text-xs italic">Hora por fijar</span>
   const inicio = new Date(desde)
   const fin = new Date(hasta)
   const mismoDia = inicio.toDateString() === fin.toDateString()

@@ -38,6 +38,7 @@ import {
 } from '@concurrencia/components/visitas'
 import { Boton } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
 import { Modal } from '@/shared/components/ui/modal'
 import { Select } from '@/shared/components/ui/select'
 import { useToast } from '@/shared/components/ui/toast'
@@ -164,8 +165,15 @@ export function SupervisionPage() {
   })
 
   const derivar = useMutation({
-    mutationFn: ({ visita, auditorId }: { visita: VisitaSupervision; auditorId: string | null }) =>
-      asignarAuditor(visita.id, auditorId),
+    mutationFn: ({
+      visita,
+      auditorId,
+      desde,
+    }: {
+      visita: VisitaSupervision
+      auditorId: string | null
+      desde?: string
+    }) => asignarAuditor(visita.id, auditorId, desde),
     onSuccess: (actualizada) => {
       queryClient.invalidateQueries({ queryKey: ['supervision'] })
       toast.exito(
@@ -423,7 +431,11 @@ export function SupervisionPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-tenue-fg">
-                        <Ventana desde={fila.desde} hasta={fila.hasta} />
+                        <Ventana
+                          desde={fila.desde}
+                          hasta={fila.hasta}
+                          porFijar={fila.estado === 'programada'}
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <EstadoVisitaBadge estado={fila.estado} />
@@ -487,8 +499,8 @@ export function SupervisionPage() {
         )}
       </div>
 
-      {/* Derivar: los auditores agrupados por cercanía al destino del caso,
-          con sus tres títulos. Elegir uno asigna y cierra. */}
+      {/* Derivar: primero la hora de la visita y luego el auditor, agrupados
+          por cercanía al destino del caso. Elegir uno asigna y cierra. */}
       <Modal
         abierto={asignando !== null}
         onCerrar={() => setAsignando(null)}
@@ -514,9 +526,9 @@ export function SupervisionPage() {
             caso={asignando}
             auditores={auditores.data ?? []}
             ocupado={derivar.isPending}
-            onElegir={(auditorId) =>
+            onElegir={(auditorId, desde) =>
               derivar.mutate(
-                { visita: asignando, auditorId },
+                { visita: asignando, auditorId, desde },
                 { onSuccess: () => setAsignando(null) },
               )
             }
@@ -663,9 +675,24 @@ function ElegirAuditor({
   caso: VisitaSupervision
   auditores: AuditorElegible[]
   ocupado: boolean
-  onElegir: (auditorId: string | null) => void
+  onElegir: (auditorId: string | null, desde?: string) => void
 }) {
   const [busqueda, setBusqueda] = useState('')
+  // La hora a la que el auditor va al hospital: una sola, sin rango (pedido del
+  // usuario, 26/10/2026). Un caso ya derivado trae la suya; uno programado
+  // nace sin hora y se fija aquí. La compañía no la ve.
+  const [hora, setHora] = useState(() =>
+    caso.estado === 'programada' ? '' : aLocal(caso.desde),
+  )
+  const [faltaHora, setFaltaHora] = useState(false)
+
+  function elegir(auditorId: string) {
+    if (!hora) {
+      setFaltaHora(true)
+      return
+    }
+    onElegir(auditorId, new Date(hora).toISOString())
+  }
 
   const normalizar = (texto: string) =>
     texto
@@ -694,6 +721,34 @@ function ElegirAuditor({
 
   return (
     <div className="space-y-5">
+      <div className="space-y-2">
+        <Label htmlFor="derivar-hora">
+          Hora de la visita <span className="text-peligro">*</span>
+        </Label>
+        <Input
+          id="derivar-hora"
+          type="datetime-local"
+          value={hora}
+          min={aLocal(new Date().toISOString())}
+          onChange={(e) => {
+            setHora(e.target.value)
+            setFaltaHora(false)
+          }}
+          aria-invalid={faltaHora || undefined}
+          aria-describedby="derivar-hora-ayuda"
+          required
+        />
+        <p
+          id="derivar-hora-ayuda"
+          className={cn('text-xs', faltaHora ? 'text-peligro' : 'text-tenue-fg')}
+          aria-live="polite"
+        >
+          {faltaHora
+            ? 'Indica a qué hora debe ir el auditor antes de elegirlo.'
+            : 'A qué hora debe llegar el auditor al hospital. La aseguradora no la ve.'}
+        </p>
+      </div>
+
       <div className="relative">
         <Search
           className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
@@ -729,7 +784,7 @@ function ElegirAuditor({
             vacio="Ningún auditor en esta ciudad."
             actual={caso.auditor_id}
             ocupado={ocupado}
-            onElegir={onElegir}
+            onElegir={elegir}
           />
           <SeccionAuditores
             titulo={`En la provincia${caso.provincia_nombre ? ` · ${caso.provincia_nombre}` : ''}`}
@@ -737,7 +792,7 @@ function ElegirAuditor({
             vacio="Ningún otro auditor en esta provincia."
             actual={caso.auditor_id}
             ocupado={ocupado}
-            onElegir={onElegir}
+            onElegir={elegir}
           />
           <SeccionAuditores
             titulo="En otras provincias"
@@ -745,7 +800,7 @@ function ElegirAuditor({
             vacio="Ninguno más."
             actual={caso.auditor_id}
             ocupado={ocupado}
-            onElegir={onElegir}
+            onElegir={elegir}
           />
         </>
       ) : (
@@ -755,11 +810,18 @@ function ElegirAuditor({
           vacio="Ningún auditor coincide con la búsqueda."
           actual={caso.auditor_id}
           ocupado={ocupado}
-          onElegir={onElegir}
+          onElegir={elegir}
         />
       )}
     </div>
   )
+}
+
+/** La hora guardada (UTC) como valor de un `datetime-local`, en la hora del equipo. */
+function aLocal(iso: string): string {
+  const d = new Date(iso)
+  const desfase = d.getTimezoneOffset() * 60000
+  return new Date(d.getTime() - desfase).toISOString().slice(0, 16)
 }
 
 function SeccionAuditores({

@@ -4,7 +4,7 @@ import datetime as dt
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, EmailStr, Field, field_validator
 
 from app.shared import personas
 
@@ -89,10 +89,10 @@ class VisitaCrear(BaseModel):
     # Nulo significa casa matriz: se visita la dirección propia del prestador.
     # Si viene una sede, el servicio comprueba contra la base que sea suya.
     sede_id: str | None = None
-    # **Lo único que se teclea de los tres plazos**: a qué hora debe llegar el
-    # auditor. La entrega del informe sale del SLA de la compañía y el plazo de
-    # llegada nace aquí; ninguno de los dos se acepta del cliente.
-    desde: dt.datetime
+    # Ya NO lo pone la aseguradora (26/10/2026): la hora de la visita la fija la
+    # coordinación de Accumedical al asignar al auditor. Si llega, se ignora en
+    # el alta de compañía; queda para el alta desde supervisión.
+    desde: dt.datetime | None = None
     correos: list[CorreoVisita] = Field(default_factory=list)
     observaciones: str | None = None
 
@@ -209,12 +209,13 @@ class VisitaResumen(BaseModel):
     lugar: str | None
     ciudad_nombre: str | None
     provincia_nombre: str | None
-    # A qué hora debe llegar el auditor.
-    desde: dt.datetime
+    # A qué hora debe llegar el auditor. **La aseguradora NO lo ve** (26/10/2026):
+    # en su vista va nulo; solo Accumedical maneja el horario.
+    desde: dt.datetime | None
     # Cuándo vence la entrega del informe: `desde` + el SLA de la compañía.
-    hasta: dt.datetime
+    hasta: dt.datetime | None
     # Hasta cuándo se le acepta la llegada, prórrogas incluidas.
-    llegada_limite: dt.datetime
+    llegada_limite: dt.datetime | None
     estado: str
     total_correos: int
 
@@ -442,3 +443,7 @@ class AsignarAuditorRequest(BaseModel):
     """`null` deja el caso sin asignar; un id lo deriva a ese auditor."""
 
     auditor_id: str | None = None
+    # La hora a la que el auditor debe ir al hospital (una sola, sin rango).
+    # Obligatoria al derivar a un auditor (26/10/2026). Con zona horaria: una
+    # hora «a secas» no dice si es la de Guayaquil o la de UTC.
+    desde: AwareDatetime | None = None

@@ -281,8 +281,14 @@ def _supervisores_de_la_compania(db: DbSession, aseguradora_id: uuid.UUID) -> li
     return nucleo.coordinadores_de_la_compania(db, aseguradora_id)
 
 
-def _datos_del_caso(fila: tuple) -> list[str]:
-    """Las líneas con los datos exactos del caso, las mismas en todos los avisos."""
+def _datos_del_caso(fila: tuple, *, con_horario: bool = True) -> list[str]:
+    """
+    Las líneas con los datos exactos del caso, las mismas en todos los avisos.
+
+    `con_horario=False` en lo que lee la compañía (alta e informe): la hora de la
+    visita la fija la coordinación al derivar y la aseguradora no la ve
+    (26/10/2026). Al auditor sí le llega: es a la hora que tiene que ir.
+    """
     (
         visita,
         prestador_nombre,
@@ -318,10 +324,13 @@ def _datos_del_caso(fila: tuple) -> list[str]:
         f"  Aseguradora:  {nombre_comercial or razon_social}",
         f"  Prestador:    {prestador_nombre}",
         f"  Destino:      {lugar}",
-        f"  Desde:        {_cuando(visita.desde)}",
-        f"  Hasta:        {_cuando(visita.hasta)} (hora de Ecuador)",
-        f"  Estado:       {ETIQUETA_ESTADO.get(visita.estado, visita.estado)}",
     ]
+    if con_horario:
+        lineas += [
+            f"  Llegada:      {_cuando(visita.desde)}",
+            f"  Entrega:      {_cuando(visita.hasta)} (hora de Ecuador)",
+        ]
+    lineas.append(f"  Estado:       {ETIQUETA_ESTADO.get(visita.estado, visita.estado)}")
     if visita.observaciones:
         lineas.append(f"  Observaciones: {visita.observaciones}")
     return lineas
@@ -428,7 +437,7 @@ def notificar_creacion(db: DbSession, visita_id: uuid.UUID) -> None:
     lineas = [
         "Se programó una visita del médico auditor. Estos son los datos exactos:",
         "",
-        *_datos_del_caso(fila),
+        *_datos_del_caso(fila, con_horario=False),
     ]
     # Quién más lo recibió, a la vista de todos: cada quien sabe que el resto ya
     # está enterado y a quién copiar si responde.
@@ -476,7 +485,7 @@ def enviar_informe(db: DbSession, visita_id: uuid.UUID, pdf: bytes) -> tuple[int
         "Adjunto encontrarás el INFORME DE VISITA MÉDICA RECURRENTE del caso, en PDF,",
         "redactado tras la visita del médico auditor. Los datos exactos:",
         "",
-        *_datos_del_caso(fila),
+        *_datos_del_caso(fila, con_horario=False),
         "",
         "Este informe se envió a:",
         *[

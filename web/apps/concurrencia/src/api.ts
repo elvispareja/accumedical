@@ -63,11 +63,15 @@ export interface VisitaResumen {
   lugar: string | null
   ciudad_nombre: string | null
   provincia_nombre: string | null
-  desde: string
+  /**
+   * A qué hora va el auditor. **`null` para la compañía**: la fija la
+   * coordinación al derivar y la aseguradora no la ve (26/10/2026).
+   */
+  desde: string | null
   /** Cuándo vence la entrega del informe: `desde` + el SLA de la compañía. */
-  hasta: string
+  hasta: string | null
   /** Hasta cuándo se le acepta la llegada al auditor, prórrogas incluidas. */
-  llegada_limite: string
+  llegada_limite: string | null
   estado: string
   total_correos: number
 }
@@ -128,10 +132,10 @@ export interface VisitaFormulario {
   paciente_tipo_documento_codigo: string
   paciente_numero_documento: string
   sede_id: string | null
-  // A qué hora debe llegar el auditor: **lo único que se manda de los plazos**.
-  // La entrega del informe la calcula el servidor con el SLA de la compañía, y
-  // el plazo de llegada nace aquí; mandarlos sería inventar un dato pactado.
-  desde: string
+  // La hora la fija la coordinación AL DERIVAR (26/10/2026): el alta ya no la
+  // manda y el servidor pone la del registro como provisional. Solo viaja al
+  // reprogramar un caso vencido. La entrega sale siempre del SLA del servidor.
+  desde?: string
   correos: CorreoVisita[]
   observaciones: string | null
   // Sin `estado`: el servidor ni lo acepta. Un caso nace programado y de ahí lo
@@ -322,6 +326,11 @@ export async function obtenerDashboard() {
 // ────────────────── Supervisión de plataforma: derivar casos ─────────────────
 
 export interface VisitaSupervision extends VisitaResumen {
+  // La coordinación siempre ve los plazos. En un caso `programada` la hora es
+  // provisional —la del registro— hasta que se derive con la hora real.
+  desde: string
+  hasta: string
+  llegada_limite: string
   aseguradora_nombre: string
   auditor_id: string | null
   auditor_nombre: string | null
@@ -469,11 +478,18 @@ export async function crearVisitaSupervision(
   return data
 }
 
-/** `null` deja el caso sin asignar; un id lo deriva a ese auditor. */
-export async function asignarAuditor(visitaId: string, auditorId: string | null) {
+/**
+ * `null` deja el caso sin asignar; un id lo deriva a ese auditor, **con la hora
+ * a la que debe ir** (ISO con zona): sin ella el servidor no deriva.
+ */
+export async function asignarAuditor(
+  visitaId: string,
+  auditorId: string | null,
+  desde?: string,
+) {
   const { data } = await api.patch<VisitaSupervision>(
     `/concurrencia/supervision/visitas/${visitaId}/auditor`,
-    { auditor_id: auditorId },
+    { auditor_id: auditorId, desde },
   )
   return data
 }

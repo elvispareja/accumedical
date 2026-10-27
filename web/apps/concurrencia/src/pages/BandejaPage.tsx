@@ -22,7 +22,6 @@ import {
   ESTADOS_VISITA,
   EstadoVisitaBadge,
   sePuedeEditar,
-  Ventana,
 } from '@concurrencia/components/visitas'
 import { listarOperadores, listarVisitas } from '@concurrencia/api'
 import { FechaConEtiqueta } from '@concurrencia/components/filtros'
@@ -257,7 +256,6 @@ export function BandejaPage({
                   <Th>Paciente</Th>
                   <Th>Prestador</Th>
                   <Th>Dónde</Th>
-                  <Th>Cuándo</Th>
                   <Th>Avisos</Th>
                   <Th>Estado</Th>
                   <th className="w-12 px-3 py-2.5">
@@ -324,9 +322,9 @@ export function BandejaPage({
                           </span>
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-3 text-tenue-fg">
-                        <Ventana desde={fila.desde} hasta={fila.hasta} />
-                      </td>
+                      {/* Sin «Cuándo»: la hora de la visita la fija la
+                          coordinación de Accumedical al derivar y la compañía
+                          no la ve (26/10/2026). */}
                       <td className="tabular px-3 py-3 text-tenue-fg">
                         {fila.total_correos > 0 ? (
                           <span className="flex items-center gap-1.5">

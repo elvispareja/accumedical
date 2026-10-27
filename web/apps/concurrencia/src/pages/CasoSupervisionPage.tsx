@@ -140,6 +140,7 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
   }
 
   const caso = detalle.data
+  const porFijar = caso.estado === 'programada'
   const seccion = 'font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg'
   return (
     <div className="space-y-6">
@@ -190,21 +191,28 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
 
       <div className="space-y-3">
         <p className={seccion}>Cuándo</p>
+        {/* Un caso programado aún no tiene hora: la fija la coordinación al
+            derivarlo (26/10/2026). Lo guardado es provisional y no se enseña. */}
+        {porFijar && (
+          <p className="rounded-md border border-dashed border-borde px-3 py-2.5 text-sm text-tenue-fg">
+            Hora por fijar: se indica al derivar el caso a un médico auditor.
+          </p>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="sl-desde">Llegada del auditor</Label>
-            <Input id="sl-desde" type="datetime-local" value={aLocal(caso.desde)} disabled />
+            <Input id="sl-desde" type="datetime-local" value={porFijar ? '' : aLocal(caso.desde)} disabled />
           </div>
           <div className="space-y-2">
             <Label htmlFor="sl-hasta">Entrega del informe</Label>
-            <Input id="sl-hasta" type="datetime-local" value={aLocal(caso.hasta)} disabled />
+            <Input id="sl-hasta" type="datetime-local" value={porFijar ? '' : aLocal(caso.hasta)} disabled />
           </div>
           <div className="space-y-2">
             <Label htmlFor="sl-limite">Plazo de llegada</Label>
             <Input
               id="sl-limite"
               type="datetime-local"
-              value={aLocal(caso.llegada_limite)}
+              value={porFijar ? '' : aLocal(caso.llegada_limite)}
               disabled
             />
           </div>
@@ -220,7 +228,7 @@ function CasoSoloLectura({ visitaId }: { visitaId: string }) {
                 El plazo de llegada venció sin el auditor.{' '}
                 <strong className="font-medium">La compañía no ve este estado</strong>: para
                 ella el caso sigue pendiente. Con «Extender» le das al auditor más horas para
-                llegar; para moverlo de día, el ejecutivo lo reprograma desde su ficha.
+                llegar.
               </span>
             )}
           </div>

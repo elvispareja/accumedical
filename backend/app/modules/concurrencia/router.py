@@ -176,9 +176,10 @@ def _resumen(fila, *, interno: bool = False) -> VisitaResumen:
         # prestador. Mezclarlas mandaría al auditor a la otra punta del país.
         ciudad_nombre=sede_ciudad if visita.sede_id else prestador_ciudad,
         provincia_nombre=sede_provincia if visita.sede_id else prestador_provincia,
-        desde=visita.desde,
-        hasta=visita.hasta,
-        llegada_limite=visita.llegada_limite,
+        # El horario es de Accumedical: la compañía no lo ve (26/10/2026).
+        desde=visita.desde if interno else None,
+        hasta=visita.hasta if interno else None,
+        llegada_limite=visita.llegada_limite if interno else None,
         # `no_auditado` es interno: a la compañía se le enseña el estado que el
         # caso tenía al vencer (`service.estado_visible`).
         estado=service.estado_visible(visita.estado, visita.auditor_id, interno=interno),
@@ -531,6 +532,8 @@ def crear_visita(
     aseguradora_id = _aseguradora_operadora(ctx)
     cuerpo = datos.model_dump()
     correos = [(c["email"], c["etiqueta"]) for c in cuerpo.pop("correos", [])]
+    # La compañía no pone hora: la fija la coordinación al derivar (26/10/2026).
+    cuerpo["desde"] = None
 
     visita = service.crear(db, aseguradora_id, cuerpo, ctx.user.id)
     cambio_correos = service.fijar_correos(db, visita.id, correos, ctx.user.id)
@@ -1537,7 +1540,7 @@ def asignar_auditor(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El auditor no es válido"
             ) from error
 
-    diff = service.asignar_auditor(db, visita, auditor_id, ctx.user.id)
+    diff = service.asignar_auditor(db, visita, auditor_id, ctx.user.id, desde=datos.desde)
     if diff["despues"]:
         audit.registrar(
             db,
@@ -1754,6 +1757,8 @@ def actualizar_visita(
 
     cambios = datos.model_dump(exclude_unset=True)
     correos = cambios.pop("correos", None)
+    # La compañía no toca el horario: lo fija la coordinación al asignar.
+    cambios.pop("desde", None)
     diff = service.actualizar(db, visita, cambios, ctx.user.id)
     if correos is not None:
         cambio_correos = service.fijar_correos(

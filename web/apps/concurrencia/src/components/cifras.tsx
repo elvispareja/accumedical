@@ -67,7 +67,17 @@ export function CuadrosDeVisitas({
         indice={0}
         etiqueta="Hoy"
         valor={cifras.hoy}
-        detalle={cifras.hoy === 1 ? 'visita toca hoy' : 'visitas tocan hoy'}
+        // La compañía no ve la hora de la visita (26/10/2026): su «hoy» son los
+        // casos que registró hoy. Supervisión sí cuenta los que tocan hoy.
+        detalle={
+          conSinAsignar
+            ? cifras.hoy === 1
+              ? 'visita toca hoy'
+              : 'visitas tocan hoy'
+            : cifras.hoy === 1
+              ? 'caso registrado hoy'
+              : 'casos registrados hoy'
+        }
         acento
         // Solo el día, sin estado: «hoy» cuenta las que siguen en pie
         // —programada, asignada o auditando—, y fijar uno solo dejaría fuera

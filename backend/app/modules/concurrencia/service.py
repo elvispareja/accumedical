@@ -290,13 +290,16 @@ def listar(
         )
     if estado:
         consulta = consulta.where(condicion_de_estado(estado, interno=False))
+    # **La compañía filtra por el día en que REGISTRÓ el caso**, no por la hora
+    # de la visita: esa la fija la coordinación y ella no la ve (26/10/2026);
+    # filtrar por ella la delataría. El día es el de Ecuador, no el de UTC: un
+    # caso de las 19:30 del 26 (00:30 UTC del 27) es del 26.
     if desde:
-        consulta = consulta.where(Visita.hasta >= _inicio_del_dia_ec(desde))
+        consulta = consulta.where(Visita.created_at >= _inicio_del_dia_ec(desde))
     if hasta:
-        # Hasta el final de ese día: una visita que empieza a las 16:00 del día
-        # filtrado tiene que salir. El día es el de Ecuador, no el de UTC: un
-        # caso de las 19:30 del 26 (00:30 UTC del 27) es del 26 (26/10/2026).
-        consulta = consulta.where(Visita.desde < _inicio_del_dia_ec(hasta + dt.timedelta(days=1)))
+        consulta = consulta.where(
+            Visita.created_at < _inicio_del_dia_ec(hasta + dt.timedelta(days=1))
+        )
 
     sub = consulta.subquery()
     total = db.scalar(select(func.count()).select_from(sub)) or 0
@@ -449,8 +452,12 @@ def crear(
     prestador_id = _a_uuid(datos["prestador_id"], "prestador")
     sede_id = _a_uuid(datos.get("sede_id"), "sede") if datos.get("sede_id") else None
     _validar_destino(db, aseguradora_id, prestador_id, sede_id)
+    # La aseguradora ya no pone hora (26/10/2026): el caso nace con la hora del
+    # registro como provisional y la coordinación fija la real al asignar. Un
+    # caso sin asignar no vence (`marcar_no_auditadas` solo mira `asignada`).
+    desde = datos.get("desde") or dt.datetime.now(dt.UTC)
     # `hasta` ya no se teclea: sale del SLA de la compañía.
-    hasta = entrega_por_sla(db, aseguradora_id, datos["desde"])
+    hasta = entrega_por_sla(db, aseguradora_id, desde)
     # El documento del paciente, contra el catálogo y su regex (una cédula de 9
     # dígitos se corta aquí con mensaje claro, no con un error de integridad).
     validar_documento(
@@ -468,10 +475,10 @@ def crear(
         paciente_tipo_documento_codigo=datos["paciente_tipo_documento_codigo"],
         paciente_numero_documento=datos["paciente_numero_documento"].strip(),
         sede_id=sede_id,
-        desde=datos["desde"],
+        desde=desde,
         hasta=hasta,
-        # El plazo de llegada nace en la hora tecleada; lo mueve la prórroga.
-        llegada_limite=datos["desde"],
+        # El plazo de llegada nace en esa hora; lo fija la asignación y lo mueve la prórroga.
+        llegada_limite=desde,
         # Nace programada SIEMPRE: el estado no es un campo del formulario.
         estado="programada",
         observaciones=(datos.get("observaciones") or "").strip() or None,
@@ -744,7 +751,9 @@ def marcar_no_auditadas(db: DbSession) -> list[str]:
         update(Visita)
         .where(
             Visita.deleted_at.is_(None),
-            Visita.estado.in_(("programada", "asignada")),
+            # Solo las DERIVADAS (26/10/2026): la hora la pone la coordinación al
+            # asignar, así que una programada sin auditor no tiene plazo que vencer.
+            Visita.estado == "asignada",
             Visita.llegada_limite < func.now(),
             Visita.llegada_at.is_(None),
         )
@@ -918,12 +927,19 @@ def cifras_de_visitas(
     # Las que TOCAN hoy: las que siguen pendientes —programada, ya derivada o
     # vencida a la espera de prórroga— y las que se están auditando ahora
     # mismo. Una cancelada de hoy no «toca».
+    #
+    # **A la compañía, «hoy» son los casos que REGISTRÓ hoy** (26/10/2026): la
+    # hora de la visita la fija la coordinación y ella no la ve, así que contar
+    # por esa hora la delataría. Cuadra con su filtro de fechas (`listar`).
+    if interno:
+        cuando = (Visita.desde < fin_hoy, Visita.hasta > inicio_hoy)
+    else:
+        cuando = (Visita.created_at >= inicio_hoy, Visita.created_at < fin_hoy)
     hoy = db.scalar(
         select(func.count()).where(
             *condiciones,
             Visita.estado.in_(("programada", "asignada", "auditando", "no_auditado")),
-            Visita.desde < fin_hoy,
-            Visita.hasta > inicio_hoy,
+            *cuando,
         )
     ) or 0
 
@@ -959,7 +975,8 @@ def resumen_dashboard(db: DbSession, aseguradora_id: uuid.UUID) -> dict[str, Any
         _base_select(aseguradora_id)
         .add_columns(_conteo_correos())
         .where(Visita.estado == "programada", Visita.hasta >= ahora)
-        .order_by(Visita.desde.asc(), Visita.id.asc())
+        # Por orden de registro: la hora de la visita no es suya (26/10/2026).
+        .order_by(Visita.created_at.asc(), Visita.id.asc())
         .limit(5)
     ).all()
 
@@ -1392,7 +1409,12 @@ ETIQUETA_ESTADO = {
 
 
 def asignar_auditor(
-    db: DbSession, visita: Visita, auditor_id: uuid.UUID | None, autor: uuid.UUID
+    db: DbSession,
+    visita: Visita,
+    auditor_id: uuid.UUID | None,
+    autor: uuid.UUID,
+    *,
+    desde: dt.datetime | None = None,
 ) -> dict[str, Any]:
     """
     Deriva el caso (o lo deja sin asignar, con `None`). El destino se valida
@@ -1422,6 +1444,30 @@ def asignar_auditor(
             )
 
     diff: dict[str, Any] = {"antes": {}, "despues": {}}
+    # **La hora de la visita la fija la coordinación al derivar** (26/10/2026):
+    # una sola hora, sin rango. De ella salen el plazo de llegada y la entrega del
+    # informe (SLA). La compañía no la ve.
+    if auditor_id is not None:
+        if desde is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Indica a qué hora debe ir el auditor al hospital",
+            )
+        # Solo si la hora CAMBIA: reasignar con la misma hora no debe borrar una
+        # prórroga ya concedida sobre el plazo de llegada.
+        if desde != visita.desde:
+            # Una hora pasada vencería el caso en el acto (`marcar_no_auditadas`).
+            if desde < dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5):
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Esa hora ya pasó: indica una hora futura para la visita",
+                )
+            diff["antes"]["desde"] = visita.desde.isoformat()
+            diff["despues"]["desde"] = desde.isoformat()
+            visita.desde = desde
+            visita.llegada_limite = desde
+            visita.hasta = entrega_por_sla(db, visita.aseguradora_id, desde)
+            visita.updated_by = autor
     if visita.auditor_id != auditor_id:
         diff["antes"]["auditor_id"] = str(visita.auditor_id) if visita.auditor_id else None
         diff["despues"]["auditor_id"] = str(auditor_id) if auditor_id else None
