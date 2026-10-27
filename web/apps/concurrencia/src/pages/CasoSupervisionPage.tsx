@@ -198,7 +198,7 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
             }`}
             disabled
           />
-          {caso.lugar && <p className="text-xs text-tenue-fg">{caso.lugar}</p>}
+          {caso.lugar && <p className="text-xs text-tenue-fg">Dirección: {caso.lugar}</p>}
         </div>
       </div>
 
@@ -228,22 +228,9 @@ function CasoCargado({ caso }: { caso: VisitaSupervisionDetalle }) {
               </p>
             )}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="sl-hasta">Entrega del informe</Label>
-            <Input id="sl-hasta" type="datetime-local" value={porFijar ? '' : aLocal(caso.hasta)} disabled />
-            {porFijar && (
-              <p className="text-xs text-tenue-fg">Sale del SLA de la compañía al derivar.</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="sl-limite">Plazo de llegada</Label>
-            <Input
-              id="sl-limite"
-              type="datetime-local"
-              value={porFijar ? '' : aLocal(caso.llegada_limite)}
-              disabled
-            />
-          </div>
+          {/* Sin «Entrega del informe» ni «Plazo de llegada» en pantalla (pedido
+              del usuario, 26/10/2026: «esas dos cosas ya no van»). El servidor
+              los sigue calculando de esta hora (SLA y vencimiento). */}
         </div>
         <div className="space-y-2">
           {/* La insignia, no un desplegable apagado: el estado no se elige en
