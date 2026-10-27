@@ -22,6 +22,8 @@ export interface ContactoElegible {
   nombre_completo: string
   cargo: string | null
   email: string
+  /** Su sede; null = la sede principal. */
+  sede_id: string | null
 }
 
 export interface SedeElegible {

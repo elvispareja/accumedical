@@ -42,6 +42,9 @@ class ContactoElegible(BaseModel):
     nombre_completo: str
     cargo: str | None
     email: str
+    # La sede del contacto; None = la sede principal (para avisar solo a los de
+    # la sede a la que se va, 26/10/2026).
+    sede_id: str | None = None
 
 
 class SedeElegible(BaseModel):

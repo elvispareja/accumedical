@@ -311,6 +311,7 @@ def _prestadores_elegibles(filas: list[dict]) -> list[PrestadorElegible]:
                     nombre_completo=personas.de_fila(c),
                     cargo=c.cargo,
                     email=c.email,
+                    sede_id=str(c.sede_id) if getattr(c, "sede_id", None) else None,
                 )
                 for c in fila["contactos"]
             ],

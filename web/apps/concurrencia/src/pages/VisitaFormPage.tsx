@@ -482,6 +482,17 @@ export function VisitaFormPage({
     [prestadores.data, form.prestador_id],
   )
 
+  // Solo los contactos de la SEDE elegida (pedido del usuario, 26/10/2026): los
+  // de la sede principal (sin sede) o los de esa sede. Con sedes y sin elegir
+  // todavía, ninguno: primero se dice a dónde se va.
+  const contactosDeLaSede = useMemo(() => {
+    if (!elegido) return []
+    if (elegido.sedes.length === 0) return elegido.contactos
+    if (!form.sede_id) return []
+    const sede = form.sede_id === MATRIZ ? null : form.sede_id
+    return elegido.contactos.filter((c) => (c.sede_id ?? null) === sede)
+  }, [elegido, form.sede_id])
+
   // Cédula y RUC llevan dígito verificador: se comprueba al teclear para no
   // descubrir el error recién al guardar.
   const problemaDocumento = problemaConDocumento(
@@ -580,7 +591,7 @@ export function VisitaFormPage({
     const vistos = new Set<string>()
     // El contacto marcado hereda su identidad de la ficha; el tecleado a mano,
     // lo que se haya escrito en «Quién es».
-    const delContacto: CorreoVisita[] = (elegido?.contactos ?? [])
+    const delContacto: CorreoVisita[] = contactosDeLaSede
       .filter((c) => form.contactos_elegidos.includes(c.id))
       .map((c) => ({
         email: c.email,
@@ -1125,7 +1136,7 @@ export function VisitaFormPage({
           descripcion={
             soloLectura
               ? 'Los correos a los que se avisó de este caso.'
-              : elegido && elegido.contactos.length > 0
+              : contactosDeLaSede.length > 0
                 ? 'Marca los contactos del prestador que deben enterarse y añade aparte los correos que quieras a mano.'
                 : 'Correos a los que se notificará la visita. Puedes anotar varios.'
           }
@@ -1144,14 +1155,20 @@ export function VisitaFormPage({
             <>
             {/* Sin contactos no hay casillas que ofrecer, pero callarse confunde:
                 se dice por qué no están y de dónde saldrían. */}
-            {elegido && elegido.contactos.length === 0 && (
+            {elegido && elegido.sedes.length > 0 && !form.sede_id && (
               <p className="mb-4 rounded-md border border-dashed border-borde px-4 py-3 text-xs text-tenue-fg">
-                {elegido.nombre} no tiene contactos registrados en su expediente. Cuando los tenga,
-                aparecerán aquí para marcarlos; mientras tanto, anota los correos a mano.
+                Elige primero la sede: aquí aparecerán los contactos de esa sede.
+              </p>
+            )}
+            {elegido && (elegido.sedes.length === 0 || form.sede_id) && contactosDeLaSede.length === 0 && (
+              <p className="mb-4 rounded-md border border-dashed border-borde px-4 py-3 text-xs text-tenue-fg">
+                {elegido.sedes.length > 0 ? 'Esa sede' : elegido.nombre} no tiene contactos registrados.
+                Cuando los tenga, aparecerán aquí para marcarlos; mientras tanto, anota los correos a
+                mano.
               </p>
             )}
 
-            {elegido && elegido.contactos.length > 0 && (
+            {elegido && contactosDeLaSede.length > 0 && (
               <div className="mb-6">
                 <p className="font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
                   Contactos de {elegido.nombre}
@@ -1160,7 +1177,7 @@ export function VisitaFormPage({
                   className="mt-3 space-y-2 overflow-y-auto pr-1"
                   style={{ maxHeight: ALTO_CONTACTOS }}
                 >
-                  {elegido.contactos.map((c) => {
+                  {contactosDeLaSede.map((c) => {
                     const marcado = form.contactos_elegidos.includes(c.id)
                     return (
                       <label
@@ -1192,13 +1209,14 @@ export function VisitaFormPage({
                   })}
                 </div>
                 <p className="mt-2 text-xs text-tenue-fg" aria-live="polite">
-                  {form.contactos_elegidos.length} de {elegido.contactos.length} marcados
-                  {elegido.contactos.length > 3 ? ' · desplázate para ver el resto' : ''}
+                  {contactosDeLaSede.filter((c) => form.contactos_elegidos.includes(c.id)).length} de{' '}
+                  {contactosDeLaSede.length} marcados
+                  {contactosDeLaSede.length > 3 ? ' · desplázate para ver el resto' : ''}
                 </p>
               </div>
             )}
 
-            {elegido && elegido.contactos.length > 0 && (
+            {elegido && contactosDeLaSede.length > 0 && (
               <p className="mb-3 font-display text-xs font-medium uppercase tracking-[0.09em] text-tenue-fg">
                 Otros correos
               </p>
