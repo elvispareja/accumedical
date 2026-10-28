@@ -28,6 +28,15 @@ import * as ImagePicker from 'expo-image-picker'
 
 import { ErrorDeApi } from '../api/cliente'
 import {
+  descartar,
+  enviarPendientes,
+  esFaltaDeRed,
+  guardarArchivo,
+  guardarNota,
+  tomarTranscritos,
+  usePendientes,
+} from '../pendientes'
+import {
   corregirInforme,
   crearNota,
   leerInformePdf,
@@ -87,7 +96,14 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
   const { colores } = useTema()
   const estilos = useMemo(() => crearEstilos(colores), [colores])
 
-  const [etapa, setEtapa] = useState<'llegada' | 'trabajo'>('llegada')
+  // Ya auditando, se entra directo al trabajo: así funciona también sin señal.
+  const [etapa, setEtapa] = useState<'llegada' | 'trabajo'>(
+    caso.estado === 'auditando' ? 'trabajo' : 'llegada',
+  )
+  // Lo guardado en el teléfono sin señal (28/10/2026): se ve aquí hasta que llega.
+  const cola = usePendientes(caso.id)
+  const porEnviarCaso = cola.filter((p) => p.clase !== 'transcrito')
+  const [sinConexion, setSinConexion] = useState(false)
   const [notas, setNotas] = useState<Nota[] | null>(null)
   const [fotos, setFotos] = useState<FotoCaso[] | null>(null)
   const [subiendoFoto, setSubiendoFoto] = useState(false)
@@ -173,6 +189,15 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
         setAvisoMicrofono('mudo')
         return
       }
+      // Sin señal: el audio se guarda y se transcribe al volver; el texto
+      // aparecerá en este mismo cuadro para revisarlo.
+      if (esFaltaDeRed(error)) {
+        await guardarArchivo(caso.id, uri, 'dictado', destinoDictado)
+        setAviso(
+          'Sin conexión: el dictado quedó guardado en el teléfono. Se transcribirá solo al volver la señal y el texto aparecerá aquí.',
+        )
+        return
+      }
       // El texto crudo del error importa: «Network request failed» y un 415
       // se arreglan en sitios distintos, y el teléfono es el único que lo sabe.
       setAviso(
@@ -194,10 +219,40 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
       // Con la llegada ya registrada —o si ya venía dictando en este caso—,
       // la app no lo devuelve a la puerta.
       if (panel.llegada_at || panel.notas.length > 0 || panel.informe) setEtapa('trabajo')
+      setSinConexion(false)
     } catch {
-      setAviso('No pudimos cargar el panel. Revisa tu conexión.')
+      setSinConexion(true)
+      setAviso(
+        'Sin conexión: puedes seguir dictando, escribiendo y tomando fotos; se guardan en el teléfono.',
+      )
     }
   }, [caso.id])
+
+  // Lo que llegó al servidor desde la cola: se recarga para verlo como nota o foto.
+  const enviadosAntes = useRef(porEnviarCaso.length)
+  useEffect(() => {
+    if (porEnviarCaso.length < enviadosAntes.current) cargar()
+    enviadosAntes.current = porEnviarCaso.length
+  }, [porEnviarCaso.length, cargar])
+
+  // Dictados de sin señal ya transcritos: el texto cae en su cuadro para revisarlo.
+  const hayTranscritos = cola.some((p) => p.clase === 'transcrito')
+  useEffect(() => {
+    if (!hayTranscritos) return
+    void tomarTranscritos(caso.id).then((listos) => {
+      for (const listo of listos) {
+        const escribir = listo.destino === 'correccion' ? setCorreccion : setTexto
+        escribir((previo) => (previo.trim() ? `${previo.trim()} ${listo.texto}` : listo.texto))
+      }
+      if (listos.length > 0) {
+        setAviso(
+          listos.length === 1
+            ? 'Llegó el texto de un dictado que grabaste sin señal: revísalo y guarda la nota.'
+            : `Llegó el texto de ${listos.length} dictados que grabaste sin señal: revísalo y guarda la nota.`,
+        )
+      }
+    })
+  }, [hayTranscritos, caso.id])
 
   useEffect(() => {
     cargar()
@@ -249,7 +304,13 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
       setNotas((previas) => [...(previas ?? []), nota])
       setTexto('')
     } catch (error) {
-      setAviso(error instanceof ErrorDeApi ? error.message : 'No se pudo guardar la nota.')
+      if (esFaltaDeRed(error)) {
+        await guardarNota(caso.id, tipo, limpio)
+        setTexto('')
+        setAviso('Sin conexión: la nota quedó guardada en el teléfono y se enviará sola.')
+      } else {
+        setAviso(error instanceof ErrorDeApi ? error.message : 'No se pudo guardar la nota.')
+      }
     } finally {
       setGuardando(false)
     }
@@ -307,6 +368,7 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
     setSubiendoFoto(true)
     setAviso(null)
     let fallidas = 0
+    let guardadas = 0
     let ultimo = ''
     for (const [indice, activo] of activos.entries()) {
       setProgresoFotos(
@@ -318,8 +380,15 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
         // comprime y queda holgada bajo el tope de 5 MB por imagen.
         const dibujada = await ImageManipulator.manipulate(activo.uri).renderAsync()
         const jpeg = await dibujada.saveAsync({ format: SaveFormat.JPEG, compress: 0.7 })
-        const foto = await subirFoto(caso.id, jpeg.uri)
-        setFotos((previas) => [...(previas ?? []), foto])
+        try {
+          const foto = await subirFoto(caso.id, jpeg.uri)
+          setFotos((previas) => [...(previas ?? []), foto])
+        } catch (error) {
+          // Sin señal: el JPEG ya convertido se guarda y sube solo al volver.
+          if (!esFaltaDeRed(error)) throw error
+          await guardarArchivo(caso.id, jpeg.uri, 'foto')
+          guardadas += 1
+        }
       } catch (error) {
         fallidas += 1
         ultimo = error instanceof ErrorDeApi ? error.message : ''
@@ -327,6 +396,13 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
     }
     setProgresoFotos(null)
     setSubiendoFoto(false)
+    if (guardadas > 0 && fallidas === 0) {
+      setAviso(
+        guardadas === 1
+          ? 'Sin conexión: la foto quedó guardada en el teléfono y se subirá sola.'
+          : `Sin conexión: ${guardadas} fotos quedaron guardadas en el teléfono y se subirán solas.`,
+      )
+    }
     if (fallidas > 0) {
       setAviso(
         ultimo ||
@@ -460,7 +536,8 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
   // solo se acompaña —botón apagado y una línea que dice qué falta—.
   const tiposPresentes = new Set((notas ?? []).map((n) => n.tipo))
   const faltantes = TIPOS.filter((t) => !tiposPresentes.has(t.valor))
-  const puedeGenerar = notas !== null && faltantes.length === 0
+  // Con algo todavía en el teléfono, el informe espera: saldría sin eso.
+  const puedeGenerar = notas !== null && faltantes.length === 0 && porEnviarCaso.length === 0
 
   const cabecera = (
     <View style={estilos.topbar}>
@@ -642,8 +719,68 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
         <Text style={estilos.seccion}>
           Notas del caso{notas ? ` (${notas.length})` : ''}
         </Text>
+        {cola.length > 0 && (
+          <View style={estilos.pendientes}>
+            <View style={estilos.notaCabecera}>
+              <Ionicons name="cloud-upload-outline" size={16} color={colores.naranja} />
+              <Text style={[estilos.notaTipo, { color: colores.naranja }]}>
+                En el teléfono, pendiente de enviar ({porEnviarCaso.length})
+              </Text>
+              <Pressable
+                onPress={() => void enviarPendientes()}
+                accessibilityRole="button"
+                hitSlop={8}
+              >
+                <Text style={estilos.botonSecundarioTexto}>Enviar ahora</Text>
+              </Pressable>
+            </View>
+            {cola.map((p) => (
+              <View key={p.id} style={estilos.filaDato}>
+                {p.clase === 'foto' ? (
+                  <Image
+                    source={{ uri: p.archivo }}
+                    contentFit="cover"
+                    style={estilos.fotoPendiente}
+                  />
+                ) : (
+                  <Ionicons
+                    name={p.clase === 'nota' ? 'document-text-outline' : 'mic-outline'}
+                    size={16}
+                    color={colores.tenue}
+                  />
+                )}
+                <Text style={estilos.dato} numberOfLines={3}>
+                  {p.clase === 'nota'
+                    ? `${ETIQUETA_TIPO[p.tipo]}: ${p.texto}`
+                    : p.clase === 'foto'
+                      ? 'Foto del caso'
+                      : p.clase === 'dictado'
+                        ? 'Dictado: se transcribirá al volver la señal'
+                        : 'Dictado transcrito: se pasa a tu nota'}
+                  {p.error ? `\nNo se pudo enviar: ${p.error}` : ''}
+                </Text>
+                {p.error && (
+                  <Pressable
+                    onPress={() => void descartar(p.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Descartar"
+                    hitSlop={8}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={colores.rojo} />
+                  </Pressable>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
         {notas === null ? (
-          <ActivityIndicator color={colores.oro} style={{ marginTop: espaciado.sm }} />
+          sinConexion ? (
+            <Text style={estilos.vacio}>
+              Sin conexión: las notas ya enviadas se verán al volver la señal.
+            </Text>
+          ) : (
+            <ActivityIndicator color={colores.oro} style={{ marginTop: espaciado.sm }} />
+          )
         ) : notas.length === 0 ? (
           <Text style={estilos.vacio}>
             Todavía no hay notas. Dicta el historial clínico, tu charla con el médico y tu
@@ -732,6 +869,12 @@ export function CasoScreen({ caso, onVolver }: { caso: CasoAsignado; onVolver: (
         )}
 
         <Text style={estilos.seccion}>Informe final</Text>
+        {porEnviarCaso.length > 0 && (
+          <Text style={estilos.vacio}>
+            Hay {porEnviarCaso.length === 1 ? '1 cosa' : `${porEnviarCaso.length} cosas`} en el
+            teléfono pendiente de enviar: el informe espera a que lleguen, para no salir sin ellas.
+          </Text>
+        )}
         {notas !== null && faltantes.length > 0 && (
           <Text style={estilos.vacio}>
             El informe exige las tres notas del caso. Falta dictar:{' '}
@@ -1170,6 +1313,16 @@ function crearEstilos(c: Paleta) {
     notaTexto: { fontSize: 14, color: c.tinta, lineHeight: 20 },
     aviso: { fontSize: 13, color: c.naranja, lineHeight: 19, marginTop: 4 },
     exito: { fontSize: 13, color: c.verde, fontWeight: '600', lineHeight: 19 },
+    pendientes: {
+      gap: espaciado.sm,
+      padding: espaciado.sm,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: c.naranja,
+      backgroundColor: c.superficie,
+    },
+    fotoPendiente: { width: 44, height: 44, borderRadius: 6 },
     modalFondo: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.55)',

@@ -734,6 +734,10 @@ def crear_nota(
 ) -> NotaOut:
     """Un dictado más del auditor. El texto NUNCA viaja al log: es dato clínico."""
     visita = _caso_del_auditor(ctx, db, visita_id)
+    # Un reenvío de la app (guardó sin internet) devuelve la misma nota.
+    igual = service.nota_ya_guardada(db, visita.id, datos.tipo, datos.texto, ctx.user.id)
+    if igual is not None:
+        return _nota_out(igual)
     nota = service.crear_nota(db, visita.id, datos.tipo, datos.texto, ctx.user.id)
     audit.registrar(
         db,
@@ -817,6 +821,11 @@ async def subir_foto(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="La foto debe ser una imagen PNG, JPEG o WebP",
         )
+
+    # Un reenvío de la app (guardó sin internet) devuelve la misma foto.
+    igual = service.foto_ya_guardada(db, visita.id, bytes(contenido), Path(settings.upload_dir))
+    if igual is not None:
+        return FotoOut(id=str(igual.id), creada_at=igual.created_at)
 
     destino_rel = f"concurrencia/fotos/{visita.id}/{uuid.uuid4()}{MIME_PERMITIDOS[mime]}"
     destino = Path(settings.upload_dir) / destino_rel

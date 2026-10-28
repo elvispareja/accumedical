@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Alert,
+  AppState,
   FlatList,
   Image,
   Pressable,
@@ -12,6 +14,15 @@ import {
 
 import { cerrarSesion, type Sesion } from '../api/auth'
 import { misCasos, type CasoAsignado } from '../api/visitas'
+import {
+  abrirParaUsuario,
+  borrarTodo,
+  enviarPendientes,
+  guardarCasos,
+  leerCasos,
+  porEnviar,
+  usePendientes,
+} from '../pendientes'
 import { CasoScreen } from './CasoScreen'
 import { espaciado, type Paleta } from '../tema'
 import { useTema } from '../tema-contexto'
@@ -87,11 +98,24 @@ export function InicioScreen({ sesion, onSalir }: { sesion: Sesion; onSalir: () 
   const [tab, setTab] = useState<'programadas' | 'historial'>('programadas')
   const [abierto, setAbierto] = useState<CasoAsignado | null>(null)
   const conocidos = useRef<Set<string> | null>(null)
+  // Sin señal se trabaja con lo último guardado (28/10/2026) y lo hecho queda
+  // en la cola del teléfono hasta que vuelva.
+  const [sinConexion, setSinConexion] = useState(false)
+  const cola = usePendientes().filter((p) => p.clase !== 'transcrito')
+  const listo = useRef(false)
 
   const cargar = useCallback(async () => {
+    if (!listo.current) {
+      await abrirParaUsuario(sesion.user.id)
+      listo.current = true
+    }
     try {
       const lista = await misCasos()
       setError(false)
+      setSinConexion(false)
+      void guardarCasos(lista)
+      // Hay señal: lo que se hizo sin ella sale ahora.
+      void enviarPendientes()
       // Lo que no estaba en la carga anterior es nuevo: se marca hasta tocarlo.
       if (conocidos.current !== null) {
         const recientes = lista.filter((c) => !conocidos.current!.has(c.id)).map((c) => c.id)
@@ -101,13 +125,23 @@ export function InicioScreen({ sesion, onSalir }: { sesion: Sesion; onSalir: () 
       setCasos(lista)
     } catch {
       setError(true)
+      setSinConexion(true)
+      const guardados = await leerCasos()
+      if (guardados) setCasos((actuales) => actuales ?? guardados)
     }
-  }, [])
+  }, [sesion.user.id])
 
   useEffect(() => {
     cargar()
     const id = setInterval(cargar, CADA_MS)
-    return () => clearInterval(id)
+    // Al volver a la app (desbloquear, cambiar de app) se consulta de inmediato.
+    const alVolver = AppState.addEventListener('change', (estado) => {
+      if (estado === 'active') cargar()
+    })
+    return () => {
+      clearInterval(id)
+      alVolver.remove()
+    }
   }, [cargar])
 
   // Por delante: lo que todavía le toca al auditor. Un caso le llega DERIVADO
@@ -124,13 +158,32 @@ export function InicioScreen({ sesion, onSalir }: { sesion: Sesion; onSalir: () 
     .sort((a, b) => new Date(b.desde).getTime() - new Date(a.desde).getTime())
   const visibles = tab === 'programadas' ? programadas : historial
 
-  async function salir() {
+  async function salirDeVerdad() {
     setSaliendo(true)
     try {
       await cerrarSesion()
     } finally {
+      // Nada del auditor se queda en el teléfono al salir.
+      borrarTodo()
       onSalir()
     }
+  }
+
+  function salir() {
+    const sinEnviar = porEnviar().length
+    if (sinEnviar === 0) {
+      void salirDeVerdad()
+      return
+    }
+    Alert.alert(
+      'Tienes cosas sin enviar',
+      `${sinEnviar === 1 ? 'Hay 1 nota, foto o dictado guardado' : `Hay ${sinEnviar} notas, fotos o dictados guardados`} en el teléfono ` +
+        'que aún no llegan al servidor. Si sales ahora, se pierden.',
+      [
+        { text: 'Quedarme', style: 'cancel' },
+        { text: 'Salir igual', style: 'destructive', onPress: () => void salirDeVerdad() },
+      ],
+    )
   }
 
   // El panel del caso ocupa la pantalla; volver regresa a la bandeja tal cual.
@@ -175,6 +228,32 @@ export function InicioScreen({ sesion, onSalir }: { sesion: Sesion; onSalir: () 
           <Text style={estilos.salir}>{saliendo ? '…' : 'Salir'}</Text>
         </Pressable>
       </View>
+
+      {(sinConexion || cola.length > 0) && (
+        <View style={estilos.franja}>
+          <Ionicons
+            name={sinConexion ? 'cloud-offline-outline' : 'cloud-upload-outline'}
+            size={16}
+            color={colores.naranja}
+          />
+          <Text style={estilos.franjaTexto}>
+            {sinConexion ? 'Sin conexión: trabajas con lo guardado en el teléfono.' : ''}
+            {sinConexion && cola.length > 0 ? ' ' : ''}
+            {cola.length > 0
+              ? `${cola.length} ${cola.length === 1 ? 'pendiente' : 'pendientes'} de enviar.`
+              : ''}
+          </Text>
+          {cola.length > 0 && (
+            <Pressable
+              onPress={() => void enviarPendientes()}
+              accessibilityRole="button"
+              hitSlop={8}
+            >
+              <Text style={estilos.franjaAccion}>Enviar ahora</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       <View style={estilos.pestanas}>
         {(
@@ -342,6 +421,21 @@ function crearEstilos(c: Paleta) {
     titulo: { fontSize: 17, fontWeight: '700', color: c.tinta },
     subtitulo: { fontSize: 12, color: c.tenue },
     salir: { color: c.azul, fontSize: 15, fontWeight: '600' },
+    franja: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginHorizontal: espaciado.md,
+      marginTop: espaciado.sm,
+      paddingHorizontal: espaciado.sm,
+      paddingVertical: 8,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: c.naranja,
+      backgroundColor: c.superficie,
+    },
+    franjaTexto: { flex: 1, fontSize: 12.5, color: c.tinta, lineHeight: 17 },
+    franjaAccion: { fontSize: 13, fontWeight: '700', color: c.azul },
     pestanas: {
       flexDirection: 'row',
       gap: espaciado.sm,

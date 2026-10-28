@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react'
 import { ActivityIndicator, StyleSheet, View } from 'react-native'
 
 import { sesionActual, type Sesion } from './src/api/auth'
-import { borrarToken, leerToken } from './src/sesion/almacen'
+import { ErrorDeApi } from './src/api/cliente'
+import { borrarToken, guardarPerfil, leerPerfil, leerToken } from './src/sesion/almacen'
 import { InicioScreen } from './src/pantallas/InicioScreen'
 import { LoginScreen } from './src/pantallas/LoginScreen'
 import { tema } from './src/tema'
@@ -30,10 +31,21 @@ function Raiz() {
   useEffect(() => {
     ;(async () => {
       try {
-        if (await leerToken()) setSesion(await sesionActual())
-      } catch {
-        // Token caducado o revocado: se limpia y se vuelve al login sin ruido.
-        await borrarToken()
+        if (await leerToken()) {
+          const actual = await sesionActual()
+          await guardarPerfil({ ...actual, token: null })
+          setSesion(actual)
+        }
+      } catch (error) {
+        if (error instanceof ErrorDeApi && [401, 403].includes(error.status)) {
+          // Token caducado o revocado: se limpia y se vuelve al login sin ruido.
+          await borrarToken()
+        } else {
+          // SIN SEÑAL (28/10/2026): no se echa al auditor. Entra con el perfil
+          // guardado y trabaja con lo del teléfono; el servidor decide al volver.
+          const guardada = await leerPerfil<Sesion>()
+          if (guardada) setSesion(guardada)
+        }
       } finally {
         setArrancando(false)
       }
@@ -54,7 +66,12 @@ function Raiz() {
       {sesion ? (
         <InicioScreen sesion={sesion} onSalir={() => setSesion(null)} />
       ) : (
-        <LoginScreen onEntrar={setSesion} />
+        <LoginScreen
+          onEntrar={(nueva) => {
+            void guardarPerfil({ ...nueva, token: null })
+            setSesion(nueva)
+          }}
+        />
       )}
       <StatusBar style={sesion ? (modo === 'oscuro' ? 'light' : 'dark') : 'light'} />
     </>

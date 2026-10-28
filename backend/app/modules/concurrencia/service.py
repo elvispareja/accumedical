@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import re
 import uuid
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -900,6 +902,38 @@ def eliminar_nota(
     nota.deleted_at = func.now()
     nota.deleted_by = autor
     return nota
+
+
+def nota_ya_guardada(
+    db: DbSession, visita_id: uuid.UUID, tipo: str, texto: str, autor: uuid.UUID
+) -> VisitaNota | None:
+    """
+    **El reenvío no duplica** (28/10/2026): la app guarda sin internet y manda
+    al volver la señal; si la respuesta del primer intento se perdió, reintenta.
+    La misma nota —caso, tipo, texto y autor— viva ya en el caso es ESA nota.
+    """
+    return db.scalar(
+        select(VisitaNota).where(
+            VisitaNota.visita_id == visita_id,
+            VisitaNota.tipo == tipo,
+            VisitaNota.texto == texto.strip(),
+            VisitaNota.created_by == autor,
+            VisitaNota.deleted_at.is_(None),
+        )
+    )
+
+
+def foto_ya_guardada(
+    db: DbSession, visita_id: uuid.UUID, contenido: bytes, raiz: Path
+) -> VisitaFoto | None:
+    """La misma foto (mismos bytes) viva ya en el caso: el reenvío no la duplica."""
+    huella = hashlib.sha256(contenido).digest()
+    for foto in fotos_de(db, visita_id):
+        ruta = raiz / foto.ruta
+        if ruta.is_file() and ruta.stat().st_size == len(contenido):
+            if hashlib.sha256(ruta.read_bytes()).digest() == huella:
+                return foto
+    return None
 
 
 def fotos_de(db: DbSession, visita_id: uuid.UUID) -> list[VisitaFoto]:
