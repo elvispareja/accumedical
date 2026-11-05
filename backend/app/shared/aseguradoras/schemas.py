@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import unicodedata
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -12,6 +13,8 @@ from app.shared.geo import Latitud, Longitud
 
 ESTADOS = ("activo", "inactivo")
 Estado = Literal["activo", "inactivo"]
+#: Qué clase de cliente es (5/11/2026). Mismos valores que el CHECK y la central.
+TipoAseguradora = Literal["aseguradora", "broker", "cooperativa"]
 
 Texto = Annotated[str, Field(min_length=1, max_length=200)]
 
@@ -219,10 +222,46 @@ class ModuloHabilitado(BaseModel):
     coberturas: list[CoberturaHabilitada] = []
 
 
+class ProductoEntrada(BaseModel):
+    """Un producto de broker o cooperativa (5/11/2026). Con `id` se actualiza; sin él, se crea."""
+
+    id: str | None = None
+    nombre: Annotated[str, Field(min_length=1, max_length=300)]
+    valor: Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
+    porcentaje: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
+
+    @field_validator("nombre")
+    @classmethod
+    def _nombre_en_mayusculas(cls, valor: str) -> str:
+        # Unicode en su forma compuesta y compatible (NFKC): «Ó» tecleado y «Ó»
+        # pegado de un PDF son la misma letra, y una ligadura «ﬁ» es «fi». Nada
+        # invisible ni de control: dos nombres que se ven iguales serían el mismo.
+        normal = unicodedata.normalize("NFKC", valor)
+        if any(unicodedata.category(c)[0] == "C" for c in normal):
+            raise ValueError("El nombre del producto tiene caracteres no válidos")
+        # Todo en MAYÚSCULAS (regla del usuario) y sin espacios de sobra.
+        limpio = " ".join(normal.split()).upper()
+        if not limpio:
+            raise ValueError("El nombre del producto es obligatorio")
+        # El largo se mide DESPUÉS: pasar a mayúsculas puede alargar («ß» → «SS»).
+        if len(limpio) > 150:
+            raise ValueError("El nombre del producto admite hasta 150 caracteres")
+        return limpio
+
+
+class ProductoSalida(BaseModel):
+    id: str
+    nombre: str
+    valor: float
+    porcentaje: float
+
+
 class AseguradoraCrear(_ConRuc):
     razon_social: Texto
     nombre_comercial: str | None = Field(default=None, max_length=200)
     ruc: str
+    # Obligatorio también en la API, no solo en la pantalla (5/11/2026).
+    tipo: TipoAseguradora
     estado: Estado = "activo"
     provincia_codigo: str | None = Field(default=None, min_length=2, max_length=2)
     ciudad_codigo: str | None = Field(default=None, min_length=4, max_length=4)
@@ -237,6 +276,10 @@ class AseguradoraCrear(_ConRuc):
     # que vengan marcados; las de un módulo destildado se dejan intactas.
     coberturas: dict[str, list[str]] = Field(default_factory=dict)
     contactos: list[ContactoEntrada] = Field(default_factory=list)
+    # Solo brokers y cooperativas (lo comprueba el servicio). Con tope: una lista
+    # sin límite es consumo sin límite (OWASP), y 200 caben en un solo envío a la
+    # central (lotes de 500), que la aplica en una sola transacción.
+    productos: list[ProductoEntrada] = Field(default_factory=list, max_length=200)
 
 
 class AseguradoraActualizar(_ConRuc):
@@ -245,6 +288,8 @@ class AseguradoraActualizar(_ConRuc):
     razon_social: Texto | None = None
     nombre_comercial: str | None = Field(default=None, max_length=200)
     ruc: str | None = None
+    # Se cambia, pero no se vacía: la columna es NOT NULL (lo corta el servicio).
+    tipo: TipoAseguradora | None = None
     estado: Estado | None = None
     provincia_codigo: str | None = Field(default=None, min_length=2, max_length=2)
     ciudad_codigo: str | None = Field(default=None, min_length=4, max_length=4)
@@ -256,6 +301,8 @@ class AseguradoraActualizar(_ConRuc):
     modulos: list[str] | None = None
     coberturas: dict[str, list[str]] | None = None
     contactos: list[ContactoEntrada] | None = None
+    # None = no se tocan; lista = se reconcilia contra ella, como los contactos.
+    productos: list[ProductoEntrada] | None = Field(default=None, max_length=200)
 
 
 class AseguradoraResumen(BaseModel):
@@ -266,6 +313,7 @@ class AseguradoraResumen(BaseModel):
     razon_social: str
     nombre_comercial: str | None
     ruc: str
+    tipo: str
     estado: str
     provincia_nombre: str | None
     ciudad_nombre: str | None
@@ -278,6 +326,7 @@ class AseguradoraDetalle(BaseModel):
     razon_social: str
     nombre_comercial: str | None
     ruc: str
+    tipo: str
     estado: str
     provincia_codigo: str | None
     provincia_nombre: str | None
@@ -289,6 +338,7 @@ class AseguradoraDetalle(BaseModel):
     tiene_logo: bool
     modulos: list[ModuloHabilitado]
     contactos: list[ContactoSalida]
+    productos: list[ProductoSalida] = []
 
 
 class PaginaAseguradoras(BaseModel):

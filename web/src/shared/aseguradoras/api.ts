@@ -4,9 +4,27 @@ import type {
   ContactoSalida,
 } from '@/shared/contactos/ContactosPanel'
 
-export type { ContactoFormulario, ContactoSalida }
+import type {
+  ProductoFormulario,
+  ProductoSalida,
+} from '@/shared/aseguradoras/components/ProductosPanel'
+
+export type { ContactoFormulario, ContactoSalida, ProductoFormulario, ProductoSalida }
 
 export type Estado = 'activo' | 'inactivo'
+
+/** Qué clase de cliente es (5/11/2026). Mismos valores que el CHECK y la central. */
+export type TipoAseguradora = 'aseguradora' | 'broker' | 'cooperativa'
+
+export const TIPOS_ASEGURADORA: { valor: TipoAseguradora; etiqueta: string }[] = [
+  { valor: 'aseguradora', etiqueta: 'Aseguradora' },
+  { valor: 'broker', etiqueta: 'Broker' },
+  { valor: 'cooperativa', etiqueta: 'Cooperativa' },
+]
+
+export function etiquetaTipoAseguradora(tipo: string): string {
+  return TIPOS_ASEGURADORA.find((t) => t.valor === tipo)?.etiqueta ?? tipo
+}
 
 export interface AseguradoraResumen {
   id: string
@@ -14,6 +32,7 @@ export interface AseguradoraResumen {
   razon_social: string
   nombre_comercial: string | null
   ruc: string
+  tipo: string
   estado: string
   provincia_nombre: string | null
   ciudad_nombre: string | null
@@ -45,6 +64,8 @@ export interface AseguradoraDetalle extends AseguradoraResumen {
   longitud: number
   modulos: ModuloHabilitado[]
   contactos: ContactoSalida[]
+  /** Productos de un broker o una cooperativa (vacío en una aseguradora). */
+  productos: ProductoSalida[]
 }
 
 export interface PaginaAseguradoras {
@@ -57,6 +78,7 @@ export interface PaginaAseguradoras {
 export interface FiltrosAseguradoras {
   search?: string
   estado?: string
+  tipo?: string
   provincia_codigo?: string
   page: number
   page_size: number
@@ -67,6 +89,8 @@ export interface AseguradoraFormulario {
   razon_social: string
   nombre_comercial: string | null
   ruc: string
+  /** Vacío solo mientras se elige en el alta: guardar lo exige. */
+  tipo: TipoAseguradora | ''
   estado: Estado
   provincia_codigo: string | null
   ciudad_codigo: string | null
@@ -79,6 +103,8 @@ export interface AseguradoraFormulario {
   /** Coberturas marcadas, por código de módulo. */
   coberturas: Record<string, string[]>
   contactos: ContactoFormulario[]
+  /** Solo se envían si es broker o cooperativa (pestaña «Producto»). */
+  productos: ProductoFormulario[]
 }
 
 export async function listarAseguradoras(filtros: FiltrosAseguradoras) {
@@ -86,6 +112,7 @@ export async function listarAseguradoras(filtros: FiltrosAseguradoras) {
     params: {
       search: filtros.search || undefined,
       estado: filtros.estado || undefined,
+      tipo: filtros.tipo || undefined,
       provincia_codigo: filtros.provincia_codigo || undefined,
       page: filtros.page,
       page_size: filtros.page_size,

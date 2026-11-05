@@ -24,6 +24,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db import (
     COORDENADA,
     IMPORTE,
+    PORCENTAJE,
     AuditoriaFilaMixin,
     Base,
     BorradoLogicoMixin,
@@ -44,9 +45,8 @@ class Aseguradora(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     __tablename__ = "aseguradoras"
     __table_args__ = (
         CheckConstraint(r"ruc ~ '^[0-9]{13}$'", name="ruc_formato"),
-        CheckConstraint(
-            "tipo IN ('publica','privada','medicina_prepagada')", name="tipo"
-        ),
+        # Qué clase de cliente es (5/11/2026, pedido del usuario).
+        CheckConstraint("tipo IN ('aseguradora','broker','cooperativa')", name="tipo"),
         CheckConstraint("estado IN ('activo','inactivo')", name="estado"),
         CheckConstraint("latitud BETWEEN -90 AND 90", name="latitud"),
         CheckConstraint("longitud BETWEEN -180 AND 180", name="longitud"),
@@ -94,8 +94,12 @@ class Aseguradora(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     razon_social: Mapped[str] = mapped_column(String(200), nullable=False)
     nombre_comercial: Mapped[str | None] = mapped_column(String(200))
     ruc: Mapped[str] = mapped_column(String(13), nullable=False)
-    # Se conserva a la espera de definir su uso; ya no es obligatorio.
-    tipo: Mapped[str | None] = mapped_column(String(30))
+    # **Qué clase de cliente es** (5/11/2026, pedido del usuario): aseguradora,
+    # broker o cooperativa. Antes era una columna reservada sin uso
+    # (pública/privada/prepagada), vacía en todas las filas.
+    tipo: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default=text("'aseguradora'")
+    )
     provincia_codigo: Mapped[str | None] = mapped_column(
         String(2), ForeignKey("provincias.codigo", ondelete="RESTRICT")
     )
@@ -377,6 +381,43 @@ class AseguradoraContacto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     # Puesto que ocupa: «Gerente de Siniestros». Opcional.
     cargo: Mapped[str | None] = mapped_column(String(100))
 
+
+
+class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
+    """
+    **Los productos de un broker o de una cooperativa** (5/11/2026, pedido del
+    usuario): nombre, valor y porcentaje, en la pestaña «Producto» de la ficha.
+    Se editan como lista con la ficha, igual que los contactos, y viajan a la
+    central como una ficha más (`aseguradora_productos`). Quitar uno lo da de
+    baja lógica: en medicina no se borra nada.
+    """
+
+    __tablename__ = "aseguradora_productos"
+    __table_args__ = (
+        CheckConstraint("valor >= 0", name="valor"),
+        CheckConstraint("porcentaje BETWEEN 0 AND 100", name="porcentaje"),
+        Index(
+            "ix_aseguradora_productos_aseguradora_id",
+            "aseguradora_id",
+            postgresql_where="deleted_at IS NULL",
+        ),
+        # El mismo nombre dos veces en la misma compañía es un error de captura.
+        Index(
+            "uq_aseguradora_productos_nombre",
+            "aseguradora_id",
+            "nombre",
+            unique=True,
+            postgresql_where="deleted_at IS NULL",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = columna_pk_uuid()
+    aseguradora_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("aseguradoras.id", ondelete="RESTRICT"), nullable=False
+    )
+    nombre: Mapped[str] = mapped_column(String(150), nullable=False)
+    valor: Mapped[Decimal] = mapped_column(IMPORTE, nullable=False)
+    porcentaje: Mapped[Decimal] = mapped_column(PORCENTAJE, nullable=False)
 
 # Los conceptos que se pactan en un convenio y cómo se pacta cada uno. El
 # orden es el de la pantalla, de arriba hacia abajo.

@@ -16,6 +16,8 @@ import {
   type AseguradoraFormulario,
   type ContactoFormulario,
   type Estado,
+  TIPOS_ASEGURADORA,
+  type TipoAseguradora,
 } from '@/shared/aseguradoras/api'
 import { useAseguradora } from '@/shared/aseguradoras/hooks'
 import {
@@ -42,6 +44,12 @@ import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Select } from '@/shared/components/ui/select'
 import { Tabs } from '@/shared/components/ui/tabs'
+import {
+  ProductosPanel,
+  productosDesdeApi,
+  productosHaciaApi,
+  validarProductos,
+} from '@/shared/aseguradoras/components/ProductosPanel'
 import { useToast } from '@/shared/components/ui/toast'
 import { useApp } from '@/core/app/contexto'
 
@@ -53,6 +61,8 @@ const VACIO: AseguradoraFormulario = {
   razon_social: '',
   nombre_comercial: null,
   ruc: '',
+  // Sin elegir: en el alta se escoge a propósito (5/11/2026).
+  tipo: '',
   estado: 'activo',
   provincia_codigo: null,
   ciudad_codigo: null,
@@ -64,6 +74,7 @@ const VACIO: AseguradoraFormulario = {
   modulos: [],
   coberturas: {},
   contactos: [],
+  productos: [],
 }
 
 /**
@@ -132,6 +143,8 @@ function Bloque({
 /** La ficha completa de una compañía, en el orden en que se recorre. */
 const PESTANAS = [
   { id: 'generales', etiqueta: 'Datos generales' },
+  // Solo para brokers y cooperativas (pedido del usuario, 5/11/2026).
+  { id: 'producto', etiqueta: 'Producto' },
   { id: 'requerimientos', etiqueta: 'Módulos' },
   { id: 'polizas', etiqueta: 'Pólizas y planes' },
   { id: 'cobertura', etiqueta: 'Cobertura y condiciones' },
@@ -140,6 +153,11 @@ const PESTANAS = [
   { id: 'contactos', etiqueta: 'Contactos' },
   { id: 'usuarios', etiqueta: 'Usuarios' },
 ]
+
+/** Los tipos que llevan la pestaña «Producto» (5/11/2026). */
+function conProducto(tipo: string | undefined): boolean {
+  return tipo === 'broker' || tipo === 'cooperativa'
+}
 
 /** Marcador de las pestañas aún por construir: visibles, pero sin función. */
 function EnConstruccion() {
@@ -182,6 +200,12 @@ export function AseguradoraFormPage() {
 
   const [pestana, setPestana] = useState(soloConvenios ? 'convenios' : 'generales')
   const [form, setForm] = useState<AseguradoraFormulario>(VACIO)
+
+  // Si deja de ser broker o cooperativa con «Producto» abierta, vuelve a Generales.
+  useEffect(() => {
+    if (pestana === 'producto' && !conProducto(form.tipo)) setPestana('generales')
+  }, [pestana, form.tipo])
+
   const [logoNuevo, setLogoNuevo] = useState<File | null>(null)
   const [errorLogo, setErrorLogo] = useState<string | null>(null)
   const entradaArchivo = useRef<HTMLInputElement>(null)
@@ -203,6 +227,7 @@ export function AseguradoraFormPage() {
       razon_social: ficha.razon_social,
       nombre_comercial: ficha.nombre_comercial,
       ruc: ficha.ruc,
+      tipo: (ficha.tipo as TipoAseguradora) || 'aseguradora',
       estado: ficha.estado as Estado,
       provincia_codigo: ficha.provincia_codigo,
       ciudad_codigo: ficha.ciudad_codigo,
@@ -217,6 +242,7 @@ export function AseguradoraFormPage() {
       // Se cargan siempre, aunque el módulo esté destildado: así reaparecen tal
       // cual si se vuelve a marcar.
       contactos: desdeApi(ficha.contactos),
+      productos: productosDesdeApi(ficha.productos ?? []),
       coberturas: Object.fromEntries(
         ficha.modulos
           .filter((m) => m.coberturas.length > 0)
@@ -321,6 +347,11 @@ export function AseguradoraFormPage() {
         modulos: form.modulos ?? [],
         coberturas: form.coberturas ?? {},
         contactos: haciaApi(form.contactos ?? []) as never,
+        // Solo un broker o una cooperativa lleva productos; si no lo es, ni se
+        // envían y los que tuviera se quedan como estaban.
+        productos: conProducto(form.tipo)
+          ? (productosHaciaApi(form.productos ?? []) as never)
+          : (undefined as never),
         razon_social: form.razon_social.trim(),
         ruc: form.ruc.trim(),
         nombre_comercial: form.nombre_comercial?.trim() || null,
@@ -357,9 +388,20 @@ export function AseguradoraFormPage() {
       setPestana('generales')
       return toast.error('El RUC debe tener exactamente 13 dígitos')
     }
+    if (!form.tipo) {
+      setPestana('generales')
+      return toast.error('Elige el tipo: aseguradora, broker o cooperativa')
+    }
     if (form.latitud === null || form.longitud === null) {
       setPestana('generales')
       return toast.error('Fija el punto de la aseguradora en el mapa')
+    }
+    if (conProducto(form.tipo)) {
+      const problemaProducto = validarProductos(form.productos ?? [])
+      if (problemaProducto) {
+        setPestana('producto')
+        return toast.error(problemaProducto)
+      }
     }
     const problema = validarContactos(form.contactos ?? [])
     if (problema) {
@@ -447,7 +489,11 @@ export function AseguradoraFormPage() {
             // no está oculto: no existe para ella (`docs/07`, §6b).
             soloConvenios
               ? [{ id: 'convenios', etiqueta: 'Convenios' }]
-              : PESTANAS.filter((p) => !(sinConvenios && p.id === 'convenios'))
+              : PESTANAS.filter(
+                  (p) =>
+                    !(sinConvenios && p.id === 'convenios') &&
+                    (p.id !== 'producto' || conProducto(form.tipo)),
+                )
           }
           activa={pestana}
           onCambiar={setPestana}
@@ -511,7 +557,28 @@ export function AseguradoraFormPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-5 sm:grid-cols-2">
+                  {/* Tipo, código y estado en una fila (pedido del usuario, 5/11/2026). */}
+                  <div className="grid gap-5 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="tipo">
+                        Tipo <span className="text-peligro">*</span>
+                      </Label>
+                      <Select
+                        id="tipo"
+                        value={form.tipo ?? ''}
+                        onChange={(e) => actualizar('tipo', e.target.value as TipoAseguradora)}
+                        required
+                      >
+                        <option value="" disabled>
+                          Elige el tipo
+                        </option>
+                        {TIPOS_ASEGURADORA.map((t) => (
+                          <option key={t.valor} value={t.valor}>
+                            {t.etiqueta}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="codigo_interno">Código interno</Label>
                       <div className="relative">
@@ -683,6 +750,22 @@ export function AseguradoraFormPage() {
                     }
                   />
                 </div>
+              </Bloque>
+            </div>
+          ) : pestana === 'producto' && conProducto(form.tipo) ? (
+            <div className="space-y-4 pt-6">
+              <Bloque
+                titulo="Producto"
+                descripcion={
+                  form.tipo === 'broker'
+                    ? 'Los productos que comercializa este broker.'
+                    : 'Los productos que comercializa esta cooperativa.'
+                }
+              >
+                <ProductosPanel
+                  productos={form.productos ?? []}
+                  onCambiar={(productos) => actualizar('productos', productos)}
+                />
               </Bloque>
             </div>
           ) : pestana === 'polizas' ? (

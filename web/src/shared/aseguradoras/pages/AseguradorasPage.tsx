@@ -16,7 +16,13 @@ import { useNavigate } from 'react-router-dom'
 
 import { cn } from '@/lib/utils'
 import { useSesion } from '@/core/auth/useSesion'
-import { actualizarAseguradora, urlLogo, type Estado } from '@/shared/aseguradoras/api'
+import {
+  actualizarAseguradora,
+  etiquetaTipoAseguradora,
+  TIPOS_ASEGURADORA,
+  urlLogo,
+  type Estado,
+} from '@/shared/aseguradoras/api'
 import { useAseguradoras } from '@/shared/aseguradoras/hooks'
 import { useProvincias } from '@/shared/catalogos/hooks'
 import { EstadoBadge } from '@/shared/components/ui/badge'
@@ -44,6 +50,7 @@ export function AseguradorasPage() {
   const [busqueda, setBusqueda] = useState('')
   const [busquedaAplicada, setBusquedaAplicada] = useState('')
   const [estado, setEstado] = useState('')
+  const [tipo, setTipo] = useState('')
   const [provincia, setProvincia] = useState('')
   const [pagina, setPagina] = useState(1)
 
@@ -61,6 +68,7 @@ export function AseguradorasPage() {
   const consulta = useAseguradoras({
     search: busquedaAplicada,
     estado,
+    tipo,
     provincia_codigo: provincia,
     page: pagina,
     page_size: POR_PAGINA,
@@ -83,7 +91,7 @@ export function AseguradorasPage() {
 
   const datos = consulta.data
   const totalPaginas = datos ? Math.max(1, Math.ceil(datos.total / datos.page_size)) : 1
-  const hayFiltros = Boolean(busquedaAplicada || estado || provincia)
+  const hayFiltros = Boolean(busquedaAplicada || estado || tipo || provincia)
 
   return (
     <div className="w-full">
@@ -116,8 +124,11 @@ export function AseguradorasPage() {
       </header>
 
       {/* ── Filtros ── */}
-      <div className="mt-7 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem_14rem]">
-        <div className="relative">
+      {/* Con cuatro controles, en una fila solo desde xl: entre 1024 y 1280 px el
+          buscador se quedaba en unos 100 px. Antes, buscador arriba y los tres
+          filtros debajo. */}
+      <div className="mt-7 grid gap-3 sm:grid-cols-3 xl:grid-cols-[minmax(0,1fr)_12rem_11rem_13rem]">
+        <div className="relative sm:col-span-3 xl:col-span-1">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
             aria-hidden="true"
@@ -143,6 +154,21 @@ export function AseguradorasPage() {
           <option value="">Todos los estados</option>
           <option value="activo">Activo</option>
           <option value="inactivo">Inactivo</option>
+        </Select>
+        <Select
+          value={tipo}
+          onChange={(e) => {
+            setTipo(e.target.value)
+            setPagina(1)
+          }}
+          aria-label="Filtrar por tipo"
+        >
+          <option value="">Todos los tipos</option>
+          {TIPOS_ASEGURADORA.map((t) => (
+            <option key={t.valor} value={t.valor}>
+              {t.etiqueta}
+            </option>
+          ))}
         </Select>
         <Select
           value={provincia}
@@ -175,6 +201,7 @@ export function AseguradorasPage() {
               <thead>
                 <tr className="border-b border-borde bg-superficie-hundida text-left">
                   <Th>Aseguradora</Th>
+                  <Th>Tipo</Th>
                   <Th>Código</Th>
                   <Th>RUC</Th>
                   <Th>Ubicación</Th>
@@ -202,7 +229,9 @@ export function AseguradorasPage() {
                       exit={{ opacity: 0, transition: { duration: 0.15 } }}
                       className="border-b border-borde last:border-b-0 hover:bg-tenue/50"
                     >
-                      <td className="px-4 py-3">
+                      {/* Con tope de ancho, la razón social larga se recorta (truncate)
+                          en vez de empujar la tabla a desplazarse de lado. */}
+                      <td className="max-w-[22rem] px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="grid size-9 shrink-0 place-items-center overflow-hidden rounded border border-borde bg-fondo">
                             {fila.tiene_logo ? (
@@ -225,11 +254,14 @@ export function AseguradorasPage() {
                           </div>
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-tenue-fg">
+                        {etiquetaTipoAseguradora(fila.tipo)}
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs text-tenue-fg">
                         {fila.codigo_interno}
                       </td>
                       <td className="tabular px-4 py-3 text-tenue-fg">{fila.ruc}</td>
-                      <td className="px-4 py-3 text-tenue-fg">
+                      <td className="max-w-[13rem] px-4 py-3 text-tenue-fg">
                         {fila.provincia_nombre ? (
                           <>
                             <span className="block truncate">{fila.ciudad_nombre ?? '—'}</span>

@@ -997,7 +997,7 @@ CREATE TABLE aseguradoras (
     razon_social     varchar(200) NOT NULL,
     nombre_comercial varchar(200) NULL,
     ruc              char(13)     NOT NULL,
-    tipo             varchar(30)  NULL,   -- se conserva a la espera de definir su uso
+    tipo             varchar(30)  NOT NULL DEFAULT 'aseguradora',  -- clase de cliente (5/11/2026)
     -- Los datos de contacto sueltos se retiraron en d5f3a91c2b48: viven en
     -- aseguradora_contactos (§5.2d), que es donde manda.
     provincia_codigo char(2)      NULL,
@@ -1030,7 +1030,7 @@ CREATE TABLE aseguradoras (
         FOREIGN KEY (ciudad_codigo, provincia_codigo)
         REFERENCES ciudades (codigo, provincia_codigo) ON DELETE RESTRICT,
     CONSTRAINT ck_aseguradoras_ruc_formato CHECK (ruc ~ '^[0-9]{13}$'),
-    CONSTRAINT ck_aseguradoras_tipo   CHECK (tipo IN ('publica', 'privada', 'medicina_prepagada')),
+    CONSTRAINT ck_aseguradoras_tipo   CHECK (tipo IN ('aseguradora', 'broker', 'cooperativa')),
     CONSTRAINT ck_aseguradoras_estado CHECK (estado IN ('activo', 'inactivo')),
     CONSTRAINT ck_aseguradoras_latitud  CHECK (latitud BETWEEN -90 AND 90),
     CONSTRAINT ck_aseguradoras_longitud CHECK (longitud BETWEEN -180 AND 180)
@@ -1045,7 +1045,7 @@ CREATE INDEX ix_aseguradoras_listado ON aseguradoras (estado, created_at) WHERE 
 
 - **Razón social y nombre comercial son campos distintos**: la primera es la identidad legal que va en la factura, el segundo es como se la conoce. Solo la razón social es obligatoria.
 - `estado` es `activo`/`inactivo`. Se retiró `suspendida` del dominio original porque el formulario acordado ofrece dos estados; añadirlo de vuelta es un ALTER de un único CHECK.
-- `tipo` sigue existiendo pero ya **no es obligatorio**: no entra en el formulario y queda a la espera de definir su uso.
+- `tipo` es **la clase de cliente** (5/11/2026, `f3b7d1a9c254` y central `0013`): `aseguradora`, `broker` o `cooperativa`, obligatorio, en minúsculas, select «Tipo» de la pestaña Generales. Antes estaba reservada (pública/privada/medicina prepagada) sin uso y vacía en todas las filas; las existentes pasaron a `aseguradora`. Viaja a la central en la ficha, que tiene el mismo CHECK: los dos lados deben valer lo mismo.
 - El código interno tiene huecos si un alta falla, porque las secuencias de Postgres no se revierten. Es el precio de que nunca haya colisiones bajo concurrencia, y numerar sin huecos exigiría serializar las altas con un bloqueo.
 - `logo_path` guarda la ruta relativa del archivo ya validado (MIME real con python-magic, límite de tamaño, renombrado con UUID, fuera del árbol ejecutable — A08). Nunca URL absoluta ni nombre original.
 - GIN + pg_trgm sobre `nombre`: el listado exige búsqueda server-side; con B-tree un `ILIKE '%anda%'` es seq scan. El índice compuesto parcial `(estado, created_at DESC)` cubre exactamente la query paginada del CRUD.
@@ -1261,6 +1261,40 @@ CREATE UNIQUE INDEX uq_aseguradora_contactos_email
 - Quitar un contacto es borrado lógico, como todo aquí.
 
 **Se retiraron `contacto_nombre`, `email` y `telefono` de `aseguradoras`.** Venían de la especificación original, nunca entraron al formulario y quedaban redundantes con esta tabla; mantener dos sitios para lo mismo termina en que nadie recuerda cuál manda.
+
+### 5.2d-bis `aseguradora_productos` — productos de brokers y cooperativas (`a4c8e2f6b917`)
+
+Pedido del usuario (5/11/2026): si la ficha es de un **broker** o una
+**cooperativa** (`aseguradoras.tipo`), la pestaña «Producto» lista sus productos
+con **nombre**, **valor** y **porcentaje**.
+
+```sql
+CREATE TABLE aseguradora_productos (
+    id              uuid          NOT NULL DEFAULT gen_random_uuid(),
+    aseguradora_id  uuid          NOT NULL REFERENCES aseguradoras (id) ON DELETE RESTRICT,
+    nombre          varchar(150)  NOT NULL,          -- en MAYÚSCULAS
+    valor           numeric(12,2) NOT NULL,          -- USD, >= 0
+    porcentaje      numeric(5,2)  NOT NULL,          -- 0 a 100
+    -- auditoría de fila y baja lógica: created/updated_at|by, deleted_at|by
+    CONSTRAINT pk_aseguradora_productos PRIMARY KEY (id),
+    CONSTRAINT ck_aseguradora_productos_valor      CHECK (valor >= 0),
+    CONSTRAINT ck_aseguradora_productos_porcentaje CHECK (porcentaje BETWEEN 0 AND 100)
+);
+CREATE INDEX ix_aseguradora_productos_aseguradora_id
+    ON aseguradora_productos (aseguradora_id) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uq_aseguradora_productos_nombre
+    ON aseguradora_productos (aseguradora_id, nombre) WHERE deleted_at IS NULL;
+```
+
+- Se editan **como lista con la ficha**, igual que los contactos
+  (`service.fijar_productos`): con `id` se actualiza, sin él se crea y el que
+  falta se da de **baja lógica**.
+- Solo un broker o una cooperativa lleva productos: con otro tipo el servidor
+  responde `422`. Si una ficha deja de ser broker o cooperativa, sus productos
+  se conservan (en medicina no se borra nada) y la pestaña se oculta.
+- Es una **ficha de la central** (`aseguradora_productos`, migración central
+  `0014`, que va ANTES que esta): se publica al guardar y entra en
+  `verificar-fichas`.
 
 ### 5.2e `prestador_contactos` — personas de contacto
 

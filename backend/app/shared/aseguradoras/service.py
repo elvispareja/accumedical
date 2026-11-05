@@ -13,6 +13,7 @@ from app.shared.aseguradoras.models import (
     AseguradoraContacto,
     AseguradoraModulo,
     AseguradoraPrestador,
+    AseguradoraProducto,
     AseguradoraSla,
 )
 from app.shared.catalogos.models import Ciudad, Module, Provincia, TipoPrestador
@@ -75,6 +76,7 @@ def listar(
     search: str | None = None,
     estado: str | None = None,
     provincia_codigo: str | None = None,
+    tipo: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[tuple[Aseguradora, str | None, str | None]], int]:
@@ -96,6 +98,8 @@ def listar(
         )
     if estado:
         consulta = consulta.where(Aseguradora.estado == estado)
+    if tipo:
+        consulta = consulta.where(Aseguradora.tipo == tipo)
     if provincia_codigo:
         consulta = consulta.where(Aseguradora.provincia_codigo == provincia_codigo)
 
@@ -172,6 +176,11 @@ def actualizar(
     db: DbSession, aseguradora: Aseguradora, cambios: dict[str, Any], autor: uuid.UUID
 ) -> dict[str, Any]:
     prohibir_vaciar(cambios)
+    if "tipo" in cambios and cambios["tipo"] is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Elige el tipo: aseguradora, broker o cooperativa",
+        )
     provincia = cambios.get("provincia_codigo", aseguradora.provincia_codigo)
     ciudad = cambios.get("ciudad_codigo", aseguradora.ciudad_codigo)
     # Cambiar de provincia sin cambiar de ciudad dejaría una ciudad huérfana de
@@ -599,6 +608,131 @@ def fijar_contactos(
         db, AseguradoraContacto, "aseguradora_id", aseguradora_id, entrantes, autor
     )
 
+
+
+#: Los tipos que llevan productos (5/11/2026).
+TIPOS_CON_PRODUCTOS = ("broker", "cooperativa")
+
+
+def productos_de(db: DbSession, aseguradora_id: uuid.UUID) -> list[AseguradoraProducto]:
+    """Los productos vivos, por nombre: los de un mismo guardado comparten la hora."""
+    return list(
+        db.scalars(
+            select(AseguradoraProducto)
+            .where(
+                AseguradoraProducto.aseguradora_id == aseguradora_id,
+                AseguradoraProducto.deleted_at.is_(None),
+            )
+            .order_by(AseguradoraProducto.nombre, AseguradoraProducto.id)
+        ).all()
+    )
+
+
+def fijar_productos(
+    db: DbSession,
+    aseguradora_id: uuid.UUID,
+    tipo: str,
+    entrantes: list[dict[str, Any]],
+    autor: uuid.UUID,
+) -> dict[str, int] | None:
+    """
+    **Los productos de un broker o de una cooperativa** (5/11/2026). Reconcilia
+    la lista completa como los contactos: con `id` se actualiza, sin él se crea,
+    y el que falta se da de baja lógica (nunca DELETE). Una aseguradora no lleva
+    productos; si deja de ser broker o cooperativa, los que tenía se conservan.
+    """
+    if entrantes and tipo not in TIPOS_CON_PRODUCTOS:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Solo los brokers y las cooperativas llevan productos",
+        )
+    nombres: set[str] = set()
+    for datos in entrantes:
+        if datos["nombre"] in nombres:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"El producto {datos['nombre']} está repetido",
+            )
+        nombres.add(datos["nombre"])
+
+    existentes = {p.id: p for p in productos_de(db, aseguradora_id)}
+    vistos: set[uuid.UUID] = set()
+    for datos in entrantes:
+        if not datos.get("id"):
+            continue
+        try:
+            clave = uuid.UUID(str(datos["id"]))
+        except ValueError:
+            clave = None
+        # Un id ajeno a esta compañía es un error del cliente, no una fila nueva.
+        if clave is None or clave not in existentes:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Uno de los productos referencia un identificador desconocido",
+            )
+        if clave in vistos:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Un producto viene dos veces en la lista",
+            )
+        vistos.add(clave)
+
+    # La auditoría guarda QUÉ cambió, con el antes y el después: son montos.
+    creados: list[dict[str, Any]] = []
+    actualizados: list[dict[str, Any]] = []
+    eliminados: list[dict[str, Any]] = []
+    # Las bajas primero, y volcadas: un producto nuevo con el nombre del que se
+    # va chocaría con el índice único parcial si los dos siguieran vivos.
+    for producto_id, producto in existentes.items():
+        if producto_id not in vistos:
+            producto.deleted_at = func.now()
+            producto.deleted_by = autor
+            eliminados.append({"id": str(producto_id), **_producto_auditado(producto)})
+    if eliminados:
+        db.flush()
+
+    for datos in entrantes:
+        campos = {
+            "nombre": datos["nombre"],
+            "valor": datos["valor"],
+            "porcentaje": datos["porcentaje"],
+        }
+        if datos.get("id"):
+            producto = existentes[uuid.UUID(str(datos["id"]))]
+            cambiados = [c for c, v in campos.items() if getattr(producto, c) != v]
+            if cambiados:
+                antes = _producto_auditado(producto, cambiados)
+                for campo in cambiados:
+                    setattr(producto, campo, campos[campo])
+                producto.updated_by = autor
+                actualizados.append(
+                    {
+                        "id": str(producto.id),
+                        "antes": antes,
+                        "despues": _producto_auditado(producto, cambiados),
+                    }
+                )
+        else:
+            nuevo = AseguradoraProducto(
+                aseguradora_id=aseguradora_id, **campos, created_by=autor, updated_by=autor
+            )
+            db.add(nuevo)
+            db.flush()
+            creados.append({"id": str(nuevo.id), **_producto_auditado(nuevo)})
+    db.flush()
+    if creados or actualizados or eliminados:
+        return {"creados": creados, "actualizados": actualizados, "eliminados": eliminados}
+    return None
+
+
+def _producto_auditado(
+    producto: AseguradoraProducto, campos: list[str] | None = None
+) -> dict[str, str]:
+    """Los campos del producto para el AuditLog, con los montos como texto exacto."""
+    return {
+        c: str(getattr(producto, c))
+        for c in (campos or ["nombre", "valor", "porcentaje"])
+    }
 
 # ──────────────── Convenios: la red, elegida DESDE la aseguradora ────────────
 

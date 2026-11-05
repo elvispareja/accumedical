@@ -61,6 +61,13 @@ ENTIDADES: list[tuple[str, str]] = [
         " FROM aseguradora_contactos",
     ),
     (
+        # Los productos de brokers y cooperativas (5/11/2026).
+        "aseguradora_productos",
+        "SELECT id, aseguradora_id, nombre, valor, porcentaje,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM aseguradora_productos",
+    ),
+    (
         "prestadores",
         "SELECT id, codigo_interno, tipo_codigo, nombre, ruc, direccion, provincia_codigo,"
         " ciudad_codigo, estado, latitud, longitud, logo_path,"
@@ -173,7 +180,8 @@ _SIN_RED_PROPIA = {
 # Con REDES_EN_CENTRAL (paso 5a) la central es dueña de TODAS las redes: estas
 # entidades ya no se envían (la central, además, las ignoraría).
 _REDES = ("convenios", "convenio_fc")
-_FICHAS = ("tipos_prestador", "aseguradoras", "aseguradora_contactos", "prestadores",
+_FICHAS = ("tipos_prestador", "aseguradoras", "aseguradora_contactos", "aseguradora_productos",
+           "prestadores",
            "prestador_contactos", "prestador_sedes", "aseguradora_aplicaciones", "aseguradora_sla",
            "aseguradora_coberturas", "usuarios", "usuario_aplicaciones", "usuario_grupos",
            "usuario_coordinaciones")

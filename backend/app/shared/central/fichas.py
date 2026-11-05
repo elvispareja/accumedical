@@ -42,6 +42,7 @@ from app.shared.aseguradoras.models import (
     AseguradoraCobertura,
     AseguradoraContacto,
     AseguradoraModulo,
+    AseguradoraProducto,
     AseguradoraSla,
 )
 from app.shared.catalogos.models import TipoPrestador
@@ -84,6 +85,7 @@ FICHAS: dict[str, _Ficha] = {
     "tipos_prestador": _Ficha("tipos_prestador", "codigo", ("codigo",)),
     "aseguradoras": _Ficha("aseguradoras", "id", ("id",)),
     "aseguradora_contactos": _Ficha("aseguradora_contactos", "id", ("id",)),
+    "aseguradora_productos": _Ficha("aseguradora_productos", "id", ("id",)),
     "prestadores": _Ficha("prestadores", "id", ("id",)),
     "prestador_contactos": _Ficha("prestador_contactos", "id", ("id",)),
     "prestador_sedes": _Ficha("prestador_sedes", "id", ("id",)),
@@ -133,6 +135,7 @@ _POR_MODELO = {
     TipoPrestador: "tipos_prestador",
     Aseguradora: "aseguradoras",
     AseguradoraContacto: "aseguradora_contactos",
+    AseguradoraProducto: "aseguradora_productos",
     Prestador: "prestadores",
     PrestadorContacto: "prestador_contactos",
     PrestadorSede: "prestador_sedes",
@@ -202,6 +205,9 @@ def _filas(sesion: Session, entidad: str, ids: list[uuid.UUID] | None) -> list[d
         consulta += f" WHERE {FICHAS[entidad].filtro} = ANY(:ids)"
         parametros["ids"] = ids
     filas = [dict(f) for f in sesion.execute(text(consulta), parametros).mappings()]
+    # Las bajas lógicas primero (5/11/2026): liberan su nombre o correo único
+    # antes de que llegue la fila que lo reutiliza. Orden estable.
+    filas.sort(key=lambda f: f.get("deleted_at") is None)
     return json.loads(json.dumps(filas, default=replicacion._json))  # noqa: SLF001
 
 
@@ -296,7 +302,8 @@ def _traer(sesion: Session, entidad: str, filas: list[dict[str, Any]]) -> None:
         )
     sesion.info[SIN_PUBLICAR] = True
     try:
-        for fila in filas:
+        # Bajas primero, como al publicar: no chocan con un índice único parcial.
+        for fila in sorted(filas, key=lambda f: f.get("deleted_at") is None):
             sesion.execute(sql, fila)
         sesion.commit()
     finally:

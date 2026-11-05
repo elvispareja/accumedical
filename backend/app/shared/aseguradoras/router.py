@@ -46,6 +46,7 @@ from app.shared.aseguradoras.schemas import (
     ListadoPreciosSalida,
     PaginaAseguradoras,
     PolizaSalida,
+    ProductoSalida,
     PuntoMapaAseguradora,
     RequerimientoOut,
     SlaFijar,
@@ -103,7 +104,7 @@ router_convenios = APIRouter(
 CHUNK = 64 * 1024
 
 
-def _detalle(fila, modulos, contactos) -> AseguradoraDetalle:
+def _detalle(fila, modulos, contactos, productos) -> AseguradoraDetalle:
     a, provincia, ciudad = fila
     return AseguradoraDetalle(
         id=str(a.id),
@@ -111,6 +112,7 @@ def _detalle(fila, modulos, contactos) -> AseguradoraDetalle:
         razon_social=a.razon_social,
         nombre_comercial=a.nombre_comercial,
         ruc=a.ruc,
+        tipo=a.tipo,
         estado=a.estado,
         provincia_codigo=a.provincia_codigo,
         provincia_nombre=provincia,
@@ -122,6 +124,7 @@ def _detalle(fila, modulos, contactos) -> AseguradoraDetalle:
         tiene_logo=bool(a.logo_path),
         modulos=modulos,
         contactos=contactos,
+        productos=productos,
     )
 
 
@@ -146,7 +149,13 @@ def _detalle_completo(db: DbSession, aseguradora_id) -> AseguradoraDetalle:
         )
         for c in service.contactos_de(db, fila[0].id)
     ]
-    return _detalle(fila, modulos, contactos)
+    productos = [
+        ProductoSalida(
+            id=str(p.id), nombre=p.nombre, valor=float(p.valor), porcentaje=float(p.porcentaje)
+        )
+        for p in service.productos_de(db, fila[0].id)
+    ]
+    return _detalle(fila, modulos, contactos, productos)
 
 
 # El listado lo comparten las dos funciones: sin él, quien lleva los convenios no
@@ -157,6 +166,7 @@ def listar(
     search: str | None = Query(default=None, max_length=120),
     estado: str | None = Query(default=None, pattern="^(activo|inactivo)$"),
     provincia_codigo: str | None = Query(default=None, min_length=2, max_length=2),
+    tipo: str | None = Query(default=None, pattern="^(aseguradora|broker|cooperativa)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=service.MAX_PAGE_SIZE),
     db: DbSession = Depends(get_db),
@@ -166,6 +176,7 @@ def listar(
         search=search,
         estado=estado,
         provincia_codigo=provincia_codigo,
+        tipo=tipo,
         page=page,
         page_size=page_size,
     )
@@ -177,6 +188,7 @@ def listar(
                 razon_social=a.razon_social,
                 nombre_comercial=a.nombre_comercial,
                 ruc=a.ruc,
+                tipo=a.tipo,
                 estado=a.estado,
                 provincia_nombre=prov,
                 ciudad_nombre=ciu,
@@ -244,10 +256,14 @@ def crear(
     modulos = cuerpo.pop("modulos", [])
     coberturas = cuerpo.pop("coberturas", {})
     contactos = cuerpo.pop("contactos", [])
+    productos = cuerpo.pop("productos", [])
     aseguradora = service.crear(db, cuerpo, ctx.user.id)
     db.flush()
     accesos = service.fijar_accesos(db, aseguradora.id, modulos, coberturas, ctx.user.id)
     cambio_contactos = service.fijar_contactos(db, aseguradora.id, contactos, ctx.user.id)
+    cambio_productos = service.fijar_productos(
+        db, aseguradora.id, aseguradora.tipo, productos, ctx.user.id
+    )
     audit.registrar(
         db,
         accion="crear",
@@ -260,8 +276,10 @@ def crear(
             "despues": {
                 "codigo_interno": aseguradora.codigo_interno,
                 "ruc": aseguradora.ruc,
+                "tipo": aseguradora.tipo,
                 "accesos": accesos,
                 "contactos": cambio_contactos,
+                "productos": cambio_productos,
             }
         },
     )
@@ -283,6 +301,7 @@ def actualizar(
     modulos = cambios.pop("modulos", None)
     coberturas = cambios.pop("coberturas", None)
     contactos = cambios.pop("contactos", None)
+    productos = cambios.pop("productos", None)
     diff = service.actualizar(db, aseguradora, cambios, ctx.user.id)
     if modulos is not None or coberturas is not None:
         accesos = service.fijar_accesos(db, aseguradora_id, modulos, coberturas, ctx.user.id)
@@ -292,6 +311,13 @@ def actualizar(
         cambio_contactos = service.fijar_contactos(db, aseguradora_id, contactos, ctx.user.id)
         if cambio_contactos:
             diff["despues"]["contactos"] = cambio_contactos
+    if productos is not None:
+        # Contra el tipo RESULTANTE: el mismo guardado puede cambiarlo.
+        cambio_productos = service.fijar_productos(
+            db, aseguradora_id, aseguradora.tipo, productos, ctx.user.id
+        )
+        if cambio_productos:
+            diff["despues"]["productos"] = cambio_productos
     if diff["despues"]:
         audit.registrar(
             db,

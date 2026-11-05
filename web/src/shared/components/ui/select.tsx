@@ -98,8 +98,10 @@ export function Select({
   onChange,
   disabled,
   id,
+  required,
   'aria-label': ariaLabel,
   'aria-invalid': ariaInvalid,
+  'aria-required': ariaRequired,
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   const idBase = useId()
   const gatillo = useRef<HTMLButtonElement>(null)
@@ -246,6 +248,9 @@ export function Select({
         aria-controls={`${idBase}-lista`}
         aria-label={ariaLabel}
         aria-invalid={ariaInvalid}
+        // Un botón no lleva `required`: lo obligatorio se anuncia al lector de
+        // pantalla con aria-required (5/11/2026). La validación sigue en cada form.
+        aria-required={required || ariaRequired === true || ariaRequired === 'true' || undefined}
         disabled={disabled}
         onClick={() => (abierto ? cerrar() : abrir())}
         onKeyDown={(e) => {
