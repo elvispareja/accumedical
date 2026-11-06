@@ -1,8 +1,9 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { ChevronDown, FileUp, Package, Plus, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
+import { listarPolizas } from '@/shared/aseguradoras/api'
 import { Boton } from '@/shared/components/ui/button'
 import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
@@ -63,6 +64,8 @@ export interface ProductoFormulario {
   id?: string
   nombre: string
   servicios: ServicioProducto[]
+  /** El contrato del que sale (6/11/2026): un PDF de «Contratos y pólizas». */
+  contratoId: string
   valor: string
   topeUnidad: UnidadTope | ''
   ventana: VentanaEvento | ''
@@ -86,43 +89,54 @@ export interface ProductoSalida {
   id: string
   nombre: string
   servicios: ServicioProducto[]
-  valor: number
+  contrato_id: string | null
+  /** Listo para usarse, o lo que le falta (lo calcula el servidor). */
+  completo: boolean
+  faltan: string[]
+  valor: number | null
   tope_unidad: UnidadTope | null
   ventana_evento: VentanaEvento | null
   /** `null` = ilimitados. */
   eventos_maximo: number | null
-  porcentaje: number
+  porcentaje: number | null
   /** Horas corridas de vigencia de la receta; `null` si no incluye Farmacia. */
   vigencia_receta_horas: number | null
   requiere_vademecum: boolean | null
   despacho_parcial: boolean | null
   /** `null` = sin límite. */
   max_diagnosticos: number | null
-  beneficiarios_incluidos: boolean
+  beneficiarios_incluidos: boolean | null
   parentescos: Parentesco[]
-  carencia_dias: number
+  carencia_dias: number | null
   exclusiones: string | null
   vademecum: string[]
 }
 
-export function productoVacio(): ProductoFormulario {
+/**
+ * Un producto nuevo (6/11/2026): se crea con nombre, contrato y servicios. Las
+ * condiciones más comunes ya vienen sugeridas —ventana por mes calendario,
+ * eventos ilimitados, sin carencia, solo titulares, despacho parcial— y se
+ * pueden cambiar; lo demás queda por llenar y el producto, «incompleto».
+ */
+export function productoVacio(contratoId = ''): ProductoFormulario {
   return {
     _key: crypto.randomUUID(),
     nombre: '',
     servicios: [],
+    contratoId,
     valor: '',
     topeUnidad: '',
-    ventana: '',
+    ventana: 'mes_calendario',
     eventos: '',
-    eventosIlimitados: false,
+    eventosIlimitados: true,
     porcentaje: '',
     vigencia: '',
     vademecum: '',
-    despachoParcial: '',
+    despachoParcial: 'si',
     maxDiagnosticos: '',
-    beneficiarios: '',
+    beneficiarios: 'no',
     parentescos: [],
-    carencia: '',
+    carencia: '0',
     exclusiones: '',
     vademecumCodigos: [],
   }
@@ -142,20 +156,20 @@ export function productosDesdeApi(productos: ProductoSalida[]): ProductoFormular
     id: p.id,
     nombre: p.nombre,
     servicios: p.servicios,
-    valor: aTexto(p.valor, true),
+    contratoId: p.contrato_id ?? '',
+    valor: p.valor === null ? '' : aTexto(p.valor, true),
     topeUnidad: p.tope_unidad ?? '',
     ventana: p.ventana_evento ?? '',
-    // Un producto anterior a M2 no tiene unidad: su «ilimitado» no se supone.
     eventos: p.eventos_maximo === null ? '' : String(p.eventos_maximo),
-    eventosIlimitados: p.eventos_maximo === null && p.tope_unidad !== null,
-    porcentaje: aTexto(p.porcentaje, false),
+    eventosIlimitados: p.eventos_maximo === null,
+    porcentaje: p.porcentaje === null ? '' : aTexto(p.porcentaje, false),
     vigencia: p.vigencia_receta_horas === null ? '' : String(p.vigencia_receta_horas),
     vademecum: siNo(p.requiere_vademecum),
     despachoParcial: siNo(p.despacho_parcial),
     maxDiagnosticos: p.max_diagnosticos === null ? '' : String(p.max_diagnosticos),
-    beneficiarios: p.tope_unidad === null ? '' : siNo(p.beneficiarios_incluidos),
+    beneficiarios: siNo(p.beneficiarios_incluidos),
     parentescos: p.parentescos,
-    carencia: p.tope_unidad === null ? '' : String(p.carencia_dias),
+    carencia: p.carencia_dias === null ? '' : String(p.carencia_dias),
     exclusiones: p.exclusiones ?? '',
     vademecumCodigos: p.vademecum ?? [],
   }))
@@ -188,7 +202,36 @@ const conFarmacia = (p: ProductoFormulario) => p.servicios.includes('farmacia')
 const conConsulta = (p: ProductoFormulario) =>
   p.servicios.includes('teleconsulta') || p.servicios.includes('consulta_ambulatoria')
 
-/** El primer problema de la lista, en palabras; null si se puede guardar. Mismas reglas que el servidor. */
+/**
+ * Lo que le falta a un producto para poder usarse (6/11/2026). La misma regla
+ * que el servidor; mientras falte algo queda «incompleto».
+ */
+export function faltanProducto(p: ProductoFormulario): string[] {
+  const faltan: string[] = []
+  if (!p.contratoId) faltan.push('el contrato')
+  if (!p.valor.trim()) faltan.push('el tope')
+  if (!p.topeUnidad) faltan.push('la unidad del tope')
+  if (!p.ventana) faltan.push('la ventana del evento')
+  if (!p.porcentaje.trim()) faltan.push('la cobertura (%)')
+  if (!p.carencia.trim()) faltan.push('la carencia')
+  if (!p.beneficiarios) faltan.push('si incluye beneficiarios')
+  else if (p.beneficiarios === 'si' && p.parentescos.length === 0) faltan.push('los parentescos')
+  if (conFarmacia(p)) {
+    if (!p.vigencia.trim()) faltan.push('la vigencia de la receta')
+    if (!p.vademecum) faltan.push('si requiere vademécum')
+    else if (p.vademecum === 'si' && p.vademecumCodigos.length === 0) {
+      faltan.push('los medicamentos del vademécum')
+    }
+    if (!p.despachoParcial) faltan.push('si permite despacho parcial')
+  }
+  return faltan
+}
+
+/**
+ * El primer problema de la lista, en palabras; null si se puede guardar.
+ * Obligatorio: nombre, contrato y servicios. Lo demás puede faltar (queda
+ * «incompleto»), pero lo que se escriba tiene que estar bien escrito.
+ */
 export function validarProductos(productos: ProductoFormulario[]): string | null {
   if (productos.length > 200) return 'Una ficha admite hasta 200 productos'
   const nombres = new Set<string>()
@@ -198,39 +241,27 @@ export function validarProductos(productos: ProductoFormulario[]): string | null
     if (nombre.length > 150) return `El nombre del producto ${i + 1} admite hasta 150 caracteres`
     if (nombres.has(nombre)) return `El producto ${nombre} está repetido`
     nombres.add(nombre)
+    if (!p.contratoId) return `${nombre}: elige el contrato del que sale`
     if (p.servicios.length === 0) return `${nombre}: elige qué servicios cubre`
     const tope = aNumero(p.valor)
-    if (Number.isNaN(tope) || tope > 9_999_999_999.99) {
+    if (p.valor.trim() && (Number.isNaN(tope) || tope > 9_999_999_999.99)) {
       return `${nombre}: el tope debe ser un número con hasta dos decimales y sin separador de miles (por ejemplo 10,00)`
     }
-    if (!p.topeUnidad) return `${nombre}: elige la unidad del tope`
-    if (!p.ventana) return `${nombre}: elige la ventana del evento`
     if (!p.eventosIlimitados && aEntero(p.eventos, 1, 1000) === null) {
       return `${nombre}: el número de eventos debe ser un entero entre 1 y 1000, o marca «Ilimitados»`
     }
     const porcentaje = aNumero(p.porcentaje)
-    if (Number.isNaN(porcentaje) || porcentaje > 100) {
+    if (p.porcentaje.trim() && (Number.isNaN(porcentaje) || porcentaje > 100)) {
       return `${nombre}: la cobertura debe ser un porcentaje entre 0 y 100, con hasta dos decimales`
     }
-    if (conFarmacia(p)) {
-      if (aEntero(p.vigencia, 1, 8760) === null) {
-        return `${nombre}: la vigencia de la receta debe ser un número entero de horas entre 1 y 8760 (por ejemplo 72)`
-      }
-      if (!p.vademecum) return `${nombre}: indica si requiere vademécum`
-      if (p.vademecum === 'si' && p.vademecumCodigos.length === 0) {
-        return `${nombre}: requiere vademécum, elige sus medicamentos`
-      }
-      if (!p.despachoParcial) return `${nombre}: indica si permite despacho parcial`
+    if (conFarmacia(p) && p.vigencia.trim() && aEntero(p.vigencia, 1, 8760) === null) {
+      return `${nombre}: la vigencia de la receta debe ser un número entero de horas entre 1 y 8760 (por ejemplo 72)`
     }
     if (conConsulta(p) && p.maxDiagnosticos.trim() && aEntero(p.maxDiagnosticos, 1, 20) === null) {
       return `${nombre}: el máximo de diagnósticos por consulta debe ser un entero entre 1 y 20, o déjalo vacío (sin límite)`
     }
-    if (aEntero(p.carencia, 0, 3650) === null) {
+    if (p.carencia.trim() && aEntero(p.carencia, 0, 3650) === null) {
       return `${nombre}: la carencia debe ser un número entero de días entre 0 y 3650`
-    }
-    if (!p.beneficiarios) return `${nombre}: indica si incluye beneficiarios`
-    if (p.beneficiarios === 'si' && p.parentescos.length === 0) {
-      return `${nombre}: incluye beneficiarios, elige sus parentescos`
     }
     if (p.exclusiones.length > 2000) return `${nombre}: las exclusiones admiten hasta 2000 caracteres`
   }
@@ -249,20 +280,21 @@ export function productosHaciaApi(productos: ProductoFormulario[]) {
       ...(p.id ? { id: p.id } : {}),
       nombre: nombreNormal(p.nombre),
       servicios: SERVICIOS.map((s) => s.valor).filter((s) => p.servicios.includes(s)),
-      valor: Math.round(aNumero(p.valor) * 100) / 100,
+      contrato_id: p.contratoId || null,
+      valor: p.valor.trim() ? Math.round(aNumero(p.valor) * 100) / 100 : null,
       tope_unidad: p.topeUnidad || null,
       ventana_evento: p.ventana || null,
       eventos_maximo: p.eventosIlimitados ? null : aEntero(p.eventos, 1, 1000),
-      porcentaje: Math.round(aNumero(p.porcentaje) * 100) / 100,
+      porcentaje: p.porcentaje.trim() ? Math.round(aNumero(p.porcentaje) * 100) / 100 : null,
       vigencia_receta_horas: farmacia ? aEntero(p.vigencia, 1, 8760) : null,
-      requiere_vademecum: farmacia ? p.vademecum === 'si' : null,
-      despacho_parcial: farmacia ? p.despachoParcial === 'si' : null,
+      requiere_vademecum: farmacia && p.vademecum ? p.vademecum === 'si' : null,
+      despacho_parcial: farmacia && p.despachoParcial ? p.despachoParcial === 'si' : null,
       max_diagnosticos: conConsulta(p) ? aEntero(p.maxDiagnosticos, 1, 20) : null,
-      beneficiarios_incluidos: beneficiarios,
+      beneficiarios_incluidos: p.beneficiarios ? beneficiarios : null,
       parentescos: beneficiarios
         ? PARENTESCOS.map((x) => x.valor).filter((x) => p.parentescos.includes(x))
         : [],
-      carencia_dias: aEntero(p.carencia, 0, 3650) ?? 0,
+      carencia_dias: p.carencia.trim() ? aEntero(p.carencia, 0, 3650) : null,
       exclusiones: p.exclusiones.trim() || null,
       vademecum: farmacia && p.vademecum === 'si' ? p.vademecumCodigos : [],
     }
@@ -357,6 +389,30 @@ export function ProductosPanel({
   })
   // Cerrados se ve el resumen; los nuevos nacen abiertos.
   const [cerrados, setCerrados] = useState<Set<string>>(new Set())
+  // Las condiciones de cobertura, plegadas para no abrumar al crear (6/11/2026).
+  const [conCondiciones, setConCondiciones] = useState<Set<string>>(new Set())
+  // Los contratos del cliente: cada producto sale de uno (6/11/2026).
+  const contratos = useQuery({
+    queryKey: ['aseguradora-polizas', aseguradoraId, 'polizas'],
+    queryFn: () => listarPolizas(aseguradoraId!, 'polizas'),
+    enabled: Boolean(aseguradoraId),
+  })
+  const conDatos = (contratos.data ?? []).filter((c) => c.contrato !== null)
+  const fecha = new Intl.DateTimeFormat('es-EC', { day: 'numeric', month: 'short', year: 'numeric' })
+  const fechaCorta = (iso: string) => {
+    const [a = 0, m = 1, d = 1] = iso.split('-').map(Number)
+    return fecha.format(new Date(a, m - 1, d))
+  }
+  const hoy = new Date().toISOString().slice(0, 10)
+
+  function alternarCondiciones(clave: string) {
+    setConCondiciones((previo) => {
+      const siguiente = new Set(previo)
+      if (siguiente.has(clave)) siguiente.delete(clave)
+      else siguiente.add(clave)
+      return siguiente
+    })
+  }
   // El producto cuyo vademécum se está eligiendo.
   const [eligiendo, setEligiendo] = useState<string | null>(null)
   const productoEligiendo = productos.find((p) => p._key === eligiendo)
@@ -450,6 +506,41 @@ export function ProductosPanel({
 
                 {abierto && (
                   <div className="space-y-6 border-t border-borde p-4">
+                    <div className="space-y-2">
+                      <Label htmlFor={id('contrato')}>
+                        Contrato del que sale <span className="text-peligro">*</span>
+                      </Label>
+                      {conDatos.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-borde px-3 py-2 text-sm text-tenue-fg">
+                          {aseguradoraId
+                            ? 'Primero sube el contrato en la pestaña «Contratos y pólizas»: cada producto sale de un contrato.'
+                            : 'Guarda la ficha y sube su contrato en «Contratos y pólizas»: cada producto sale de un contrato.'}
+                        </p>
+                      ) : (
+                        <Select
+                          id={id('contrato')}
+                          value={p.contratoId}
+                          onChange={(e) => poner(p._key, 'contratoId', e.target.value)}
+                          required
+                        >
+                          <option value="" disabled>
+                            Elige el contrato
+                          </option>
+                          {conDatos.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nombre} · {fechaCorta(c.contrato!.vigencia_desde)} –{' '}
+                              {fechaCorta(c.contrato!.vigencia_hasta)}
+                              {c.contrato!.vigencia_hasta < hoy ? ' (vencido)' : ''}
+                            </option>
+                          ))}
+                        </Select>
+                      )}
+                      <p className="text-xs text-tenue-fg">
+                        Un contrato puede traer varios productos. El producto está vigente mientras
+                        lo esté su contrato.
+                      </p>
+                    </div>
+
                     <Seccion titulo="Servicios que cubre *">
                       <div className="flex flex-wrap gap-x-6 gap-y-2">
                         {SERVICIOS.map((s) => (
@@ -467,6 +558,34 @@ export function ProductosPanel({
                       </div>
                     </Seccion>
 
+                    {(() => {
+                      const faltan = faltanProducto(p)
+                      const abiertas = conCondiciones.has(p._key)
+                      return (
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-borde bg-superficie px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">Condiciones de cobertura</p>
+                            <p className={cn('text-xs', faltan.length ? 'text-aviso' : 'text-exito')}>
+                              {faltan.length
+                                ? `Incompleto: falta ${faltan.join(', ')}. No se usa hasta completarlo.`
+                                : `Completo: ${resumen(p)}`}
+                            </p>
+                          </div>
+                          <Boton
+                            type="button"
+                            variante="contorno"
+                            tamano="sm"
+                            onClick={() => alternarCondiciones(p._key)}
+                            aria-expanded={abiertas}
+                          >
+                            {abiertas ? 'Ocultar condiciones' : faltan.length ? 'Completar condiciones' : 'Ver condiciones'}
+                          </Boton>
+                        </div>
+                      )
+                    })()}
+
+                    {conCondiciones.has(p._key) && (
+                    <div className="space-y-6">
                     <Seccion titulo="Cobertura">
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <div className="space-y-2">
@@ -761,6 +880,8 @@ export function ProductosPanel({
                         lista.
                       </p>
                     </Seccion>
+                    </div>
+                    )}
                   </div>
                 )}
               </li>
@@ -804,7 +925,9 @@ export function ProductosPanel({
       <Boton
         type="button"
         variante="contorno"
-        onClick={() => onCambiar([...productos, productoVacio()])}
+        onClick={() =>
+          onCambiar([...productos, productoVacio(conDatos.length === 1 ? conDatos[0]!.id : '')])
+        }
       >
         <Plus aria-hidden="true" />
         Agregar producto

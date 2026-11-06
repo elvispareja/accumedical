@@ -492,8 +492,9 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
             name="parentescos_con_beneficiarios",
         ),
         # La receta solo existe en farmacia: con Farmacia, vigencia; sin ella, nada.
+        # Sin Farmacia no hay receta. Con Farmacia puede faltar todavía (incompleto).
         CheckConstraint(
-            "('farmacia' = ANY(servicios)) = (vigencia_receta_horas IS NOT NULL)",
+            "'farmacia' = ANY(servicios) OR vigencia_receta_horas IS NULL",
             name="receta_con_farmacia",
         ),
         CheckConstraint(
@@ -525,8 +526,9 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
         ForeignKey("aseguradoras.id", ondelete="RESTRICT"), nullable=False
     )
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
-    valor: Mapped[Decimal] = mapped_column(IMPORTE, nullable=False)
-    porcentaje: Mapped[Decimal] = mapped_column(PORCENTAJE, nullable=False)
+    # Nulos = todavía sin definir (el producto queda «incompleto»).
+    valor: Mapped[Decimal | None] = mapped_column(IMPORTE)
+    porcentaje: Mapped[Decimal | None] = mapped_column(PORCENTAJE)
     # El SLA de farmacia (6/11/2026, decisión del usuario): las horas corridas que
     # tiene el paciente para ir con su receta; pasadas, la receta vence y la
     # farmacia ya no despacha. Va en el producto porque cada uno puede tener la
@@ -551,16 +553,22 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     despacho_parcial: Mapped[bool | None] = mapped_column(Boolean)
     # Solo con teleconsulta o consulta ambulatoria. Nulo = sin límite.
     max_diagnosticos: Mapped[int | None] = mapped_column(Integer)
-    beneficiarios_incluidos: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    beneficiarios_incluidos: Mapped[bool | None] = mapped_column(Boolean)
     parentescos: Mapped[list[str]] = mapped_column(ARRAY(String(20)), nullable=False)
     # Días desde el alta del asegurado antes de poder usar el producto.
-    carencia_dias: Mapped[int] = mapped_column(Integer, nullable=False)
+    carencia_dias: Mapped[int | None] = mapped_column(Integer)
     # Medicamentos o diagnósticos que no cubre, en texto (la lista cerrada llegará
     # con el vademécum).
     exclusiones: Mapped[str | None] = mapped_column(String(2000))
     # El vademécum del producto (M5): los códigos del maestro (la central) que
     # cubre. Solo si «requiere vademécum»; entonces, al menos uno.
     vademecum: Mapped[list[str]] = mapped_column(ARRAY(String(9)), nullable=False)
+    # El contrato del que sale (6/11/2026: «un contrato puede traer varios
+    # productos»): el PDF de «Contratos y pólizas» con sus datos. El producto
+    # está vigente mientras lo esté su contrato.
+    contrato_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("aseguradora_polizas.id", ondelete="RESTRICT")
+    )
 
 # Los conceptos que se pactan en un convenio y cómo se pacta cada uno. El
 # orden es el de la pantalla, de arriba hacia abajo.

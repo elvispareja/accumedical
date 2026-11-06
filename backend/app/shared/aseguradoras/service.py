@@ -648,6 +648,7 @@ def fijar_productos(
         nombres.add(datos["nombre"])
 
     existentes = {p.id: p for p in productos_de(db, aseguradora_id)}
+    _validar_contratos(db, aseguradora_id, entrantes)
     _validar_vademecum(entrantes, existentes)
     vistos: set[uuid.UUID] = set()
     for datos in entrantes:
@@ -715,6 +716,36 @@ def fijar_productos(
     return None
 
 
+def _validar_contratos(
+    db: DbSession, aseguradora_id: uuid.UUID, entrantes: list[dict[str, Any]]
+) -> None:
+    """El contrato de cada producto: un PDF de «Contratos y pólizas» de ESTE cliente."""
+    from app.shared.aseguradoras.models import AseguradoraContrato, AseguradoraPoliza
+
+    pedidos = {datos["contrato_id"] for datos in entrantes if datos.get("contrato_id")}
+    if not pedidos:
+        return
+    validos = set(db.scalars(
+        select(AseguradoraPoliza.id)
+        .join(AseguradoraContrato, AseguradoraContrato.poliza_id == AseguradoraPoliza.id)
+        .where(
+            AseguradoraPoliza.id.in_(pedidos),
+            AseguradoraPoliza.aseguradora_id == aseguradora_id,
+            AseguradoraPoliza.categoria == "polizas",
+            AseguradoraPoliza.deleted_at.is_(None),
+        )
+    ))
+    for datos in entrantes:
+        if datos.get("contrato_id") and datos["contrato_id"] not in validos:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"{datos['nombre']}: el contrato no es de este cliente o le faltan sus "
+                    "datos (vigencia) en «Contratos y pólizas»"
+                ),
+            )
+
+
 def _validar_vademecum(
     entrantes: list[dict[str, Any]], existentes: dict[uuid.UUID, AseguradoraProducto]
 ) -> None:
@@ -767,6 +798,7 @@ CAMPOS_PRODUCTO = (
     "carencia_dias",
     "exclusiones",
     "vademecum",
+    "contrato_id",
 )
 
 
@@ -776,7 +808,7 @@ def _producto_auditado(
     """Los campos del producto para el AuditLog, con los montos como texto exacto."""
     def valor(campo: str) -> Any:
         crudo = getattr(producto, campo)
-        return str(crudo) if isinstance(crudo, Decimal) else crudo
+        return str(crudo) if isinstance(crudo, Decimal | uuid.UUID) else crudo
 
     return {c: valor(c) for c in (campos or list(CAMPOS_PRODUCTO))}
 
@@ -1078,3 +1110,39 @@ def fijar_convenios(
     if not (habilitados or retirados or recolocados):
         return None
     return {"habilitados": habilitados, "retirados": retirados, "red_cambiada": recolocados}
+
+def faltan_producto(p: Any) -> list[str]:
+    """
+    Lo que le falta a un producto para poder USARSE (6/11/2026): se crea con
+    nombre, contrato y servicios, y sus condiciones se completan después.
+    Mientras falte algo no se le carga la base de asegurados ni se atiende.
+    La MISMA regla en la plataforma y en la central.
+    """
+    faltan = []
+    if p.contrato_id is None:
+        faltan.append("el contrato")
+    if p.valor is None:
+        faltan.append("el tope")
+    if p.tope_unidad is None:
+        faltan.append("la unidad del tope")
+    if p.ventana_evento is None:
+        faltan.append("la ventana del evento")
+    if p.porcentaje is None:
+        faltan.append("la cobertura (%)")
+    if p.carencia_dias is None:
+        faltan.append("la carencia")
+    if p.beneficiarios_incluidos is None:
+        faltan.append("si incluye beneficiarios")
+    elif p.beneficiarios_incluidos and not p.parentescos:
+        faltan.append("los parentescos")
+    if "farmacia" in (p.servicios or []):
+        if p.vigencia_receta_horas is None:
+            faltan.append("la vigencia de la receta")
+        if p.requiere_vademecum is None:
+            faltan.append("si requiere vademécum")
+        elif p.requiere_vademecum and not p.vademecum:
+            faltan.append("los medicamentos del vademécum")
+        if p.despacho_parcial is None:
+            faltan.append("si permite despacho parcial")
+    return faltan
+

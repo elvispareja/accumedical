@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 import unicodedata
+import uuid
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -305,29 +306,35 @@ class ModuloHabilitado(BaseModel):
 class ProductoEntrada(BaseModel):
     """
     Un producto del cliente (5/11/2026) con sus condiciones de cobertura (M2,
-    6/11/2026). Con `id` se actualiza; sin él, se crea. Llega SIEMPRE completo.
+    6/11/2026). Con `id` se actualiza; sin él, se crea. Llega SIEMPRE con todos
+    sus campos. Obligatorios: nombre, servicios y contrato; las condiciones
+    pueden venir vacías (`null`) y el producto queda «incompleto» hasta llenarlas.
     """
 
     id: str | None = None
     nombre: Annotated[str, Field(min_length=1, max_length=300)]
     servicios: list[ServicioProducto] = Field(min_length=1, max_length=4)
+    # El contrato del que sale: un PDF de «Contratos y pólizas» de ESTE cliente.
+    contrato_id: uuid.UUID
     # El tope de cobertura (USD) y su unidad.
-    valor: Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
-    tope_unidad: UnidadTope
-    ventana_evento: VentanaEvento
+    valor: Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)] | None = None
+    tope_unidad: UnidadTope | None = None
+    ventana_evento: VentanaEvento | None = None
     # Nulo = ilimitados.
     eventos_maximo: Annotated[int, Field(ge=1, le=1000)] | None = None
     # El porcentaje de cobertura; el copago es 100 − porcentaje.
-    porcentaje: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
-    # Solo con Farmacia (obligatorios entonces). Un año como tope de la receta.
+    porcentaje: (
+        Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)] | None
+    ) = None
+    # Solo con Farmacia. Un año como tope de la receta.
     vigencia_receta_horas: Annotated[int, Field(ge=1, le=8760)] | None = None
     requiere_vademecum: bool | None = None
     despacho_parcial: bool | None = None
     # Solo con teleconsulta o consulta ambulatoria. Nulo = sin límite.
     max_diagnosticos: Annotated[int, Field(ge=1, le=20)] | None = None
-    beneficiarios_incluidos: bool
+    beneficiarios_incluidos: bool | None = None
     parentescos: list[Parentesco] = Field(default_factory=list, max_length=3)
-    carencia_dias: Annotated[int, Field(ge=0, le=3650)]
+    carencia_dias: Annotated[int, Field(ge=0, le=3650)] | None = None
     exclusiones: str | None = Field(default=None, max_length=4000)
     # Vademécum del producto (6/11/2026): códigos «VAD-00001» del maestro.
     vademecum: list[Annotated[str, Field(pattern=r"^VAD-[0-9]{5}$")]] = Field(
@@ -360,16 +367,8 @@ class ProductoEntrada(BaseModel):
         self.parentescos = [p for p in PARENTESCOS if p in set(self.parentescos)]  # type: ignore[misc]
         nombre = self.nombre
         de_farmacia = (self.vigencia_receta_horas, self.requiere_vademecum, self.despacho_parcial)
-        if "farmacia" in self.servicios:
-            if self.vigencia_receta_horas is None:
-                raise ValueError(f"{nombre}: incluye Farmacia, falta la vigencia de la receta")
-            if self.requiere_vademecum is None:
-                raise ValueError(f"{nombre}: incluye Farmacia, falta decir si requiere vademécum")
-            if self.despacho_parcial is None:
-                raise ValueError(
-                    f"{nombre}: incluye Farmacia, falta decir si permite despacho parcial"
-                )
-        elif any(v is not None for v in de_farmacia):
+        # Lo que falte con Farmacia deja el producto «incompleto»; lo que sobre sin ella es error.
+        if "farmacia" not in self.servicios and any(v is not None for v in de_farmacia):
             raise ValueError(
                 f"{nombre}: la vigencia de la receta, el vademécum y el despacho parcial "
                 "son solo de un producto con Farmacia"
@@ -382,12 +381,8 @@ class ProductoEntrada(BaseModel):
                 "con teleconsulta o consulta ambulatoria"
             )
         self.vademecum = sorted(set(self.vademecum))
-        if self.requiere_vademecum and not self.vademecum:
-            raise ValueError(f"{nombre}: requiere vademécum, elige sus medicamentos")
         if not self.requiere_vademecum and self.vademecum:
             raise ValueError(f"{nombre}: solo lleva medicamentos si requiere vademécum")
-        if self.beneficiarios_incluidos and not self.parentescos:
-            raise ValueError(f"{nombre}: incluye beneficiarios, elige sus parentescos")
         if not self.beneficiarios_incluidos and self.parentescos:
             raise ValueError(f"{nombre}: sin beneficiarios no lleva parentescos")
         return self
@@ -415,18 +410,22 @@ class ProductoSalida(BaseModel):
     id: str
     nombre: str
     servicios: list[str]
-    valor: float
+    contrato_id: str | None
+    # Listo para usarse, o qué le falta (6/11/2026).
+    completo: bool
+    faltan: list[str]
+    valor: float | None
     tope_unidad: str | None
     ventana_evento: str | None
     eventos_maximo: int | None
-    porcentaje: float
+    porcentaje: float | None
     vigencia_receta_horas: int | None
     requiere_vademecum: bool | None
     despacho_parcial: bool | None
     max_diagnosticos: int | None
-    beneficiarios_incluidos: bool
+    beneficiarios_incluidos: bool | None
     parentescos: list[str]
-    carencia_dias: int
+    carencia_dias: int | None
     exclusiones: str | None
     vademecum: list[str]
 

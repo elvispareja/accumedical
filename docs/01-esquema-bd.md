@@ -1301,6 +1301,8 @@ configurables por producto», pág. 1 de la especificación). Cada producto dice
 «Canal obligatorio de receta: solo teleconsulta AccuMedical» no es columna: es la
 regla fija RN-01.
 
+**Ligado a su contrato; puede estar incompleto (`a9c3e7f1b462`, 6/11/2026):** decisiones del usuario: «un contrato puede traer varios productos» → `contrato_id` (FK a `aseguradora_polizas`: el PDF de «Contratos y pólizas» con sus datos; la API exige que sea de este cliente) y el producto está vigente mientras lo esté su contrato. Y crear un producto no debe abrumar: se crea con nombre, contrato y servicios; `valor`, `porcentaje`, `carencia_dias` y `beneficiarios_incluidos` admiten nulo y, con Farmacia, la receta, el vademécum y el despacho parcial pueden faltar. Mientras falte algo el producto está **incompleto** (`faltan_producto`, la misma regla en las dos bases): no recibe su base de asegurados ni se usa.
+
 **Vademécum del producto (`f7a1c3e5b829`, M5):** `vademecum varchar(9)[]` con los
 códigos «VAD-00001» del **vademécum maestro**, que vive en la central (tabla
 `vademecum`, cargada del Cuadro Nacional de Medicamentos Básicos XII; no se copia
