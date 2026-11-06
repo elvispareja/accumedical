@@ -174,6 +174,9 @@ class SlaSalida(BaseModel):
     # escritura nueva los exige.
     horas: float | None
     precio: float | None
+    # True en Farmacovigilancia (6/11/2026): su SLA es la vigencia de la receta
+    # y va en cada producto; aquí no lleva horas ni precio.
+    sla_en_producto: bool = False
 
 
 class ListadoPreciosSalida(BaseModel):
@@ -184,18 +187,20 @@ class ListadoPreciosSalida(BaseModel):
 
 class ContratoEntrada(BaseModel):
     """
-    Los datos del contrato o póliza (especificación de la Central, M1). Todos
-    obligatorios menos la fecha de revisión de la tarifa.
+    Los datos del contrato o póliza (especificación de la Central, M1). La
+    vigencia, siempre. La tarifa, su unidad y la forma de pago de los
+    medicamentos van juntas, y solo en un cliente con Farmacovigilancia: eso lo
+    decide el router, que sabe qué tiene contratado (6/11/2026).
     """
 
     model_config = ConfigDict(extra="forbid")
 
     vigencia_desde: dt.date
     vigencia_hasta: dt.date
-    tarifa: Decimal = Field(ge=0, max_digits=14, decimal_places=4)
-    tarifa_unidad: UnidadTarifa
+    tarifa: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=4)
+    tarifa_unidad: UnidadTarifa | None = None
     revision_tarifa: dt.date | None = None
-    forma_pago_medicamentos: FormaPagoMedicamentos
+    forma_pago_medicamentos: FormaPagoMedicamentos | None = None
 
     @model_validator(mode="after")
     def _fechas_coherentes(self) -> ContratoEntrada:
@@ -208,17 +213,33 @@ class ContratoEntrada(BaseModel):
             raise ValueError(
                 "La revisión de la tarifa no puede ser antes del inicio de la vigencia"
             )
+        tarifa = {
+            "la tarifa": self.tarifa,
+            "la unidad de la tarifa": self.tarifa_unidad,
+            "la forma de pago de los medicamentos": self.forma_pago_medicamentos,
+        }
+        if any(v is not None for v in tarifa.values()):
+            falta = next((k for k, v in tarifa.items() if v is None), None)
+            if falta:
+                raise ValueError(
+                    f"Falta {falta}: la tarifa, su unidad y la forma de pago van juntas"
+                )
         return self
+
+    @property
+    def con_tarifa(self) -> bool:
+        return self.tarifa is not None
 
 
 class ContratoSalida(BaseModel):
     vigencia_desde: dt.date
     vigencia_hasta: dt.date
     # Como texto («0.0500»): con cuatro decimales, un float podría redondear.
-    tarifa: str
-    tarifa_unidad: str
+    # Las tres nulas en el contrato de un cliente sin Farmacovigilancia.
+    tarifa: str | None
+    tarifa_unidad: str | None
     revision_tarifa: dt.date | None
-    forma_pago_medicamentos: str
+    forma_pago_medicamentos: str | None
     actualizado_at: dt.datetime
 
 
@@ -280,6 +301,8 @@ class ProductoEntrada(BaseModel):
     nombre: Annotated[str, Field(min_length=1, max_length=300)]
     valor: Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
     porcentaje: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
+    # Horas corridas que dura la receta (6/11/2026). Nulo = no aplica. Un año como tope.
+    vigencia_receta_horas: Annotated[int, Field(ge=1, le=8760)] | None = None
 
     @field_validator("nombre")
     @classmethod
@@ -305,6 +328,7 @@ class ProductoSalida(BaseModel):
     nombre: str
     valor: float
     porcentaje: float
+    vigencia_receta_horas: int | None = None
 
 
 class AseguradoraCrear(_ConRuc):

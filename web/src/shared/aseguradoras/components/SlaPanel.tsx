@@ -77,7 +77,8 @@ export function SlaPanel({ aseguradoraId }: { aseguradoraId: string | null }) {
     mutationFn: () =>
       fijarSla(
         aseguradoraId!,
-        (sla.data ?? []).map((m) => ({
+        // Farmacovigilancia no se envía: su SLA va en cada producto.
+        (sla.data ?? []).filter((m) => !m.sla_en_producto).map((m) => ({
           module_code: m.module_code,
           horas: aNumero(filas[m.module_code]?.horas ?? '') ?? 0,
           precio: aNumero(filas[m.module_code]?.precio ?? '') ?? 0,
@@ -101,8 +102,9 @@ export function SlaPanel({ aseguradoraId }: { aseguradoraId: string | null }) {
   function incompletos(modulos: SlaModulo[]): SlaModulo[] {
     return modulos.filter(
       (m) =>
-        aNumero(filas[m.module_code]?.horas ?? '') === null ||
-        aNumero(filas[m.module_code]?.precio ?? '') === null,
+        !m.sla_en_producto &&
+        (aNumero(filas[m.module_code]?.horas ?? '') === null ||
+        aNumero(filas[m.module_code]?.precio ?? '') === null),
     )
   }
 
@@ -141,6 +143,7 @@ export function SlaPanel({ aseguradoraId }: { aseguradoraId: string | null }) {
   // Agrupados por familia, como en la pestaña Módulos: se lee igual en las dos.
   const familias = [...new Set(modulos.map((m) => m.grupo ?? ''))]
   const faltan = incompletos(modulos)
+  const conSla = modulos.filter((m) => !m.sla_en_producto)
 
   function enviar() {
     if (faltan.length > 0) {
@@ -164,7 +167,19 @@ export function SlaPanel({ aseguradoraId }: { aseguradoraId: string | null }) {
           <div className="space-y-3">
             {modulos
               .filter((m) => (m.grupo ?? '') === familia)
-              .map((m: SlaModulo) => (
+              .map((m: SlaModulo) =>
+                m.sla_en_producto ? (
+                  // Farmacovigilancia (6/11/2026): su SLA es el tiempo que tiene el
+                  // paciente para ir con su receta, sin precio; va en cada producto.
+                  <div key={m.module_code} className="rounded-md border border-borde p-4">
+                    <p className="font-display text-sm font-medium">{m.module_nombre}</p>
+                    <p className="mt-1 text-sm text-tenue-fg">
+                      Aquí no lleva horas ni precio. Su SLA es la vigencia de la receta y se
+                      define en cada producto (pestaña Producto). Lo que cobra AccuMedical va en
+                      el contrato (pestaña Contratos y pólizas).
+                    </p>
+                  </div>
+                ) : (
                 <div
                   key={m.module_code}
                   className="grid items-end gap-4 rounded-md border border-borde p-4 sm:grid-cols-[1fr_9rem_9rem]"
@@ -197,7 +212,8 @@ export function SlaPanel({ aseguradoraId }: { aseguradoraId: string | null }) {
                     />
                   </div>
                 </div>
-              ))}
+                ),
+              )}
           </div>
         </div>
       ))}
@@ -210,13 +226,15 @@ export function SlaPanel({ aseguradoraId }: { aseguradoraId: string | null }) {
           {faltan.length > 0
             ? `Falta el SLA de ${faltan.length} módulo${faltan.length === 1 ? '' : 's'}: ` +
               faltan.map((m) => m.module_nombre).join(', ')
-            : `${modulos.length} módulo${modulos.length === 1 ? '' : 's'} contratado${
-                modulos.length === 1 ? '' : 's'
-              }, todos con su SLA.`}
+            : conSla.length === 0
+              ? 'Ningún módulo de este cliente lleva SLA en esta pestaña.'
+              : `${conSla.length} módulo${conSla.length === 1 ? '' : 's'} con SLA aquí, todos completos.`}
         </p>
-        <Boton type="button" onClick={enviar} cargando={guardar.isPending}>
-          Guardar SLA
-        </Boton>
+        {conSla.length > 0 && (
+          <Boton type="button" onClick={enviar} cargando={guardar.isPending}>
+            Guardar SLA
+          </Boton>
+        )}
       </div>
     </div>
   )

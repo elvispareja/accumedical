@@ -688,6 +688,9 @@ def fijar_productos(
             "valor": datos["valor"],
             "porcentaje": datos["porcentaje"],
         }
+        # Si no viene (PATCH parcial), se respeta la que tenga.
+        if "vigencia_receta_horas" in datos:
+            campos["vigencia_receta_horas"] = datos["vigencia_receta_horas"]
         if datos.get("id"):
             producto = existentes[uuid.UUID(str(datos["id"]))]
             cambiados = [c for c, v in campos.items() if getattr(producto, c) != v]
@@ -718,11 +721,12 @@ def fijar_productos(
 
 def _producto_auditado(
     producto: AseguradoraProducto, campos: list[str] | None = None
-) -> dict[str, str]:
+) -> dict[str, str | None]:
     """Los campos del producto para el AuditLog, con los montos como texto exacto."""
+    todos = ["nombre", "valor", "porcentaje", "vigencia_receta_horas"]
     return {
-        c: str(getattr(producto, c))
-        for c in (campos or ["nombre", "valor", "porcentaje"])
+        c: None if getattr(producto, c) is None else str(getattr(producto, c))
+        for c in (campos or todos)
     }
 
 # ──────────────── Convenios: la red, elegida DESDE la aseguradora ────────────
@@ -766,6 +770,28 @@ def convenios_de_aseguradora(db: DbSession, aseguradora_id: uuid.UUID) -> list[d
     ]
 
 
+#: El módulo de la app de farmacias (Farmacovigilancia).
+MODULO_FARMACIA = "farmacia"
+#: Módulos cuyo SLA NO se pacta en la pestaña SLA (6/11/2026, decisión del
+#: usuario): en farmacia el SLA es la vigencia de la receta —el tiempo que tiene
+#: el paciente para ir con ella— y va en cada producto, sin precio ni monto; lo
+#: que cobra AccuMedical va en el contrato.
+MODULOS_SLA_EN_PRODUCTO = frozenset({MODULO_FARMACIA})
+
+
+def tiene_modulo(db: DbSession, aseguradora_id: uuid.UUID, codigo: str) -> bool:
+    """¿La compañía tiene ese módulo contratado (activo) AHORA, según lo guardado?"""
+    return (
+        db.scalar(
+            select(AseguradoraModulo.activo).where(
+                AseguradoraModulo.aseguradora_id == aseguradora_id,
+                AseguradoraModulo.module_code == codigo,
+            )
+        )
+        is True
+    )
+
+
 def sla_de(db: DbSession, aseguradora_id: uuid.UUID) -> list[dict[str, Any]]:
     """
     El SLA de los módulos que esta compañía tiene ACTIVOS, en el orden del
@@ -801,6 +827,7 @@ def sla_de(db: DbSession, aseguradora_id: uuid.UUID) -> list[dict[str, Any]]:
             "grupo": grupo,
             "horas": valor(code, "horas"),
             "precio": valor(code, "precio"),
+            "sla_en_producto": code in MODULOS_SLA_EN_PRODUCTO,
         }
         for code, nombre, grupo in filas
     ]
@@ -826,6 +853,16 @@ def fijar_sla(
         ).all()
     }
     pedidos = {e["module_code"] for e in entradas}
+    if pedidos & MODULOS_SLA_EN_PRODUCTO:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Farmacovigilancia no lleva horas ni precio en el SLA: su SLA es la "
+                "vigencia de la receta de cada producto"
+            ),
+        )
+    # Los de SLA en el producto no se piden aquí.
+    activos -= MODULOS_SLA_EN_PRODUCTO
     if pedidos - activos:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -64,7 +64,7 @@ export interface AseguradoraDetalle extends AseguradoraResumen {
   longitud: number
   modulos: ModuloHabilitado[]
   contactos: ContactoSalida[]
-  /** Productos de un broker o una cooperativa (vacío en una aseguradora). */
+  /** Los productos del cliente, de cualquier tipo. */
   productos: ProductoSalida[]
 }
 
@@ -238,6 +238,8 @@ export interface SlaModulo {
   grupo: string | null
   horas: number | null
   precio: number | null
+  /** Farmacovigilancia (6/11/2026): su SLA es la vigencia de la receta de cada producto. */
+  sla_en_producto: boolean
 }
 
 export async function listarSla(aseguradoraId: string) {
@@ -275,14 +277,18 @@ export const FORMAS_PAGO_MEDICAMENTOS: { valor: FormaPagoMedicamentos; etiqueta:
   { valor: 'incluido_en_tarifa', etiqueta: 'Incluido en la tarifa' },
 ]
 
-/** Los datos del contrato o póliza. Fechas `AAAA-MM-DD`; la tarifa como texto («0.0500»). */
+/**
+ * Los datos del contrato o póliza. Fechas `AAAA-MM-DD`; la tarifa como texto
+ * («0.0500»). La tarifa, su unidad y la forma de pago van juntas y solo en un
+ * cliente con Farmacovigilancia (6/11/2026); si no, las tres son `null`.
+ */
 export interface Contrato {
   vigencia_desde: string
   vigencia_hasta: string
-  tarifa: string
-  tarifa_unidad: UnidadTarifa
+  tarifa: string | null
+  tarifa_unidad: UnidadTarifa | null
   revision_tarifa: string | null
-  forma_pago_medicamentos: FormaPagoMedicamentos
+  forma_pago_medicamentos: FormaPagoMedicamentos | null
   actualizado_at: string
 }
 

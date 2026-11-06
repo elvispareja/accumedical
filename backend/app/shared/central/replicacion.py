@@ -63,7 +63,7 @@ ENTIDADES: list[tuple[str, str]] = [
     (
         # Los productos de brokers y cooperativas (5/11/2026).
         "aseguradora_productos",
-        "SELECT id, aseguradora_id, nombre, valor, porcentaje,"
+        "SELECT id, aseguradora_id, nombre, valor, porcentaje, vigencia_receta_horas,"
         " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
         " FROM aseguradora_productos",
     ),

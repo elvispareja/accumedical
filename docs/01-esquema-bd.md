@@ -1270,6 +1270,15 @@ brokers y cooperativas; desde el 6/11 es para **todo tipo de cliente**, como
 pide la especificación de la Central («el producto se registra a nivel del
 cliente» y es exclusivo de él).
 
+**Vigencia de la receta (`c2e8f4a6d135`, 6/11/2026):** decisión del usuario, en
+farmacia el SLA es el tiempo que tiene el paciente para ir con su receta; pasado,
+la receta vence y la farmacia ya no despacha. No lleva precio ni monto. Va en
+CADA producto (`vigencia_receta_horas`, horas corridas 1–8760; nulo = no aplica,
+p. ej. una consulta ambulatoria), porque cada producto puede tener la suya (72 h,
+10 días…). La pantalla la pide solo si el cliente tiene Farmacovigilancia
+marcado, con la casilla «No aplica»; sin Farmacovigilancia no se ve y se conserva
+la que hubiera.
+
 ```sql
 CREATE TABLE aseguradora_productos (
     id              uuid          NOT NULL DEFAULT gen_random_uuid(),
@@ -1277,10 +1286,13 @@ CREATE TABLE aseguradora_productos (
     nombre          varchar(150)  NOT NULL,          -- en MAYÚSCULAS
     valor           numeric(12,2) NOT NULL,          -- USD, >= 0
     porcentaje      numeric(5,2)  NOT NULL,          -- 0 a 100
+    vigencia_receta_horas integer NULL,              -- SLA de farmacia; NULL = no aplica
     -- auditoría de fila y baja lógica: created/updated_at|by, deleted_at|by
     CONSTRAINT pk_aseguradora_productos PRIMARY KEY (id),
     CONSTRAINT ck_aseguradora_productos_valor      CHECK (valor >= 0),
-    CONSTRAINT ck_aseguradora_productos_porcentaje CHECK (porcentaje BETWEEN 0 AND 100)
+    CONSTRAINT ck_aseguradora_productos_porcentaje CHECK (porcentaje BETWEEN 0 AND 100),
+    CONSTRAINT ck_aseguradora_productos_vigencia_receta_horas
+        CHECK (vigencia_receta_horas IS NULL OR vigencia_receta_horas BETWEEN 1 AND 8760)
 );
 CREATE INDEX ix_aseguradora_productos_aseguradora_id
     ON aseguradora_productos (aseguradora_id) WHERE deleted_at IS NULL;
@@ -1426,10 +1438,17 @@ sus datos. Una fila por PDF: `poliza_id` es la PK y la FK a `aseguradora_polizas
 | Columna | Tipo | Regla |
 |---|---|---|
 | `vigencia_desde`, `vigencia_hasta` | `date` NOT NULL | `hasta >= desde`; la API exige años 2000–2100 |
-| `tarifa` | `numeric(14,4)` NOT NULL | `>= 0`; lo que el cliente paga a AccuMedical (NO la cobertura del paciente, que va en el producto) |
-| `tarifa_unidad` | `varchar(20)` NOT NULL | `asegurado_mes` · `evento` · `fija_mensual` |
+| `tarifa` | `numeric(14,4)` NULL | `>= 0`; lo que el cliente paga a AccuMedical por farmacia (NO la cobertura del paciente, que va en el producto) |
+| `tarifa_unidad` | `varchar(20)` NULL | `asegurado_mes` · `evento` · `fija_mensual` |
 | `revision_tarifa` | `date` NULL | opcional; `>= vigencia_desde` |
-| `forma_pago_medicamentos` | `varchar(30)` NOT NULL | `reembolso_aparte` · `incluido_en_tarifa` |
+| `forma_pago_medicamentos` | `varchar(30)` NULL | `reembolso_aparte` · `incluido_en_tarifa` |
+
+**Desde `c2e8f4a6d135` (6/11/2026):** la tarifa, su unidad y la forma de pago van
+las tres juntas o ninguna (`ck_aseguradora_contratos_tarifa_completa`), y la API
+las exige SOLO si el cliente tiene Farmacovigilancia guardado (y las rechaza si
+no): en los demás módulos lo que cobra AccuMedical es el precio de la pestaña SLA.
+Si un cliente pierde Farmacovigilancia, la tarifa que ya tenía su contrato se
+conserva y editar la vigencia no la toca.
 
 - El PDF y sus datos se suben JUNTOS (un solo `POST` multipart): sin datos, `422`
   y el archivo no llega al almacén. Los PDF anteriores a esta tabla no tienen

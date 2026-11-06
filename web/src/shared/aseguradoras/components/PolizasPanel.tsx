@@ -62,10 +62,10 @@ function contratoDesdeApi(c: Contrato): ContratoFormulario {
   return {
     vigencia_desde: c.vigencia_desde,
     vigencia_hasta: c.vigencia_hasta,
-    tarifa: tarifaParaEditar(c.tarifa),
-    tarifa_unidad: c.tarifa_unidad,
+    tarifa: c.tarifa === null ? '' : tarifaParaEditar(c.tarifa),
+    tarifa_unidad: c.tarifa_unidad ?? '',
     revision_tarifa: c.revision_tarifa ?? '',
-    forma_pago_medicamentos: c.forma_pago_medicamentos,
+    forma_pago_medicamentos: c.forma_pago_medicamentos ?? '',
   }
 }
 
@@ -78,8 +78,11 @@ function tarifaNormal(texto: string): string | null {
   return /^\d{1,10}(\.\d{1,4})?$/.test(limpio) ? limpio : null
 }
 
-/** El primer problema, en palabras; null si se puede guardar. Mismas reglas que el servidor. */
-function validarContrato(f: ContratoFormulario): string | null {
+/**
+ * El primer problema, en palabras; null si se puede guardar. Mismas reglas que
+ * el servidor: la tarifa, su unidad y la forma de pago, solo con Farmacovigilancia.
+ */
+function validarContrato(f: ContratoFormulario, conFarmacia: boolean): string | null {
   if (!f.vigencia_desde) return 'Falta la fecha de inicio de la vigencia'
   if (!f.vigencia_hasta) return 'Falta la fecha de fin de la vigencia'
   const fechas = [f.vigencia_desde, f.vigencia_hasta, f.revision_tarifa].filter(Boolean)
@@ -87,26 +90,29 @@ function validarContrato(f: ContratoFormulario): string | null {
     return 'Las fechas del contrato deben estar entre el año 2000 y el 2100'
   }
   if (f.vigencia_hasta < f.vigencia_desde) return 'La vigencia del contrato termina antes de empezar'
+  if (f.revision_tarifa && f.revision_tarifa < f.vigencia_desde) {
+    return 'La revisión de la tarifa no puede ser antes del inicio de la vigencia'
+  }
+  if (!conFarmacia) return null
   if (tarifaNormal(f.tarifa) === null) {
     return 'La tarifa debe ser un número con hasta cuatro decimales y sin separador de miles (por ejemplo 0,05)'
   }
   if (!f.tarifa_unidad) return 'Elige la unidad de la tarifa'
-  if (f.revision_tarifa && f.revision_tarifa < f.vigencia_desde) {
-    return 'La revisión de la tarifa no puede ser antes del inicio de la vigencia'
-  }
   if (!f.forma_pago_medicamentos) return 'Elige la forma de pago de los medicamentos'
   return null
 }
 
 /** Solo tras `validarContrato`: ahí ya se comprobó cada campo. */
-function contratoHaciaApi(f: ContratoFormulario): ContratoEntrada {
+function contratoHaciaApi(f: ContratoFormulario, conFarmacia: boolean): ContratoEntrada {
   return {
     vigencia_desde: f.vigencia_desde,
     vigencia_hasta: f.vigencia_hasta,
-    tarifa: tarifaNormal(f.tarifa) ?? '',
-    tarifa_unidad: f.tarifa_unidad as UnidadTarifa,
+    tarifa: conFarmacia ? tarifaNormal(f.tarifa) : null,
+    tarifa_unidad: conFarmacia ? (f.tarifa_unidad as UnidadTarifa) : null,
     revision_tarifa: f.revision_tarifa || null,
-    forma_pago_medicamentos: f.forma_pago_medicamentos as FormaPagoMedicamentos,
+    forma_pago_medicamentos: conFarmacia
+      ? (f.forma_pago_medicamentos as FormaPagoMedicamentos)
+      : null,
   }
 }
 
@@ -133,6 +139,11 @@ function diasEntre(desde: string, hasta: string): number {
 function tarifaTexto(c: Contrato): string {
   const unidad = UNIDADES_TARIFA.find((u) => u.valor === c.tarifa_unidad)?.texto ?? ''
   return `USD ${MONTO.format(Number(c.tarifa))} ${unidad}`.trim()
+}
+
+/** ¿Al contrato le faltan datos que este cliente sí debe llevar? */
+function faltaTarifa(c: Contrato, conFarmacia: boolean): boolean {
+  return conFarmacia && c.tarifa === null
 }
 
 function formaPagoTexto(forma: FormaPagoMedicamentos): string {
@@ -175,15 +186,21 @@ function EstadoContrato({ contrato }: { contrato: Contrato }) {
   )
 }
 
-/** Los seis campos del contrato; los usan el alta y la edición. */
+/**
+ * Los campos del contrato; los usan el alta y la edición. La tarifa, su unidad
+ * y la forma de pago de los medicamentos, solo si el cliente tiene
+ * Farmacovigilancia (6/11/2026).
+ */
 function ContratoCampos({
   prefijo,
   valor,
   onCambiar,
+  conFarmacia,
 }: {
   prefijo: string
   valor: ContratoFormulario
   onCambiar: (valor: ContratoFormulario) => void
+  conFarmacia: boolean
 }) {
   function poner<K extends keyof ContratoFormulario>(campo: K, v: ContratoFormulario[K]) {
     onCambiar({ ...valor, [campo]: v })
@@ -217,6 +234,8 @@ function ContratoCampos({
           onChange={(e) => poner('vigencia_hasta', e.target.value)}
         />
       </div>
+      {conFarmacia && (
+      <>
       <div className="space-y-2">
         <Label htmlFor={id('tarifa')}>
           Tarifa a AccuMedical (USD) <span className="text-peligro">*</span>
@@ -251,6 +270,8 @@ function ContratoCampos({
           ))}
         </Select>
       </div>
+      </>
+      )}
       <div className="space-y-2">
         <Label htmlFor={id('revision')}>Fecha de revisión de la tarifa</Label>
         <Input
@@ -266,6 +287,7 @@ function ContratoCampos({
           Opcional. Por ejemplo, a los 3 meses.
         </p>
       </div>
+      {conFarmacia && (
       <div className="space-y-2">
         <Label htmlFor={id('forma-pago')}>
           Forma de pago de los medicamentos <span className="text-peligro">*</span>
@@ -288,6 +310,7 @@ function ContratoCampos({
           ))}
         </Select>
       </div>
+      )}
     </div>
   )
 }
@@ -301,20 +324,24 @@ function DatosContrato({ contrato }: { contrato: Contrato }) {
           {fechaCorta(contrato.vigencia_desde)} – {fechaCorta(contrato.vigencia_hasta)}
         </dd>
       </div>
-      <div>
-        <dt className="text-xs text-tenue-fg">Tarifa a AccuMedical</dt>
-        <dd className="tabular">{tarifaTexto(contrato)}</dd>
-      </div>
+      {contrato.tarifa !== null && (
+        <div>
+          <dt className="text-xs text-tenue-fg">Tarifa a AccuMedical</dt>
+          <dd className="tabular">{tarifaTexto(contrato)}</dd>
+        </div>
+      )}
       <div>
         <dt className="text-xs text-tenue-fg">Revisión de la tarifa</dt>
         <dd className="tabular">
           {contrato.revision_tarifa ? fechaCorta(contrato.revision_tarifa) : 'Sin fecha'}
         </dd>
       </div>
-      <div>
-        <dt className="text-xs text-tenue-fg">Medicamentos</dt>
-        <dd>{formaPagoTexto(contrato.forma_pago_medicamentos)}</dd>
-      </div>
+      {contrato.forma_pago_medicamentos !== null && (
+        <div>
+          <dt className="text-xs text-tenue-fg">Medicamentos</dt>
+          <dd>{formaPagoTexto(contrato.forma_pago_medicamentos)}</dd>
+        </div>
+      )}
     </dl>
   )
 }
@@ -322,9 +349,12 @@ function DatosContrato({ contrato }: { contrato: Contrato }) {
 /**
  * **Contratos y pólizas** del cliente: subir, ver y retirar sus PDF. Desde el
  * 6/11/2026 (especificación de la Central, M1) cada uno lleva sus datos —
- * vigencia, tarifa con su unidad, revisión de la tarifa y forma de pago de los
- * medicamentos— y se sube CON ellos. Los PDF anteriores aparecen con «Faltan
- * los datos del contrato» para completarlos.
+ * vigencia y revisión de la tarifa; con Farmacovigilancia, además la tarifa con
+ * su unidad y la forma de pago de los medicamentos— y se sube CON ellos. Los
+ * PDF anteriores aparecen con «Faltan los datos del contrato» para completarlos.
+ *
+ * `conFarmacia` es lo GUARDADO (el servidor decide con eso);
+ * `farmaciaSinGuardar` avisa si en la pestaña Módulos se cambió sin guardar.
  *
  * El servidor valida que sea PDF de verdad (contenido, no extensión) y el
  * borrado es lógico, como todo en la casa.
@@ -332,9 +362,13 @@ function DatosContrato({ contrato }: { contrato: Contrato }) {
 export function PolizasPanel({
   aseguradoraId,
   categoria = 'polizas',
+  conFarmacia = false,
+  farmaciaSinGuardar = false,
 }: {
   aseguradoraId: string | null
   categoria?: CategoriaDocumento
+  conFarmacia?: boolean
+  farmaciaSinGuardar?: boolean
 }) {
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -362,7 +396,7 @@ export function PolizasPanel({
         archivo!,
         nombre.trim(),
         categoria,
-        esContrato ? contratoHaciaApi(nuevo) : undefined,
+        esContrato ? contratoHaciaApi(nuevo, conFarmacia) : undefined,
       ),
     onSuccess: (lista) => {
       queryClient.setQueryData(clave, lista)
@@ -377,7 +411,7 @@ export function PolizasPanel({
 
   const guardarDatos = useMutation({
     mutationFn: (polizaId: string) =>
-      fijarContrato(aseguradoraId!, polizaId, contratoHaciaApi(borrador)),
+      fijarContrato(aseguradoraId!, polizaId, contratoHaciaApi(borrador, conFarmacia)),
     onSuccess: (lista) => {
       queryClient.setQueryData(clave, lista)
       setEditando(null)
@@ -407,7 +441,7 @@ export function PolizasPanel({
   function alSubir() {
     if (!archivo) return toast.error('Elige el archivo PDF a subir')
     if (esContrato) {
-      const problema = validarContrato(nuevo)
+      const problema = validarContrato(nuevo, conFarmacia)
       if (problema) return toast.error(problema)
     }
     subir.mutate()
@@ -419,7 +453,7 @@ export function PolizasPanel({
   }
 
   function alGuardarDatos(polizaId: string) {
-    const problema = validarContrato(borrador)
+    const problema = validarContrato(borrador, conFarmacia)
     if (problema) return toast.error(problema)
     guardarDatos.mutate(polizaId)
   }
@@ -432,6 +466,12 @@ export function PolizasPanel({
 
   return (
     <div className="space-y-5">
+      {esContrato && farmaciaSinGuardar && (
+        <p className="rounded-md border border-aviso/30 bg-aviso/10 px-4 py-3 text-sm text-aviso">
+          Cambiaste Farmacovigilancia en la pestaña Módulos. Guarda los cambios de la ficha para
+          que el contrato pida (o deje de pedir) la tarifa y la forma de pago de los medicamentos.
+        </p>
+      )}
       {/* ── Subir ── */}
       <div className="space-y-4 rounded-md border border-borde bg-fondo/40 p-4">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -459,7 +499,14 @@ export function PolizasPanel({
             />
           </div>
         </div>
-        {esContrato && <ContratoCampos prefijo="nuevo" valor={nuevo} onCambiar={setNuevo} />}
+        {esContrato && (
+          <ContratoCampos
+            prefijo="nuevo"
+            valor={nuevo}
+            onCambiar={setNuevo}
+            conFarmacia={conFarmacia}
+          />
+        )}
         <div className="flex justify-end">
           <Boton type="button" onClick={alSubir} cargando={subir.isPending}>
             <UploadCloud aria-hidden="true" />
@@ -538,6 +585,7 @@ export function PolizasPanel({
                       prefijo={`editar-${poliza.id}`}
                       valor={borrador}
                       onCambiar={setBorrador}
+                      conFarmacia={conFarmacia}
                     />
                     <div className="flex justify-end gap-2">
                       <Boton
@@ -558,13 +606,31 @@ export function PolizasPanel({
                     </div>
                   </div>
                 ) : poliza.contrato ? (
-                  <div className="pl-7">
+                  <div className="space-y-3 pl-7">
                     <DatosContrato contrato={poliza.contrato} />
+                    {faltaTarifa(poliza.contrato, conFarmacia) && (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                        <p className="text-sm text-aviso">
+                          Este cliente tiene Farmacovigilancia: falta la tarifa y la forma de pago
+                          de los medicamentos.
+                        </p>
+                        <Boton
+                          type="button"
+                          variante="contorno"
+                          tamano="sm"
+                          onClick={() => abrirEdicion(poliza)}
+                        >
+                          Completar datos
+                        </Boton>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pl-7">
                     <p className="text-sm text-aviso">
-                      Faltan los datos del contrato: vigencia, tarifa y forma de pago.
+                      {conFarmacia
+                        ? 'Faltan los datos del contrato: vigencia, tarifa y forma de pago.'
+                        : 'Faltan los datos del contrato: la vigencia.'}
                     </p>
                     <Boton
                       type="button"

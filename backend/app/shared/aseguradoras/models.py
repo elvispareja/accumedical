@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -174,7 +175,10 @@ class AseguradoraContrato(Base, AuditoriaFilaMixin):
     cada cambio queda con su antes y después en AuditLog.
 
     La tarifa (lo que el cliente paga a AccuMedical) NO es la cobertura del
-    paciente: esa va en el producto.
+    paciente: esa va en el producto. Desde el 6/11/2026 la tarifa, su unidad y
+    la forma de pago de los medicamentos van solo en el contrato de un cliente
+    con Farmacovigilancia (las tres juntas o ninguna): en los demás módulos lo
+    que cobra AccuMedical es el precio por módulo de la pestaña SLA.
     """
 
     __tablename__ = "aseguradora_contratos"
@@ -192,6 +196,11 @@ class AseguradoraContrato(Base, AuditoriaFilaMixin):
             "revision_tarifa IS NULL OR revision_tarifa >= vigencia_desde",
             name="revision_tarifa",
         ),
+        CheckConstraint(
+            "(tarifa IS NULL) = (tarifa_unidad IS NULL)"
+            " AND (tarifa IS NULL) = (forma_pago_medicamentos IS NULL)",
+            name="tarifa_completa",
+        ),
     )
 
     poliza_id: Mapped[uuid.UUID] = mapped_column(
@@ -201,10 +210,10 @@ class AseguradoraContrato(Base, AuditoriaFilaMixin):
     vigencia_hasta: Mapped[dt.date] = mapped_column(Date, nullable=False)
     # Cuatro decimales: «USD 0,045 por asegurado al mes» sobre 54.000 asegurados
     # ya son dólares de diferencia.
-    tarifa: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
-    tarifa_unidad: Mapped[str] = mapped_column(String(20), nullable=False)
+    tarifa: Mapped[Decimal | None] = mapped_column(Numeric(14, 4))
+    tarifa_unidad: Mapped[str | None] = mapped_column(String(20))
     revision_tarifa: Mapped[dt.date | None] = mapped_column(Date)
-    forma_pago_medicamentos: Mapped[str] = mapped_column(String(30), nullable=False)
+    forma_pago_medicamentos: Mapped[str | None] = mapped_column(String(30))
 
 
 class AseguradoraPrestador(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
@@ -448,6 +457,10 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     __table_args__ = (
         CheckConstraint("valor >= 0", name="valor"),
         CheckConstraint("porcentaje BETWEEN 0 AND 100", name="porcentaje"),
+        CheckConstraint(
+            "vigencia_receta_horas IS NULL OR vigencia_receta_horas BETWEEN 1 AND 8760",
+            name="vigencia_receta_horas",
+        ),
         Index(
             "ix_aseguradora_productos_aseguradora_id",
             "aseguradora_id",
@@ -470,6 +483,11 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
     valor: Mapped[Decimal] = mapped_column(IMPORTE, nullable=False)
     porcentaje: Mapped[Decimal] = mapped_column(PORCENTAJE, nullable=False)
+    # El SLA de farmacia (6/11/2026, decisión del usuario): las horas corridas que
+    # tiene el paciente para ir con su receta; pasadas, la receta vence y la
+    # farmacia ya no despacha. Va en el producto porque cada uno puede tener la
+    # suya (72 h, 10 días…). Nulo = no aplica (el producto no lleva receta).
+    vigencia_receta_horas: Mapped[int | None] = mapped_column(Integer)
 
 # Los conceptos que se pactan en un convenio y cómo se pacta cada uno. El
 # orden es el de la pantalla, de arriba hacia abajo.

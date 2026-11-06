@@ -196,6 +196,8 @@ export function AseguradoraFormPage() {
 
   const [pestana, setPestana] = useState(soloConvenios ? 'convenios' : 'generales')
   const [form, setForm] = useState<AseguradoraFormulario>(VACIO)
+  // ¿Está marcada Farmacovigilancia en la pestaña Módulos (guardada o no)?
+  const farmaciaEnFormulario = (form.modulos ?? []).includes('farmacia')
 
   const [logoNuevo, setLogoNuevo] = useState<File | null>(null)
   const [errorLogo, setErrorLogo] = useState<string | null>(null)
@@ -383,7 +385,7 @@ export function AseguradoraFormPage() {
       setPestana('generales')
       return toast.error('Fija el punto de la aseguradora en el mapa')
     }
-    const problemaProducto = validarProductos(form.productos ?? [])
+    const problemaProducto = validarProductos(form.productos ?? [], farmaciaEnFormulario)
     if (problemaProducto) {
       setPestana('producto')
       return toast.error(problemaProducto)
@@ -419,6 +421,12 @@ export function AseguradoraFormPage() {
   }
 
   const logoActual = detalle.data?.tiene_logo ? urlLogo(detalle.data.id) : null
+  // Farmacovigilancia (6/11/2026): la vigencia de la receta va en cada producto y
+  // la tarifa en el contrato. Los productos se guardan con la ficha, así que
+  // miran lo marcado; el contrato se guarda aparte y mira lo guardado.
+  const farmaciaGuardada = Boolean(
+    detalle.data?.modulos.some((m) => m.codigo === 'farmacia' && m.activo),
+  )
 
   return (
     <div className="w-full">
@@ -742,6 +750,7 @@ export function AseguradoraFormPage() {
                 <ProductosPanel
                   productos={form.productos ?? []}
                   onCambiar={(productos) => actualizar('productos', productos)}
+                  conFarmacia={farmaciaEnFormulario}
                 />
               </Bloque>
             </div>
@@ -749,9 +758,18 @@ export function AseguradoraFormPage() {
             <div className="space-y-4 pt-6">
               <Bloque
                 titulo="Contratos y pólizas"
-                descripcion="Cada contrato o póliza del cliente en PDF, con su vigencia, la tarifa a AccuMedical y la forma de pago de los medicamentos."
+                descripcion={
+                  farmaciaGuardada
+                    ? 'Cada contrato o póliza del cliente en PDF, con su vigencia, la tarifa a AccuMedical y la forma de pago de los medicamentos.'
+                    : 'Cada contrato o póliza del cliente en PDF, con su vigencia. El precio de cada módulo va en la pestaña SLA.'
+                }
               >
-                <PolizasPanel aseguradoraId={id ?? null} categoria="polizas" />
+                <PolizasPanel
+                  aseguradoraId={id ?? null}
+                  categoria="polizas"
+                  conFarmacia={farmaciaGuardada}
+                  farmaciaSinGuardar={farmaciaGuardada !== farmaciaEnFormulario}
+                />
               </Bloque>
             </div>
           ) : pestana === 'cobertura' ? (

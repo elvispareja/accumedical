@@ -159,7 +159,11 @@ def _detalle_completo(db: DbSession, aseguradora_id) -> AseguradoraDetalle:
     ]
     productos = [
         ProductoSalida(
-            id=str(p.id), nombre=p.nombre, valor=float(p.valor), porcentaje=float(p.porcentaje)
+            id=str(p.id),
+            nombre=p.nombre,
+            valor=float(p.valor),
+            porcentaje=float(p.porcentaje),
+            vigencia_receta_horas=p.vigencia_receta_horas,
         )
         for p in service.productos_de(db, fila[0].id)
     ]
@@ -715,7 +719,7 @@ def _contrato_out(c: AseguradoraContrato | None) -> ContratoSalida | None:
     return ContratoSalida(
         vigencia_desde=c.vigencia_desde,
         vigencia_hasta=c.vigencia_hasta,
-        tarifa=f"{Decimal(c.tarifa).quantize(_CUATRO_DECIMALES)}",
+        tarifa=_tarifa_texto(c.tarifa),
         tarifa_unidad=c.tarifa_unidad,
         revision_tarifa=c.revision_tarifa,
         forma_pago_medicamentos=c.forma_pago_medicamentos,
@@ -745,6 +749,41 @@ def _polizas_out(db: DbSession, aseguradora_id: uuid.UUID, categoria: str) -> li
 # ─── Datos del contrato (6/11/2026, especificación de la Central, M1) ───────
 
 _CUATRO_DECIMALES = Decimal("0.0001")
+_CAMPOS_TARIFA = ("tarifa", "tarifa_unidad", "forma_pago_medicamentos")
+
+
+def _tarifa_texto(tarifa: Decimal | None) -> str | None:
+    return None if tarifa is None else f"{Decimal(tarifa).quantize(_CUATRO_DECIMALES)}"
+
+
+def _con_farmacia_segun_tarifa(
+    db: DbSession, aseguradora_id: uuid.UUID, datos: ContratoEntrada
+) -> bool:
+    """
+    La tarifa, su unidad y la forma de pago de los medicamentos van en el
+    contrato SOLO si el cliente tiene Farmacovigilancia (6/11/2026): en los
+    demás módulos lo que cobra AccuMedical es el precio de la pestaña SLA.
+    Mira lo GUARDADO, no lo marcado sin guardar. Devuelve si la tiene.
+    """
+    con_farmacia = service.tiene_modulo(db, aseguradora_id, service.MODULO_FARMACIA)
+    if con_farmacia and not datos.con_tarifa:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Este cliente tiene Farmacovigilancia: falta la tarifa a AccuMedical, "
+                "su unidad y la forma de pago de los medicamentos"
+            ),
+        )
+    if not con_farmacia and datos.con_tarifa:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "La tarifa y la forma de pago de los medicamentos solo van en el contrato "
+                "de un cliente con Farmacovigilancia; el precio de sus módulos va en la "
+                "pestaña SLA"
+            ),
+        )
+    return con_farmacia
 _CAMPOS_CONTRATO = {
     "vigencia_desde": "la fecha de inicio de la vigencia",
     "vigencia_hasta": "la fecha de fin de la vigencia",
@@ -762,7 +801,7 @@ def _contrato_auditado(c: AseguradoraContrato | None) -> dict[str, object] | Non
     return {
         "vigencia_desde": c.vigencia_desde.isoformat(),
         "vigencia_hasta": c.vigencia_hasta.isoformat(),
-        "tarifa": f"{Decimal(c.tarifa).quantize(_CUATRO_DECIMALES)}",
+        "tarifa": _tarifa_texto(c.tarifa),
         "tarifa_unidad": c.tarifa_unidad,
         "revision_tarifa": c.revision_tarifa.isoformat() if c.revision_tarifa else None,
         "forma_pago_medicamentos": c.forma_pago_medicamentos,
@@ -835,6 +874,7 @@ async def subir_poliza(
     }
     if categoria == "polizas":
         datos_contrato: ContratoEntrada | None = _contrato_valido(crudo)
+        _con_farmacia_segun_tarifa(db, aseguradora.id, datos_contrato)
     elif crudo:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -944,12 +984,19 @@ def fijar_contrato(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Solo un contrato o póliza lleva vigencia, tarifa y forma de pago",
         )
+    con_farmacia = _con_farmacia_segun_tarifa(db, aseguradora_id, datos)
     contrato = db.get(AseguradoraContrato, poliza.id, with_for_update=True)
     antes = _contrato_auditado(contrato)
     if contrato is None:
         contrato = AseguradoraContrato(poliza_id=poliza.id, created_by=ctx.user.id)
         db.add(contrato)
-    for campo, valor in datos.model_dump().items():
+    campos = datos.model_dump()
+    if not con_farmacia:
+        # Sin Farmacovigilancia la tarifa no se edita aquí, pero la que quedó de
+        # cuando la tenía se conserva: en medicina no se borra nada.
+        for campo in _CAMPOS_TARIFA:
+            campos.pop(campo)
+    for campo, valor in campos.items():
         setattr(contrato, campo, valor)
     despues = _contrato_auditado(contrato)
     if despues != antes:
