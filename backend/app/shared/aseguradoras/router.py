@@ -57,6 +57,7 @@ from app.shared.aseguradoras.schemas import (
     ProductoSalida,
     PuntoMapaAseguradora,
     RequerimientoOut,
+    ServicioDelProductoSalida,
     SlaFijar,
     SlaSalida,
     UsuarioActualizar,
@@ -157,19 +158,31 @@ def _detalle_completo(db: DbSession, aseguradora_id) -> AseguradoraDetalle:
         )
         for c in service.contactos_de(db, fila[0].id)
     ]
+    vivos = service.productos_de(db, fila[0].id)
+    servicios = service.servicios_de(db, [p.id for p in vivos])
+    faltan = {p.id: service.faltan_producto(p, servicios[p.id]) for p in vivos}
     productos = [
         ProductoSalida(
             id=str(p.id),
             nombre=p.nombre,
-            servicios=list(p.servicios),
+            servicios=[
+                ServicioDelProductoSalida(
+                    servicio=s.servicio,
+                    porcentaje=float(s.porcentaje) if s.porcentaje is not None else None,
+                    tope=float(s.tope) if s.tope is not None else None,
+                    tope_unidad=s.tope_unidad,
+                    deducible=float(s.deducible),
+                    deducible_unidad=s.deducible_unidad,
+                    eventos_maximo=s.eventos_maximo,
+                )
+                for s in servicios[p.id]
+            ],
             contrato_id=str(p.contrato_id) if p.contrato_id else None,
-            completo=not service.faltan_producto(p),
-            faltan=service.faltan_producto(p),
+            completo=not faltan[p.id],
+            faltan=faltan[p.id],
             valor=float(p.valor) if p.valor is not None else None,
             tope_unidad=p.tope_unidad,
             ventana_evento=p.ventana_evento,
-            eventos_maximo=p.eventos_maximo,
-            porcentaje=float(p.porcentaje) if p.porcentaje is not None else None,
             vigencia_receta_horas=p.vigencia_receta_horas,
             requiere_vademecum=p.requiere_vademecum,
             despacho_parcial=p.despacho_parcial,
@@ -180,7 +193,7 @@ def _detalle_completo(db: DbSession, aseguradora_id) -> AseguradoraDetalle:
             exclusiones=p.exclusiones,
             vademecum=list(p.vademecum),
         )
-        for p in service.productos_de(db, fila[0].id)
+        for p in vivos
     ]
     return _detalle(fila, modulos, contactos, productos)
 

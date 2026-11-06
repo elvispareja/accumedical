@@ -506,6 +506,17 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
         CheckConstraint(
             "requiere_vademecum IS TRUE OR cardinality(vademecum) = 0", name="vademecum_lista"
         ),
+        # Desde el 6/11/2026 la cobertura y los eventos van por servicio
+        # (`AseguradoraProductoServicio`): aquí solo quedan en los dados de baja.
+        CheckConstraint(
+            "deleted_at IS NOT NULL OR (porcentaje IS NULL AND eventos_maximo IS NULL)",
+            name="condiciones_por_servicio",
+        ),
+        # El tope común, con su unidad o sin ninguno de los dos.
+        CheckConstraint(
+            "deleted_at IS NOT NULL OR (valor IS NULL) = (tope_unidad IS NULL)",
+            name="tope_con_unidad",
+        ),
         Index(
             "ix_aseguradora_productos_aseguradora_id",
             "aseguradora_id",
@@ -526,8 +537,13 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
         ForeignKey("aseguradoras.id", ondelete="RESTRICT"), nullable=False
     )
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
-    # Nulos = todavía sin definir (el producto queda «incompleto»).
+    # El TOPE COMÚN a todos sus servicios, en USD (6/11/2026), con su unidad en
+    # `tope_unidad`. Nulo si cada servicio tiene el suyo. Asistencia Total: USD 10
+    # por evento entre farmacia y teleconsulta.
     valor: Mapped[Decimal | None] = mapped_column(IMPORTE)
+    # Solo histórico: lo de los productos dados de baja antes de que las
+    # condiciones pasaran a cada servicio (6/11/2026). La cobertura y los
+    # eventos van ahora en cada servicio (`AseguradoraProductoServicio`).
     porcentaje: Mapped[Decimal | None] = mapped_column(PORCENTAJE)
     # El SLA de farmacia (6/11/2026, decisión del usuario): las horas corridas que
     # tiene el paciente para ir con su receta; pasadas, la receta vence y la
@@ -535,18 +551,18 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     # suya (72 h, 10 días…). Nulo = el producto no incluye Farmacia.
     vigencia_receta_horas: Mapped[int | None] = mapped_column(Integer)
 
-    # ── Condiciones de cobertura (M2 de la especificación, 6/11/2026) ──
-    # `valor` es el TOPE de cobertura en USD y `porcentaje` el % de cobertura
-    # (el copago es 100 − porcentaje y no se guarda: se calcula).
-    # Qué cubre: farmacia, teleconsulta, consulta ambulatoria, hospitalaria. De
-    # esto dependen los demás datos (la receta, solo con farmacia).
+    # ── Condiciones de cobertura (M2 de la especificación, 6–6/11/2026) ──
+    # Qué cubre: farmacia, teleconsulta, consulta ambulatoria, hospitalaria. Es
+    # la copia, en orden fijo, de sus servicios VIVOS en
+    # `AseguradoraProductoServicio` (la escribe el mismo guardado): de esto
+    # dependen los demás datos (la receta, solo con farmacia).
     servicios: Mapped[list[str]] = mapped_column(ARRAY(String(30)), nullable=False)
-    # Sobre qué se aplica el tope: por evento (diagnóstico), por persona al mes,
-    # por persona al año o por receta.
+    # Sobre qué se aplica el tope común: por evento (diagnóstico), por persona al
+    # mes, por persona al año o por receta.
     tope_unidad: Mapped[str | None] = mapped_column(String(20))
     # Cuánto dura un evento: mes calendario, 30 días móviles o vigencia de póliza.
     ventana_evento: Mapped[str | None] = mapped_column(String(20))
-    # Nulo = eventos ilimitados.
+    # Solo histórico, como `porcentaje`.
     eventos_maximo: Mapped[int | None] = mapped_column(Integer)
     # Solo con Farmacia: si se limita al vademécum y si admite despacho parcial.
     requiere_vademecum: Mapped[bool | None] = mapped_column(Boolean)
@@ -569,6 +585,71 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     contrato_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("aseguradora_polizas.id", ondelete="RESTRICT")
     )
+
+
+class AseguradoraProductoServicio(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
+    """
+    **Cada servicio de un producto con SUS condiciones** (6/11/2026, decisión del
+    usuario: «que funcione para ambos casos»). Un plan real paga distinto cada
+    servicio —hospitalario al 100 % hasta USD 20.000, ambulatorio al 80 % hasta
+    USD 1.500, farmacia al 80 %— y otro, como Asistencia Total, comparte un solo
+    tope entre sus servicios. Sirven los dos:
+
+    - el tope COMÚN va en el producto (`valor` + `tope_unidad`);
+    - cada servicio lleva su cobertura y, si quiere, su tope propio (sublímite):
+      se paga hasta el menor de los dos;
+    - el deducible (lo que paga primero el asegurado) y los eventos, por servicio.
+
+    Viaja a la central como ficha (`aseguradora_producto_servicios`), después de
+    su producto. Quitar un servicio lo da de baja lógica; volver a ponerlo lo
+    revive (la llave es producto + servicio).
+    """
+
+    __tablename__ = "aseguradora_producto_servicios"
+    __table_args__ = (
+        CheckConstraint(
+            "servicio IN ('farmacia', 'teleconsulta', 'consulta_ambulatoria', 'hospitalaria')",
+            name="servicio",
+        ),
+        CheckConstraint("porcentaje BETWEEN 0 AND 100", name="porcentaje"),
+        CheckConstraint("tope >= 0", name="tope"),
+        CheckConstraint(
+            "tope_unidad IN ('evento', 'persona_mes', 'persona_anio', 'receta')",
+            name="tope_unidad",
+        ),
+        CheckConstraint("(tope IS NULL) = (tope_unidad IS NULL)", name="tope_con_unidad"),
+        # «Por receta» solo existe en farmacia.
+        CheckConstraint(
+            "servicio = 'farmacia' OR tope_unidad IS DISTINCT FROM 'receta'",
+            name="tope_por_receta",
+        ),
+        CheckConstraint("deducible >= 0", name="deducible"),
+        CheckConstraint(
+            "deducible_unidad IN ('evento', 'persona_anio', 'familia_anio')",
+            name="deducible_unidad",
+        ),
+        CheckConstraint(
+            "(deducible = 0) = (deducible_unidad IS NULL)", name="deducible_con_unidad"
+        ),
+        CheckConstraint("eventos_maximo >= 1", name="eventos_maximo"),
+    )
+
+    producto_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("aseguradora_productos.id", ondelete="RESTRICT"), primary_key=True
+    )
+    servicio: Mapped[str] = mapped_column(String(30), primary_key=True)
+    # % que paga el cliente; el copago (100 − %) se calcula. Nulo = sin definir.
+    porcentaje: Mapped[Decimal | None] = mapped_column(PORCENTAJE)
+    # Tope propio del servicio (sublímite), con su unidad. Nulo = el común.
+    tope: Mapped[Decimal | None] = mapped_column(IMPORTE)
+    tope_unidad: Mapped[str | None] = mapped_column(String(20))
+    # Lo que paga primero el asegurado, por evento, por persona al año o por
+    # familia al año. 0 = sin deducible (lo normal en farmacia).
+    deducible: Mapped[Decimal] = mapped_column(IMPORTE, nullable=False, server_default="0")
+    deducible_unidad: Mapped[str | None] = mapped_column(String(20))
+    # Nulo = ilimitados.
+    eventos_maximo: Mapped[int | None] = mapped_column(Integer)
+
 
 # Los conceptos que se pactan en un convenio y cómo se pacta cada uno. El
 # orden es el de la pantalla, de arriba hacia abajo.

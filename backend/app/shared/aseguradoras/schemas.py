@@ -20,6 +20,8 @@ TipoAseguradora = Literal["aseguradora", "broker", "cooperativa"]
 SERVICIOS_PRODUCTO = ("farmacia", "teleconsulta", "consulta_ambulatoria", "hospitalaria")
 ServicioProducto = Literal["farmacia", "teleconsulta", "consulta_ambulatoria", "hospitalaria"]
 UnidadTope = Literal["evento", "persona_mes", "persona_anio", "receta"]
+#: El deducible de cada servicio (6/11/2026).
+UnidadDeducible = Literal["evento", "persona_anio", "familia_anio"]
 VentanaEvento = Literal["mes_calendario", "dias_moviles_30", "vigencia_poliza"]
 PARENTESCOS = ("conyuge", "hijos", "padres")
 Parentesco = Literal["conyuge", "hijos", "padres"]
@@ -303,29 +305,82 @@ class ModuloHabilitado(BaseModel):
     coberturas: list[CoberturaHabilitada] = []
 
 
+Importe = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
+Porcentaje = Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
+
+_NOMBRE_SERVICIO = {
+    "farmacia": "Farmacia",
+    "teleconsulta": "Teleconsulta",
+    "consulta_ambulatoria": "Consulta ambulatoria",
+    "hospitalaria": "Hospitalaria",
+}
+
+
+class ServicioDelProductoEntrada(BaseModel):
+    """
+    Un servicio del producto con SUS condiciones (6/11/2026): cobertura, tope
+    propio (opcional: si no, el común del producto), deducible y eventos. La
+    cobertura puede faltar (producto «incompleto»); lo demás llega bien formado.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    servicio: ServicioProducto
+    # El % que paga el cliente; el copago es 100 − porcentaje.
+    porcentaje: Porcentaje | None = None
+    tope: Importe | None = None
+    tope_unidad: UnidadTope | None = None
+    # 0 = sin deducible.
+    deducible: Importe = Decimal(0)
+    deducible_unidad: UnidadDeducible | None = None
+    # Nulo = ilimitados.
+    eventos_maximo: Annotated[int, Field(ge=1, le=1000)] | None = None
+
+    @model_validator(mode="after")
+    def _coherente(self) -> ServicioDelProductoEntrada:
+        nombre = _NOMBRE_SERVICIO[self.servicio]
+        if (self.tope is None) != (self.tope_unidad is None):
+            raise ValueError(f"{nombre}: el tope propio va con su unidad, o sin ninguno de los dos")
+        if self.tope_unidad == "receta" and self.servicio != "farmacia":
+            raise ValueError(f"{nombre}: el tope «por receta» es solo de Farmacia")
+        if (self.deducible == 0) != (self.deducible_unidad is None):
+            raise ValueError(
+                f"{nombre}: el deducible va con su unidad; sin deducible (0), sin unidad"
+            )
+        return self
+
+
+class ServicioDelProductoSalida(BaseModel):
+    servicio: str
+    porcentaje: float | None
+    tope: float | None
+    tope_unidad: str | None
+    deducible: float
+    deducible_unidad: str | None
+    eventos_maximo: int | None
+
+
 class ProductoEntrada(BaseModel):
     """
     Un producto del cliente (5/11/2026) con sus condiciones de cobertura (M2,
     6/11/2026). Con `id` se actualiza; sin él, se crea. Llega SIEMPRE con todos
     sus campos. Obligatorios: nombre, servicios y contrato; las condiciones
     pueden venir vacías (`null`) y el producto queda «incompleto» hasta llenarlas.
+
+    Desde el 6/11/2026 cada servicio trae sus condiciones (cobertura, tope
+    propio, deducible, eventos) y el producto, lo común: el tope compartido por
+    todos sus servicios (opcional), quiénes entran, carencia, exclusiones.
     """
 
     id: str | None = None
     nombre: Annotated[str, Field(min_length=1, max_length=300)]
-    servicios: list[ServicioProducto] = Field(min_length=1, max_length=4)
+    servicios: list[ServicioDelProductoEntrada] = Field(min_length=1, max_length=4)
     # El contrato del que sale: un PDF de «Contratos y pólizas» de ESTE cliente.
     contrato_id: uuid.UUID
-    # El tope de cobertura (USD) y su unidad.
-    valor: Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)] | None = None
+    # El tope COMÚN a todos sus servicios (USD) y su unidad; los dos o ninguno.
+    valor: Importe | None = None
     tope_unidad: UnidadTope | None = None
     ventana_evento: VentanaEvento | None = None
-    # Nulo = ilimitados.
-    eventos_maximo: Annotated[int, Field(ge=1, le=1000)] | None = None
-    # El porcentaje de cobertura; el copago es 100 − porcentaje.
-    porcentaje: (
-        Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)] | None
-    ) = None
     # Solo con Farmacia. Un año como tope de la receta.
     vigencia_receta_horas: Annotated[int, Field(ge=1, le=8760)] | None = None
     requiere_vademecum: bool | None = None
@@ -362,19 +417,28 @@ class ProductoEntrada(BaseModel):
 
     @model_validator(mode="after")
     def _condiciones_coherentes(self) -> ProductoEntrada:
-        # Orden fijo y sin repetidos: la misma lista se compara igual en las dos bases.
-        self.servicios = [s for s in SERVICIOS_PRODUCTO if s in set(self.servicios)]  # type: ignore[misc]
-        self.parentescos = [p for p in PARENTESCOS if p in set(self.parentescos)]  # type: ignore[misc]
         nombre = self.nombre
+        codigos = [s.servicio for s in self.servicios]
+        if len(codigos) != len(set(codigos)):
+            raise ValueError(f"{nombre}: un servicio viene dos veces")
+        # Orden fijo: la misma lista se compara igual en las dos bases.
+        self.servicios.sort(key=lambda s: SERVICIOS_PRODUCTO.index(s.servicio))
+        self.parentescos = [p for p in PARENTESCOS if p in set(self.parentescos)]  # type: ignore[misc]
+        if (self.valor is None) != (self.tope_unidad is None):
+            raise ValueError(
+                f"{nombre}: el tope del producto va con su unidad, o sin ninguno de los dos"
+            )
+        if self.tope_unidad == "receta" and "farmacia" not in codigos:
+            raise ValueError(f"{nombre}: el tope «por receta» es solo de un producto con Farmacia")
         de_farmacia = (self.vigencia_receta_horas, self.requiere_vademecum, self.despacho_parcial)
         # Lo que falte con Farmacia deja el producto «incompleto»; lo que sobre sin ella es error.
-        if "farmacia" not in self.servicios and any(v is not None for v in de_farmacia):
+        if "farmacia" not in codigos and any(v is not None for v in de_farmacia):
             raise ValueError(
                 f"{nombre}: la vigencia de la receta, el vademécum y el despacho parcial "
                 "son solo de un producto con Farmacia"
             )
         if self.max_diagnosticos is not None and not (
-            {"teleconsulta", "consulta_ambulatoria"} & set(self.servicios)
+            {"teleconsulta", "consulta_ambulatoria"} & set(codigos)
         ):
             raise ValueError(
                 f"{nombre}: el máximo de diagnósticos por consulta es solo de un producto "
@@ -409,16 +473,16 @@ class ProductoEntrada(BaseModel):
 class ProductoSalida(BaseModel):
     id: str
     nombre: str
-    servicios: list[str]
+    # Cada servicio con sus condiciones (6/11/2026), en orden fijo.
+    servicios: list[ServicioDelProductoSalida]
     contrato_id: str | None
     # Listo para usarse, o qué le falta (6/11/2026).
     completo: bool
     faltan: list[str]
+    # El tope común a sus servicios y su unidad.
     valor: float | None
     tope_unidad: str | None
     ventana_evento: str | None
-    eventos_maximo: int | None
-    porcentaje: float | None
     vigencia_receta_horas: int | None
     requiere_vademecum: bool | None
     despacho_parcial: bool | None

@@ -15,8 +15,10 @@ from app.shared.aseguradoras.models import (
     AseguradoraModulo,
     AseguradoraPrestador,
     AseguradoraProducto,
+    AseguradoraProductoServicio,
     AseguradoraSla,
 )
+from app.shared.aseguradoras.schemas import SERVICIOS_PRODUCTO
 from app.shared.catalogos.models import Ciudad, Module, Provincia, TipoPrestador
 from app.shared.central import redes as redes_central
 from app.shared.contactos import service as contactos
@@ -625,6 +627,30 @@ def productos_de(db: DbSession, aseguradora_id: uuid.UUID) -> list[AseguradoraPr
     )
 
 
+def servicios_de(
+    db: DbSession, producto_ids: list[uuid.UUID], *, con_bajas: bool = False
+) -> dict[uuid.UUID, list[AseguradoraProductoServicio]]:
+    """
+    Los servicios de cada producto con sus condiciones (6/11/2026), en el orden
+    fijo de `SERVICIOS_PRODUCTO`. Solo los vivos, salvo `con_bajas`.
+    """
+    por_producto: dict[uuid.UUID, list[AseguradoraProductoServicio]] = {
+        i: [] for i in producto_ids
+    }
+    if not producto_ids:
+        return por_producto
+    consulta = select(AseguradoraProductoServicio).where(
+        AseguradoraProductoServicio.producto_id.in_(producto_ids)
+    )
+    if not con_bajas:
+        consulta = consulta.where(AseguradoraProductoServicio.deleted_at.is_(None))
+    for fila in db.scalars(consulta):
+        por_producto[fila.producto_id].append(fila)
+    for filas in por_producto.values():
+        filas.sort(key=lambda f: SERVICIOS_PRODUCTO.index(f.servicio))
+    return por_producto
+
+
 def fijar_productos(
     db: DbSession,
     aseguradora_id: uuid.UUID,
@@ -675,41 +701,66 @@ def fijar_productos(
     creados: list[dict[str, Any]] = []
     actualizados: list[dict[str, Any]] = []
     eliminados: list[dict[str, Any]] = []
+    previos = servicios_de(db, list(existentes))
     # Las bajas primero, y volcadas: un producto nuevo con el nombre del que se
-    # va chocaría con el índice único parcial si los dos siguieran vivos.
+    # va chocaría con el índice único parcial si los dos siguieran vivos. Sus
+    # servicios quedan como estaban: son su historia.
     for producto_id, producto in existentes.items():
         if producto_id not in vistos:
             producto.deleted_at = func.now()
             producto.deleted_by = autor
-            eliminados.append({"id": str(producto_id), **_producto_auditado(producto)})
+            eliminados.append(
+                {
+                    "id": str(producto_id),
+                    **_producto_auditado(producto),
+                    "condiciones": _servicios_auditados(previos[producto_id]),
+                }
+            )
     if eliminados:
         db.flush()
 
     for datos in entrantes:
         # El producto llega completo (el router vuelca el esquema entero).
         campos = {c: datos.get(c) for c in CAMPOS_PRODUCTO}
+        # La lista de servicios del producto es la copia de sus servicios vivos.
+        campos["servicios"] = [s["servicio"] for s in datos["servicios"]]
         if datos.get("id"):
             producto = existentes[uuid.UUID(str(datos["id"]))]
             cambiados = [c for c, v in campos.items() if getattr(producto, c) != v]
-            if cambiados:
-                antes = _producto_auditado(producto, cambiados)
-                for campo in cambiados:
-                    setattr(producto, campo, campos[campo])
+            antes_servicios = _servicios_auditados(previos[producto.id])
+            antes = _producto_auditado(producto, cambiados)
+            for campo in cambiados:
+                setattr(producto, campo, campos[campo])
+            servicios_cambiaron = _fijar_servicios(db, producto.id, datos["servicios"], autor)
+            if cambiados or servicios_cambiaron:
                 producto.updated_by = autor
-                actualizados.append(
-                    {
-                        "id": str(producto.id),
-                        "antes": antes,
-                        "despues": _producto_auditado(producto, cambiados),
-                    }
-                )
+                cambio: dict[str, Any] = {
+                    "id": str(producto.id),
+                    "antes": antes,
+                    "despues": _producto_auditado(producto, cambiados),
+                }
+                if servicios_cambiaron:
+                    db.flush()
+                    cambio["antes"]["condiciones"] = antes_servicios
+                    cambio["despues"]["condiciones"] = _servicios_auditados(
+                        servicios_de(db, [producto.id])[producto.id]
+                    )
+                actualizados.append(cambio)
         else:
             nuevo = AseguradoraProducto(
                 aseguradora_id=aseguradora_id, **campos, created_by=autor, updated_by=autor
             )
             db.add(nuevo)
             db.flush()
-            creados.append({"id": str(nuevo.id), **_producto_auditado(nuevo)})
+            _fijar_servicios(db, nuevo.id, datos["servicios"], autor)
+            db.flush()
+            creados.append(
+                {
+                    "id": str(nuevo.id),
+                    **_producto_auditado(nuevo),
+                    "condiciones": _servicios_auditados(servicios_de(db, [nuevo.id])[nuevo.id]),
+                }
+            )
     db.flush()
     if creados or actualizados or eliminados:
         return {"creados": creados, "actualizados": actualizados, "eliminados": eliminados}
@@ -781,14 +832,13 @@ def _validar_vademecum(
 
 
 #: Lo que se guarda de un producto (M2, 6/11/2026), en el orden de la pantalla.
+#: La cobertura y los eventos van por servicio desde la tarde del 6/11 (`CAMPOS_SERVICIO`).
 CAMPOS_PRODUCTO = (
     "nombre",
     "servicios",
     "valor",
     "tope_unidad",
     "ventana_evento",
-    "eventos_maximo",
-    "porcentaje",
     "vigencia_receta_horas",
     "requiere_vademecum",
     "despacho_parcial",
@@ -802,15 +852,83 @@ CAMPOS_PRODUCTO = (
 )
 
 
+#: Las condiciones de cada servicio del producto (6/11/2026).
+CAMPOS_SERVICIO = (
+    "porcentaje",
+    "tope",
+    "tope_unidad",
+    "deducible",
+    "deducible_unidad",
+    "eventos_maximo",
+)
+
+
+def _texto_exacto(crudo: Any) -> Any:
+    return str(crudo) if isinstance(crudo, Decimal | uuid.UUID) else crudo
+
+
 def _producto_auditado(
     producto: AseguradoraProducto, campos: list[str] | None = None
 ) -> dict[str, Any]:
     """Los campos del producto para el AuditLog, con los montos como texto exacto."""
-    def valor(campo: str) -> Any:
-        crudo = getattr(producto, campo)
-        return str(crudo) if isinstance(crudo, Decimal | uuid.UUID) else crudo
+    return {c: _texto_exacto(getattr(producto, c)) for c in (campos or list(CAMPOS_PRODUCTO))}
 
-    return {c: valor(c) for c in (campos or list(CAMPOS_PRODUCTO))}
+
+def _servicios_auditados(filas: list[AseguradoraProductoServicio]) -> list[dict[str, Any]]:
+    """Las condiciones de cada servicio vivo, para el AuditLog."""
+    return [
+        {"servicio": f.servicio, **{c: _texto_exacto(getattr(f, c)) for c in CAMPOS_SERVICIO}}
+        for f in filas
+        if f.deleted_at is None
+    ]
+
+
+def _fijar_servicios(
+    db: DbSession,
+    producto_id: uuid.UUID,
+    entrantes: list[dict[str, Any]],
+    autor: uuid.UUID,
+) -> bool:
+    """
+    Deja los servicios del producto como llegan (6/11/2026): crea los nuevos,
+    actualiza los que cambian, revive uno que vuelve y da de baja lógica el que
+    ya no viene (nunca DELETE). Devuelve si algo cambió.
+    """
+    todos = {
+        f.servicio: f for f in servicios_de(db, [producto_id], con_bajas=True)[producto_id]
+    }
+    pedidos = {d["servicio"]: d for d in entrantes}
+    cambio = False
+    for codigo, fila in todos.items():
+        if codigo not in pedidos and fila.deleted_at is None:
+            fila.deleted_at = func.now()
+            fila.deleted_by = autor
+            fila.updated_by = autor
+            cambio = True
+    for codigo, datos in pedidos.items():
+        valores = {c: datos.get(c) for c in CAMPOS_SERVICIO}
+        fila = todos.get(codigo)
+        if fila is None:
+            db.add(
+                AseguradoraProductoServicio(
+                    producto_id=producto_id,
+                    servicio=codigo,
+                    **valores,
+                    created_by=autor,
+                    updated_by=autor,
+                )
+            )
+            cambio = True
+            continue
+        distintos = [c for c, v in valores.items() if getattr(fila, c) != v]
+        if distintos or fila.deleted_at is not None:
+            for campo in distintos:
+                setattr(fila, campo, valores[campo])
+            fila.deleted_at = None
+            fila.deleted_by = None
+            fila.updated_by = autor
+            cambio = True
+    return cambio
 
 # ──────────────── Convenios: la red, elegida DESDE la aseguradora ────────────
 
@@ -1111,31 +1229,44 @@ def fijar_convenios(
         return None
     return {"habilitados": habilitados, "retirados": retirados, "red_cambiada": recolocados}
 
-def faltan_producto(p: Any) -> list[str]:
+#: Para los mensajes: «falta la cobertura de Farmacia».
+NOMBRES_SERVICIO = {
+    "farmacia": "Farmacia",
+    "teleconsulta": "Teleconsulta",
+    "consulta_ambulatoria": "Consulta ambulatoria",
+    "hospitalaria": "Hospitalaria",
+}
+
+
+def faltan_producto(p: Any, servicios: list[Any]) -> list[str]:
     """
     Lo que le falta a un producto para poder USARSE (6/11/2026): se crea con
     nombre, contrato y servicios, y sus condiciones se completan después.
     Mientras falte algo no se le carga la base de asegurados ni se atiende.
-    La MISMA regla en la plataforma y en la central.
+    Desde la tarde del 6/11 cada servicio lleva su cobertura, y su tope o el común del
+    producto. La MISMA regla en la plataforma y en la central.
     """
     faltan = []
     if p.contrato_id is None:
         faltan.append("el contrato")
-    if p.valor is None:
-        faltan.append("el tope")
-    if p.tope_unidad is None:
-        faltan.append("la unidad del tope")
+    vivos = [s for s in servicios if s.deleted_at is None]
+    if not vivos:
+        faltan.append("los servicios")
+    for s in sorted(vivos, key=lambda x: SERVICIOS_PRODUCTO.index(x.servicio)):
+        nombre = NOMBRES_SERVICIO[s.servicio]
+        if s.porcentaje is None:
+            faltan.append(f"la cobertura de {nombre}")
+        if s.tope is None and p.valor is None:
+            faltan.append(f"el tope de {nombre}")
     if p.ventana_evento is None:
         faltan.append("la ventana del evento")
-    if p.porcentaje is None:
-        faltan.append("la cobertura (%)")
     if p.carencia_dias is None:
         faltan.append("la carencia")
     if p.beneficiarios_incluidos is None:
         faltan.append("si incluye beneficiarios")
     elif p.beneficiarios_incluidos and not p.parentescos:
         faltan.append("los parentescos")
-    if "farmacia" in (p.servicios or []):
+    if any(s.servicio == "farmacia" for s in vivos):
         if p.vigencia_receta_horas is None:
             faltan.append("la vigencia de la receta")
         if p.requiere_vademecum is None:

@@ -71,6 +71,14 @@ ENTIDADES: list[tuple[str, str]] = [
         " FROM aseguradora_productos",
     ),
     (
+        # Cada servicio del producto con sus condiciones (6/11/2026), después del producto.
+        "aseguradora_producto_servicios",
+        "SELECT producto_id, servicio, porcentaje, tope, tope_unidad, deducible,"
+        " deducible_unidad, eventos_maximo,"
+        " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
+        " FROM aseguradora_producto_servicios",
+    ),
+    (
         "prestadores",
         "SELECT id, codigo_interno, tipo_codigo, nombre, ruc, direccion, provincia_codigo,"
         " ciudad_codigo, estado, latitud, longitud, logo_path,"

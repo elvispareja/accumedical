@@ -1303,6 +1303,40 @@ regla fija RN-01.
 
 **Ligado a su contrato; puede estar incompleto (`a9c3e7f1b462`, 6/11/2026):** decisiones del usuario: «un contrato puede traer varios productos» → `contrato_id` (FK a `aseguradora_polizas`: el PDF de «Contratos y pólizas» con sus datos; la API exige que sea de este cliente) y el producto está vigente mientras lo esté su contrato. Y crear un producto no debe abrumar: se crea con nombre, contrato y servicios; `valor`, `porcentaje`, `carencia_dias` y `beneficiarios_incluidos` admiten nulo y, con Farmacia, la receta, el vademécum y el despacho parcial pueden faltar. Mientras falte algo el producto está **incompleto** (`faltan_producto`, la misma regla en las dos bases): no recibe su base de asegurados ni se usa.
 
+**Cada servicio con sus condiciones (`b8d2f4a6c913`, 6/11/2026):** decisión del
+usuario, «que funcione para ambos casos». Un plan real paga distinto cada
+servicio (hospitalario al 100 % hasta USD 20.000, ambulatorio al 80 % hasta USD
+1.500 con deducible, farmacia al 80 %) y otro, como Asistencia Total, comparte un
+solo tope entre sus servicios (USD 10 por evento entre farmacia y teleconsulta).
+Desde aquí:
+
+- `valor` + `tope_unidad` del producto son el **tope COMÚN** a sus servicios,
+  opcional y siempre en pareja (`ck_…_tope_con_unidad`, solo productos vivos);
+- la cobertura y los eventos pasan a **`aseguradora_producto_servicios`** (una
+  fila por producto y servicio); en el producto quedan solo como histórico de los
+  dados de baja (`ck_…_condiciones_por_servicio`: vivos, nulos);
+- `servicios` del producto sigue existiendo: es la copia, en orden fijo, de sus
+  servicios vivos (la escribe el mismo guardado; la central y la app de farmacia
+  la leen así).
+
+| Columna de `aseguradora_producto_servicios` | Qué es | Regla |
+|---|---|---|
+| `producto_id` + `servicio` | Llave (FK al producto) | `servicio` de la misma lista de cuatro |
+| `porcentaje` | % de cobertura; el copago se calcula | nulo = sin definir (incompleto) |
+| `tope`, `tope_unidad` | Tope propio (sublímite) | los dos o ninguno; nulo = usa el común; «por receta» solo en farmacia |
+| `deducible`, `deducible_unidad` | Lo que paga primero el asegurado: `evento` · `persona_anio` · `familia_anio` | 0 = sin deducible y sin unidad |
+| `eventos_maximo` | Número de eventos | nulo = ilimitados |
+
+Se paga hasta el menor de los dos topes. Un servicio quitado queda de baja lógica
+y vuelve a la vida si se pone otra vez (misma llave). El producto está
+**completo** cuando cada servicio tiene su cobertura y un tope (el suyo o el
+común), más lo de antes (contrato, ventana, carencia, beneficiarios y, con
+farmacia, receta, vademécum y despacho parcial). La migración pasó cada producto
+vivo tal cual (un servicio por cada uno de `servicios`, con su cobertura y sus
+eventos; el tope, común) con las fechas y la autoría del producto, para que la
+central (0022) tenga las mismas filas. Viaja como ficha
+(`aseguradora_producto_servicios`, después del producto).
+
 **Vademécum del producto (`f7a1c3e5b829`, M5):** `vademecum varchar(9)[]` con los
 códigos «VAD-00001» del **vademécum maestro**, que vive en la central (tabla
 `vademecum`, cargada del Cuadro Nacional de Medicamentos Básicos XII; no se copia

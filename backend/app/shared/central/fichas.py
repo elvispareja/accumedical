@@ -43,6 +43,7 @@ from app.shared.aseguradoras.models import (
     AseguradoraContacto,
     AseguradoraModulo,
     AseguradoraProducto,
+    AseguradoraProductoServicio,
     AseguradoraSla,
 )
 from app.shared.catalogos.models import TipoPrestador
@@ -86,6 +87,9 @@ FICHAS: dict[str, _Ficha] = {
     "aseguradoras": _Ficha("aseguradoras", "id", ("id",)),
     "aseguradora_contactos": _Ficha("aseguradora_contactos", "id", ("id",)),
     "aseguradora_productos": _Ficha("aseguradora_productos", "id", ("id",)),
+    # Cada servicio del producto (6/11/2026): se publican TODOS los de ese producto.
+    "aseguradora_producto_servicios": _Ficha(
+        "aseguradora_producto_servicios", "producto_id", ("producto_id", "servicio")),
     "prestadores": _Ficha("prestadores", "id", ("id",)),
     "prestador_contactos": _Ficha("prestador_contactos", "id", ("id",)),
     "prestador_sedes": _Ficha("prestador_sedes", "id", ("id",)),
@@ -136,6 +140,7 @@ _POR_MODELO = {
     Aseguradora: "aseguradoras",
     AseguradoraContacto: "aseguradora_contactos",
     AseguradoraProducto: "aseguradora_productos",
+    AseguradoraProductoServicio: "aseguradora_producto_servicios",
     Prestador: "prestadores",
     PrestadorContacto: "prestador_contactos",
     PrestadorSede: "prestador_sedes",
