@@ -223,7 +223,7 @@ class ModuloHabilitado(BaseModel):
 
 
 class ProductoEntrada(BaseModel):
-    """Un producto de broker o cooperativa (5/11/2026). Con `id` se actualiza; sin él, se crea."""
+    """Un producto del cliente (5/11/2026). Con `id` se actualiza; sin él, se crea."""
 
     id: str | None = None
     nombre: Annotated[str, Field(min_length=1, max_length=300)]
@@ -276,7 +276,7 @@ class AseguradoraCrear(_ConRuc):
     # que vengan marcados; las de un módulo destildado se dejan intactas.
     coberturas: dict[str, list[str]] = Field(default_factory=dict)
     contactos: list[ContactoEntrada] = Field(default_factory=list)
-    # Solo brokers y cooperativas (lo comprueba el servicio). Con tope: una lista
+    # Productos del cliente, de cualquier tipo (6/11/2026). Con tope: una lista
     # sin límite es consumo sin límite (OWASP), y 200 caben en un solo envío a la
     # central (lotes de 500), que la aplica en una sola transacción.
     productos: list[ProductoEntrada] = Field(default_factory=list, max_length=200)

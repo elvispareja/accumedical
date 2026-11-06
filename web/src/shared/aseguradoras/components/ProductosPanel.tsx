@@ -95,8 +95,9 @@ export function productosHaciaApi(productos: ProductoFormulario[]) {
 }
 
 /**
- * **La pestaña «Producto»** de un broker o una cooperativa (pedido del usuario,
- * 5/11/2026): «Agregar producto» y, por cada uno, nombre, valor y porcentaje.
+ * **La pestaña «Producto»** de cualquier cliente (pedido del usuario, 5/11/2026;
+ * para todos los tipos desde el 6/11): «Agregar producto» y, por cada uno,
+ * nombre, valor y porcentaje.
  * Se guarda con la ficha («Guardar cambios»); quitar uno lo da de baja lógica.
  */
 export function ProductosPanel({

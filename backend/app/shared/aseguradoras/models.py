@@ -385,8 +385,9 @@ class AseguradoraContacto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
 
 class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     """
-    **Los productos de un broker o de una cooperativa** (5/11/2026, pedido del
-    usuario): nombre, valor y porcentaje, en la pestaña «Producto» de la ficha.
+    **Los productos del cliente** (5/11/2026, pedido del usuario), de cualquier
+    tipo desde el 6/11: nombre, valor y porcentaje, en la pestaña «Producto».
+    Cada producto es exclusivo de su cliente.
     Se editan como lista con la ficha, igual que los contactos, y viajan a la
     central como una ficha más (`aseguradora_productos`). Quitar uno lo da de
     baja lógica: en medicina no se borra nada.

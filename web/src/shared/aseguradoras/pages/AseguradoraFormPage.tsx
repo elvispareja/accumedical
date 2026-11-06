@@ -143,7 +143,7 @@ function Bloque({
 /** La ficha completa de una compañía, en el orden en que se recorre. */
 const PESTANAS = [
   { id: 'generales', etiqueta: 'Datos generales' },
-  // Solo para brokers y cooperativas (pedido del usuario, 5/11/2026).
+  // Para todo cliente, sea aseguradora, broker o cooperativa (6/11/2026).
   { id: 'producto', etiqueta: 'Producto' },
   { id: 'requerimientos', etiqueta: 'Módulos' },
   { id: 'polizas', etiqueta: 'Pólizas y planes' },
@@ -153,11 +153,6 @@ const PESTANAS = [
   { id: 'contactos', etiqueta: 'Contactos' },
   { id: 'usuarios', etiqueta: 'Usuarios' },
 ]
-
-/** Los tipos que llevan la pestaña «Producto» (5/11/2026). */
-function conProducto(tipo: string | undefined): boolean {
-  return tipo === 'broker' || tipo === 'cooperativa'
-}
 
 /** Marcador de las pestañas aún por construir: visibles, pero sin función. */
 function EnConstruccion() {
@@ -200,11 +195,6 @@ export function AseguradoraFormPage() {
 
   const [pestana, setPestana] = useState(soloConvenios ? 'convenios' : 'generales')
   const [form, setForm] = useState<AseguradoraFormulario>(VACIO)
-
-  // Si deja de ser broker o cooperativa con «Producto» abierta, vuelve a Generales.
-  useEffect(() => {
-    if (pestana === 'producto' && !conProducto(form.tipo)) setPestana('generales')
-  }, [pestana, form.tipo])
 
   const [logoNuevo, setLogoNuevo] = useState<File | null>(null)
   const [errorLogo, setErrorLogo] = useState<string | null>(null)
@@ -347,11 +337,7 @@ export function AseguradoraFormPage() {
         modulos: form.modulos ?? [],
         coberturas: form.coberturas ?? {},
         contactos: haciaApi(form.contactos ?? []) as never,
-        // Solo un broker o una cooperativa lleva productos; si no lo es, ni se
-        // envían y los que tuviera se quedan como estaban.
-        productos: conProducto(form.tipo)
-          ? (productosHaciaApi(form.productos ?? []) as never)
-          : (undefined as never),
+        productos: productosHaciaApi(form.productos ?? []) as never,
         razon_social: form.razon_social.trim(),
         ruc: form.ruc.trim(),
         nombre_comercial: form.nombre_comercial?.trim() || null,
@@ -396,12 +382,10 @@ export function AseguradoraFormPage() {
       setPestana('generales')
       return toast.error('Fija el punto de la aseguradora en el mapa')
     }
-    if (conProducto(form.tipo)) {
-      const problemaProducto = validarProductos(form.productos ?? [])
-      if (problemaProducto) {
-        setPestana('producto')
-        return toast.error(problemaProducto)
-      }
+    const problemaProducto = validarProductos(form.productos ?? [])
+    if (problemaProducto) {
+      setPestana('producto')
+      return toast.error(problemaProducto)
     }
     const problema = validarContactos(form.contactos ?? [])
     if (problema) {
@@ -489,11 +473,7 @@ export function AseguradoraFormPage() {
             // no está oculto: no existe para ella (`docs/07`, §6b).
             soloConvenios
               ? [{ id: 'convenios', etiqueta: 'Convenios' }]
-              : PESTANAS.filter(
-                  (p) =>
-                    !(sinConvenios && p.id === 'convenios') &&
-                    (p.id !== 'producto' || conProducto(form.tipo)),
-                )
+              : PESTANAS.filter((p) => !(sinConvenios && p.id === 'convenios'))
           }
           activa={pestana}
           onCambiar={setPestana}
@@ -752,15 +732,11 @@ export function AseguradoraFormPage() {
                 </div>
               </Bloque>
             </div>
-          ) : pestana === 'producto' && conProducto(form.tipo) ? (
+          ) : pestana === 'producto' ? (
             <div className="space-y-4 pt-6">
               <Bloque
                 titulo="Producto"
-                descripcion={
-                  form.tipo === 'broker'
-                    ? 'Los productos que comercializa este broker.'
-                    : 'Los productos que comercializa esta cooperativa.'
-                }
+                descripcion="Los productos de este cliente. Cada uno es exclusivo de él."
               >
                 <ProductosPanel
                   productos={form.productos ?? []}

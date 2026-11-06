@@ -1262,11 +1262,13 @@ CREATE UNIQUE INDEX uq_aseguradora_contactos_email
 
 **Se retiraron `contacto_nombre`, `email` y `telefono` de `aseguradoras`.** Venían de la especificación original, nunca entraron al formulario y quedaban redundantes con esta tabla; mantener dos sitios para lo mismo termina en que nadie recuerda cuál manda.
 
-### 5.2d-bis `aseguradora_productos` — productos de brokers y cooperativas (`a4c8e2f6b917`)
+### 5.2d-bis `aseguradora_productos` — productos del cliente (`a4c8e2f6b917`)
 
-Pedido del usuario (5/11/2026): si la ficha es de un **broker** o una
-**cooperativa** (`aseguradoras.tipo`), la pestaña «Producto» lista sus productos
-con **nombre**, **valor** y **porcentaje**.
+Pedido del usuario (5/11/2026): la pestaña «Producto» lista los productos del
+cliente con **nombre**, **valor** y **porcentaje**. Primero era solo para
+brokers y cooperativas; desde el 6/11 es para **todo tipo de cliente**, como
+pide la especificación de la Central («el producto se registra a nivel del
+cliente» y es exclusivo de él).
 
 ```sql
 CREATE TABLE aseguradora_productos (
@@ -1289,9 +1291,6 @@ CREATE UNIQUE INDEX uq_aseguradora_productos_nombre
 - Se editan **como lista con la ficha**, igual que los contactos
   (`service.fijar_productos`): con `id` se actualiza, sin él se crea y el que
   falta se da de **baja lógica**.
-- Solo un broker o una cooperativa lleva productos: con otro tipo el servidor
-  responde `422`. Si una ficha deja de ser broker o cooperativa, sus productos
-  se conservan (en medicina no se borra nada) y la pestaña se oculta.
 - Es una **ficha de la central** (`aseguradora_productos`, migración central
   `0014`, que va ANTES que esta): se publica al guardar y entra en
   `verificar-fichas`.

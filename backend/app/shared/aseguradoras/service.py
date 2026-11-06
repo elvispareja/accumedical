@@ -610,10 +610,6 @@ def fijar_contactos(
 
 
 
-#: Los tipos que llevan productos (5/11/2026).
-TIPOS_CON_PRODUCTOS = ("broker", "cooperativa")
-
-
 def productos_de(db: DbSession, aseguradora_id: uuid.UUID) -> list[AseguradoraProducto]:
     """Los productos vivos, por nombre: los de un mismo guardado comparten la hora."""
     return list(
@@ -631,21 +627,16 @@ def productos_de(db: DbSession, aseguradora_id: uuid.UUID) -> list[AseguradoraPr
 def fijar_productos(
     db: DbSession,
     aseguradora_id: uuid.UUID,
-    tipo: str,
     entrantes: list[dict[str, Any]],
     autor: uuid.UUID,
-) -> dict[str, int] | None:
+) -> dict[str, Any] | None:
     """
-    **Los productos de un broker o de una cooperativa** (5/11/2026). Reconcilia
-    la lista completa como los contactos: con `id` se actualiza, sin él se crea,
-    y el que falta se da de baja lógica (nunca DELETE). Una aseguradora no lleva
-    productos; si deja de ser broker o cooperativa, los que tenía se conservan.
+    **Los productos del cliente** (5/11/2026), de cualquier tipo: aseguradora,
+    broker o cooperativa (6/11/2026, según la especificación de la Central:
+    «el producto se registra a nivel del cliente»). Reconcilia la lista completa
+    como los contactos: con `id` se actualiza, sin él se crea, y el que falta se
+    da de baja lógica (nunca DELETE).
     """
-    if entrantes and tipo not in TIPOS_CON_PRODUCTOS:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Solo los brokers y las cooperativas llevan productos",
-        )
     nombres: set[str] = set()
     for datos in entrantes:
         if datos["nombre"] in nombres:

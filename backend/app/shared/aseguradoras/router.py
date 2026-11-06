@@ -261,9 +261,7 @@ def crear(
     db.flush()
     accesos = service.fijar_accesos(db, aseguradora.id, modulos, coberturas, ctx.user.id)
     cambio_contactos = service.fijar_contactos(db, aseguradora.id, contactos, ctx.user.id)
-    cambio_productos = service.fijar_productos(
-        db, aseguradora.id, aseguradora.tipo, productos, ctx.user.id
-    )
+    cambio_productos = service.fijar_productos(db, aseguradora.id, productos, ctx.user.id)
     audit.registrar(
         db,
         accion="crear",
@@ -312,10 +310,7 @@ def actualizar(
         if cambio_contactos:
             diff["despues"]["contactos"] = cambio_contactos
     if productos is not None:
-        # Contra el tipo RESULTANTE: el mismo guardado puede cambiarlo.
-        cambio_productos = service.fijar_productos(
-            db, aseguradora_id, aseguradora.tipo, productos, ctx.user.id
-        )
+        cambio_productos = service.fijar_productos(db, aseguradora_id, productos, ctx.user.id)
         if cambio_productos:
             diff["despues"]["productos"] = cambio_productos
     if diff["despues"]:
