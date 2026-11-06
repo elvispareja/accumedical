@@ -751,6 +751,7 @@ export function AseguradoraFormPage() {
                   productos={form.productos ?? []}
                   onCambiar={(productos) => actualizar('productos', productos)}
                   clienteConFarmacia={farmaciaEnFormulario}
+                  aseguradoraId={id ?? null}
                 />
               </Bloque>
             </div>

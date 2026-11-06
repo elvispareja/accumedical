@@ -1,5 +1,6 @@
-import { ChevronDown, Package, Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { ChevronDown, FileUp, Package, Plus, Trash2 } from 'lucide-react'
+import { useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { Boton } from '@/shared/components/ui/button'
@@ -7,6 +8,9 @@ import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Select } from '@/shared/components/ui/select'
+import { useToast } from '@/shared/components/ui/toast'
+import { leerVademecumCliente } from '@/shared/vademecum/api'
+import { RevisionLectura } from '@/shared/vademecum/RevisionLectura'
 import { VademecumSelector } from '@/shared/vademecum/VademecumSelector'
 
 // ─── Catálogos (mismos códigos que los CHECK de las dos bases) ────────────────
@@ -322,12 +326,35 @@ export function ProductosPanel({
   productos,
   onCambiar,
   clienteConFarmacia = false,
+  aseguradoraId = null,
 }: {
   productos: ProductoFormulario[]
   onCambiar: (productos: ProductoFormulario[]) => void
   /** Lo marcado en la pestaña Módulos: para avisar si un producto con Farmacia no tendrá app. */
   clienteConFarmacia?: boolean
+  /** La ficha ya guardada: hace falta para subir el vademécum del cliente. */
+  aseguradoraId?: string | null
 }) {
+  const toast = useToast()
+  // El vademécum que entrega el cliente (6/11/2026): su archivo, leído y en revisión.
+  const [revisando, setRevisando] = useState<{ clave: string; lecturaId: string } | null>(null)
+  const archivoVademecum = useRef<HTMLInputElement>(null)
+  const [subiendoPara, setSubiendoPara] = useState<string | null>(null)
+  const leer = useMutation({
+    mutationFn: (d: { clave: string; productoId: string; archivo: File }) =>
+      leerVademecumCliente(aseguradoraId!, d.productoId, d.archivo),
+    onSuccess: (lectura, d) => {
+      setRevisando({ clave: d.clave, lecturaId: lectura.id })
+      toast.exito(
+        `Leídas ${lectura.total} filas: ${lectura.encontrados} encontradas, ${lectura.dudosos} dudosas y ${lectura.no_encontrados} no encontradas`,
+      )
+    },
+    onError: (error) => {
+      const detalle = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+      toast.error(typeof detalle === 'string' ? detalle : 'No se pudo leer el vademécum')
+    },
+    onSettled: () => setSubiendoPara(null),
+  })
   // Cerrados se ve el resumen; los nuevos nacen abiertos.
   const [cerrados, setCerrados] = useState<Set<string>>(new Set())
   // El producto cuyo vademécum se está eligiendo.
@@ -603,14 +630,39 @@ export function ProductosPanel({
                                   : `${p.vademecumCodigos.length} ${p.vademecumCodigos.length === 1 ? 'medicamento' : 'medicamentos'} del vademécum maestro.`}
                               </p>
                             </div>
-                            <Boton
-                              type="button"
-                              variante="contorno"
-                              tamano="sm"
-                              onClick={() => setEligiendo(p._key)}
-                            >
-                              Elegir medicamentos
-                            </Boton>
+                            <div className="flex flex-wrap gap-2">
+                              <Boton
+                                type="button"
+                                tamano="sm"
+                                disabled={!p.id || !aseguradoraId}
+                                cargando={leer.isPending && subiendoPara === p._key}
+                                title={
+                                  p.id
+                                    ? 'El PDF o Excel que entregó el cliente: se lee y se cruza con el maestro'
+                                    : 'Guarda primero el producto'
+                                }
+                                onClick={() => {
+                                  setSubiendoPara(p._key)
+                                  archivoVademecum.current?.click()
+                                }}
+                              >
+                                <FileUp aria-hidden="true" />
+                                Subir vademécum del cliente
+                              </Boton>
+                              <Boton
+                                type="button"
+                                variante="contorno"
+                                tamano="sm"
+                                onClick={() => setEligiendo(p._key)}
+                              >
+                                Elegir a mano
+                              </Boton>
+                            </div>
+                            {!p.id && (
+                              <p className="w-full text-xs text-tenue-fg">
+                                Para subir el PDF o Excel del cliente, guarda primero el producto.
+                              </p>
+                            )}
                           </div>
                         )}
                         <p id={id('receta-ayuda')} className="text-xs text-tenue-fg">
@@ -715,6 +767,30 @@ export function ProductosPanel({
             )
           })}
         </ul>
+      )}
+      <input
+        ref={archivoVademecum}
+        type="file"
+        accept=".pdf,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={(e) => {
+          const archivo = e.target.files?.[0]
+          const p = productos.find((x) => x._key === subiendoPara)
+          e.target.value = ''
+          if (!archivo || !p?.id) return setSubiendoPara(null)
+          leer.mutate({ clave: p._key, productoId: p.id, archivo })
+        }}
+      />
+      {revisando && aseguradoraId && (
+        <RevisionLectura
+          aseguradoraId={aseguradoraId}
+          lecturaId={revisando.lecturaId}
+          producto={nombreNormal(productos.find((x) => x._key === revisando.clave)?.nombre ?? '')}
+          onCerrar={() => setRevisando(null)}
+          onConfirmada={(codigos) => poner(revisando.clave, 'vademecumCodigos', codigos)}
+        />
       )}
       {productoEligiendo && (
         <VademecumSelector

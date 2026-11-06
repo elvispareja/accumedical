@@ -19,7 +19,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -1331,3 +1331,147 @@ def reenviar_invitacion(
     db.commit()
     invitaciones.enviar_invitacion(usuario, token)
     return {"detail": "Invitación enviada"}
+
+
+# ───────── El vademécum que entrega el cliente (6/11/2026, M5) ─────────
+# Su PDF o Excel se lee en la central, se cruza con el maestro y una persona
+# resuelve lo dudoso; al confirmar vuelven los códigos, que la pantalla pone en
+# el producto (se guardan con «Guardar cambios», como lo demás de la ficha).
+
+
+class DecisionFila(BaseModel):
+    vademecum_codigo: str | None = Field(default=None, pattern=r"^VAD-[0-9]{5}$")
+    descartada: bool = False
+
+
+class NuevoEnMaestro(BaseModel):
+    dci: str = Field(min_length=2, max_length=400)
+    concentracion: str | None = Field(default=None, max_length=600)
+    forma_farmaceutica: str = Field(min_length=2, max_length=120)
+    via: str | None = Field(default=None, max_length=120)
+
+
+@router.post("/{aseguradora_id}/productos/{producto_id}/vademecum-lecturas")
+async def leer_vademecum_cliente(
+    request: Request,
+    aseguradora_id: uuid.UUID,
+    producto_id: uuid.UUID,
+    archivo: UploadFile = File(...),
+    ctx: AuthContext = Depends(gestiona_companias),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> dict:
+    from app.shared.central import vademecum as maestro
+
+    service.obtener(db, aseguradora_id)
+    if producto_id not in {p.id for p in service.productos_de(db, aseguradora_id)}:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Producto no encontrado")
+    limite = settings.upload_max_size_mb * 1024 * 1024
+    contenido = bytearray()
+    while trozo := await archivo.read(CHUNK):
+        contenido.extend(trozo)
+        if len(contenido) > limite:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"El vademécum no puede superar {settings.upload_max_size_mb} MB",
+            )
+    if not (contenido.startswith(b"%PDF-") or contenido.startswith(b"PK\x03\x04")):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El vademécum debe ser un PDF o un Excel .xlsx",
+        )
+    nombre = " ".join(Path(archivo.filename or "").stem.split())[:160] or "Vademécum"
+    lectura = maestro.crear_lectura(
+        aseguradora_id, producto_id, bytes(contenido), nombre, ctx.user.id
+    )
+    audit.registrar(
+        db,
+        accion="crear",
+        request=request,
+        user_id=ctx.user.id,
+        session_id=ctx.sesion.id,
+        entidad="vademecum_lecturas",
+        entidad_id=str(lectura["id"]),
+        detalle={"despues": {"producto": str(producto_id), "archivo": nombre,
+                             "filas": lectura["total"], "encontrados": lectura["encontrados"],
+                             "dudosos": lectura["dudosos"],
+                             "no_encontrados": lectura["no_encontrados"]}},
+    )
+    db.commit()
+    return lectura
+
+
+@router.get("/{aseguradora_id}/vademecum-lecturas/{lectura_id}")
+def ver_lectura_vademecum(aseguradora_id: uuid.UUID, lectura_id: uuid.UUID) -> dict:
+    from app.shared.central import vademecum as maestro
+
+    return maestro.ver_lectura(aseguradora_id, lectura_id)
+
+
+@router.put("/{aseguradora_id}/vademecum-lecturas/{lectura_id}/filas/{fila_id}")
+def decidir_fila_vademecum(
+    aseguradora_id: uuid.UUID,
+    lectura_id: uuid.UUID,
+    fila_id: uuid.UUID,
+    datos: DecisionFila,
+    ctx: AuthContext = Depends(gestiona_companias),
+    _: None = Depends(verificar_csrf),
+) -> dict:
+    from app.shared.central import vademecum as maestro
+
+    return maestro.decidir(aseguradora_id, lectura_id, fila_id, datos.model_dump(), ctx.user.id)
+
+
+@router.post("/{aseguradora_id}/vademecum-lecturas/{lectura_id}/filas/{fila_id}/nuevo")
+def agregar_al_maestro(
+    request: Request,
+    aseguradora_id: uuid.UUID,
+    lectura_id: uuid.UUID,
+    fila_id: uuid.UUID,
+    datos: NuevoEnMaestro,
+    ctx: AuthContext = Depends(gestiona_companias),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> dict:
+    from app.shared.central import vademecum as maestro
+
+    lectura = maestro.nuevo(aseguradora_id, lectura_id, fila_id, datos.model_dump(), ctx.user.id)
+    audit.registrar(
+        db,
+        accion="crear",
+        request=request,
+        user_id=ctx.user.id,
+        session_id=ctx.sesion.id,
+        entidad="vademecum",
+        entidad_id=str(fila_id),
+        detalle={"despues": {**datos.model_dump(), "lectura": str(lectura_id)}},
+    )
+    db.commit()
+    return lectura
+
+
+@router.post("/{aseguradora_id}/vademecum-lecturas/{lectura_id}/confirmar")
+def confirmar_lectura_vademecum(
+    request: Request,
+    aseguradora_id: uuid.UUID,
+    lectura_id: uuid.UUID,
+    ctx: AuthContext = Depends(gestiona_companias),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> dict:
+    from app.shared.central import vademecum as maestro
+
+    resultado = maestro.confirmar(aseguradora_id, lectura_id, ctx.user.id)
+    audit.registrar(
+        db,
+        accion="actualizar",
+        request=request,
+        user_id=ctx.user.id,
+        session_id=ctx.sesion.id,
+        entidad="vademecum_lecturas",
+        entidad_id=str(lectura_id),
+        detalle={"despues": {"estado": "confirmada", "medicamentos": len(resultado["codigos"])}},
+    )
+    db.commit()
+    return resultado
+
