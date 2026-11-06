@@ -1279,6 +1279,29 @@ p. ej. una consulta ambulatoria), porque cada producto puede tener la suya (72 h
 marcado, con la casilla «No aplica»; sin Farmacovigilancia no se ve y se conserva
 la que hubiera.
 
+**Condiciones de cobertura (M2, `e5f9b3c7a246`, 6/11/2026):** el producto es lo
+VARIABLE del sistema («montos, porcentajes, plazos y vademécum son campos
+configurables por producto», pág. 1 de la especificación). Cada producto dice qué
+`servicios` cubre (`farmacia`, `teleconsulta`, `consulta_ambulatoria`,
+`hospitalaria`) y según eso lleva sus datos:
+
+| Columna | Qué es | Regla |
+|---|---|---|
+| `valor` | Tope de cobertura (USD) | obligatorio |
+| `tope_unidad` | `evento` · `persona_mes` · `persona_anio` · `receta` | obligatorio (la API) |
+| `ventana_evento` | `mes_calendario` · `dias_moviles_30` · `vigencia_poliza` | obligatorio (la API) |
+| `eventos_maximo` | Número de eventos | nulo = ilimitados |
+| `porcentaje` | % de cobertura; el copago (100 − %) se calcula | obligatorio |
+| `vigencia_receta_horas`, `requiere_vademecum`, `despacho_parcial` | La receta en farmacia | SOLO con `farmacia` y entonces obligatorios (`ck_…_receta_con_farmacia`, `ck_…_farmacia_campos`) |
+| `max_diagnosticos` | Máximo por consulta (1–20) | solo con teleconsulta o consulta ambulatoria; nulo = sin límite |
+| `beneficiarios_incluidos`, `parentescos` | `conyuge` · `hijos` · `padres` | sin beneficiarios, sin parentescos |
+| `carencia_dias` | Días desde el alta (0–3650) | obligatorio |
+| `exclusiones` | Texto en MAYÚSCULAS (hasta 2000) | la lista cerrada llegará con el vademécum |
+
+«Canal obligatorio de receta: solo teleconsulta AccuMedical» no es columna: es la
+regla fija RN-01. Las filas anteriores con vigencia de receta quedaron con el
+servicio Farmacia; las demás, sin servicios hasta que se completen.
+
 ```sql
 CREATE TABLE aseguradora_productos (
     id              uuid          NOT NULL DEFAULT gen_random_uuid(),

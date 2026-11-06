@@ -19,7 +19,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import CITEXT
+from sqlalchemy.dialects.postgresql import ARRAY, CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import (
@@ -461,6 +461,46 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
             "vigencia_receta_horas IS NULL OR vigencia_receta_horas BETWEEN 1 AND 8760",
             name="vigencia_receta_horas",
         ),
+        # Condiciones de M2 (6/11/2026): mismos valores que schemas.py y la central.
+        CheckConstraint(
+            "servicios <@ ARRAY['farmacia', 'teleconsulta', 'consulta_ambulatoria',"
+            " 'hospitalaria']::varchar[]",
+            name="servicios",
+        ),
+        CheckConstraint(
+            "tope_unidad IS NULL OR tope_unidad IN ('evento', 'persona_mes', 'persona_anio',"
+            " 'receta')",
+            name="tope_unidad",
+        ),
+        CheckConstraint(
+            "ventana_evento IS NULL OR ventana_evento IN ('mes_calendario', 'dias_moviles_30',"
+            " 'vigencia_poliza')",
+            name="ventana_evento",
+        ),
+        CheckConstraint("eventos_maximo IS NULL OR eventos_maximo >= 1", name="eventos_maximo"),
+        CheckConstraint(
+            "max_diagnosticos IS NULL OR max_diagnosticos BETWEEN 1 AND 20",
+            name="max_diagnosticos",
+        ),
+        CheckConstraint("carencia_dias BETWEEN 0 AND 3650", name="carencia_dias"),
+        CheckConstraint(
+            "parentescos <@ ARRAY['conyuge', 'hijos', 'padres']::varchar[]", name="parentescos"
+        ),
+        # Sin beneficiarios no hay parentescos.
+        CheckConstraint(
+            "beneficiarios_incluidos OR cardinality(parentescos) = 0",
+            name="parentescos_con_beneficiarios",
+        ),
+        # La receta solo existe en farmacia: con Farmacia, vigencia; sin ella, nada.
+        CheckConstraint(
+            "('farmacia' = ANY(servicios)) = (vigencia_receta_horas IS NOT NULL)",
+            name="receta_con_farmacia",
+        ),
+        CheckConstraint(
+            "'farmacia' = ANY(servicios)"
+            " OR (requiere_vademecum IS NULL AND despacho_parcial IS NULL)",
+            name="farmacia_campos",
+        ),
         Index(
             "ix_aseguradora_productos_aseguradora_id",
             "aseguradora_id",
@@ -486,8 +526,34 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     # El SLA de farmacia (6/11/2026, decisión del usuario): las horas corridas que
     # tiene el paciente para ir con su receta; pasadas, la receta vence y la
     # farmacia ya no despacha. Va en el producto porque cada uno puede tener la
-    # suya (72 h, 10 días…). Nulo = no aplica (el producto no lleva receta).
+    # suya (72 h, 10 días…). Nulo = el producto no incluye Farmacia.
     vigencia_receta_horas: Mapped[int | None] = mapped_column(Integer)
+
+    # ── Condiciones de cobertura (M2 de la especificación, 6/11/2026) ──
+    # `valor` es el TOPE de cobertura en USD y `porcentaje` el % de cobertura
+    # (el copago es 100 − porcentaje y no se guarda: se calcula).
+    # Qué cubre: farmacia, teleconsulta, consulta ambulatoria, hospitalaria. De
+    # esto dependen los demás datos (la receta, solo con farmacia).
+    servicios: Mapped[list[str]] = mapped_column(ARRAY(String(30)), nullable=False)
+    # Sobre qué se aplica el tope: por evento (diagnóstico), por persona al mes,
+    # por persona al año o por receta.
+    tope_unidad: Mapped[str | None] = mapped_column(String(20))
+    # Cuánto dura un evento: mes calendario, 30 días móviles o vigencia de póliza.
+    ventana_evento: Mapped[str | None] = mapped_column(String(20))
+    # Nulo = eventos ilimitados.
+    eventos_maximo: Mapped[int | None] = mapped_column(Integer)
+    # Solo con Farmacia: si se limita al vademécum y si admite despacho parcial.
+    requiere_vademecum: Mapped[bool | None] = mapped_column(Boolean)
+    despacho_parcial: Mapped[bool | None] = mapped_column(Boolean)
+    # Solo con teleconsulta o consulta ambulatoria. Nulo = sin límite.
+    max_diagnosticos: Mapped[int | None] = mapped_column(Integer)
+    beneficiarios_incluidos: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    parentescos: Mapped[list[str]] = mapped_column(ARRAY(String(20)), nullable=False)
+    # Días desde el alta del asegurado antes de poder usar el producto.
+    carencia_dias: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Medicamentos o diagnósticos que no cubre, en texto (la lista cerrada llegará
+    # con el vademécum).
+    exclusiones: Mapped[str | None] = mapped_column(String(2000))
 
 # Los conceptos que se pactan en un convenio y cómo se pacta cada uno. El
 # orden es el de la pantalla, de arriba hacia abajo.

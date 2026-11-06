@@ -15,6 +15,13 @@ ESTADOS = ("activo", "inactivo")
 Estado = Literal["activo", "inactivo"]
 #: Qué clase de cliente es (5/11/2026). Mismos valores que el CHECK y la central.
 TipoAseguradora = Literal["aseguradora", "broker", "cooperativa"]
+#: Condiciones del producto (M2, 6/11/2026): mismos valores que los CHECK.
+SERVICIOS_PRODUCTO = ("farmacia", "teleconsulta", "consulta_ambulatoria", "hospitalaria")
+ServicioProducto = Literal["farmacia", "teleconsulta", "consulta_ambulatoria", "hospitalaria"]
+UnidadTope = Literal["evento", "persona_mes", "persona_anio", "receta"]
+VentanaEvento = Literal["mes_calendario", "dias_moviles_30", "vigencia_poliza"]
+PARENTESCOS = ("conyuge", "hijos", "padres")
+Parentesco = Literal["conyuge", "hijos", "padres"]
 #: Datos del contrato (6/11/2026): mismos valores que los CHECK de la tabla.
 UnidadTarifa = Literal["asegurado_mes", "evento", "fija_mensual"]
 FormaPagoMedicamentos = Literal["reembolso_aparte", "incluido_en_tarifa"]
@@ -295,14 +302,85 @@ class ModuloHabilitado(BaseModel):
 
 
 class ProductoEntrada(BaseModel):
-    """Un producto del cliente (5/11/2026). Con `id` se actualiza; sin él, se crea."""
+    """
+    Un producto del cliente (5/11/2026) con sus condiciones de cobertura (M2,
+    6/11/2026). Con `id` se actualiza; sin él, se crea. Llega SIEMPRE completo.
+    """
 
     id: str | None = None
     nombre: Annotated[str, Field(min_length=1, max_length=300)]
+    servicios: list[ServicioProducto] = Field(min_length=1, max_length=4)
+    # El tope de cobertura (USD) y su unidad.
     valor: Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
+    tope_unidad: UnidadTope
+    ventana_evento: VentanaEvento
+    # Nulo = ilimitados.
+    eventos_maximo: Annotated[int, Field(ge=1, le=1000)] | None = None
+    # El porcentaje de cobertura; el copago es 100 − porcentaje.
     porcentaje: Annotated[Decimal, Field(ge=0, le=100, max_digits=5, decimal_places=2)]
-    # Horas corridas que dura la receta (6/11/2026). Nulo = no aplica. Un año como tope.
+    # Solo con Farmacia (obligatorios entonces). Un año como tope de la receta.
     vigencia_receta_horas: Annotated[int, Field(ge=1, le=8760)] | None = None
+    requiere_vademecum: bool | None = None
+    despacho_parcial: bool | None = None
+    # Solo con teleconsulta o consulta ambulatoria. Nulo = sin límite.
+    max_diagnosticos: Annotated[int, Field(ge=1, le=20)] | None = None
+    beneficiarios_incluidos: bool
+    parentescos: list[Parentesco] = Field(default_factory=list, max_length=3)
+    carencia_dias: Annotated[int, Field(ge=0, le=3650)]
+    exclusiones: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("exclusiones")
+    @classmethod
+    def _exclusiones(cls, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        normal = (
+            unicodedata.normalize("NFKC", valor)
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .replace("\t", " ")
+        )
+        if any(unicodedata.category(c)[0] == "C" and c != "\n" for c in normal):
+            raise ValueError("Las exclusiones tienen caracteres no válidos")
+        lineas = (" ".join(linea.split()) for linea in normal.split("\n"))
+        limpio = "\n".join(linea for linea in lineas if linea).upper()
+        if len(limpio) > 2000:
+            raise ValueError("Las exclusiones admiten hasta 2000 caracteres")
+        return limpio or None
+
+    @model_validator(mode="after")
+    def _condiciones_coherentes(self) -> ProductoEntrada:
+        # Orden fijo y sin repetidos: la misma lista se compara igual en las dos bases.
+        self.servicios = [s for s in SERVICIOS_PRODUCTO if s in set(self.servicios)]  # type: ignore[misc]
+        self.parentescos = [p for p in PARENTESCOS if p in set(self.parentescos)]  # type: ignore[misc]
+        nombre = self.nombre
+        de_farmacia = (self.vigencia_receta_horas, self.requiere_vademecum, self.despacho_parcial)
+        if "farmacia" in self.servicios:
+            if self.vigencia_receta_horas is None:
+                raise ValueError(f"{nombre}: incluye Farmacia, falta la vigencia de la receta")
+            if self.requiere_vademecum is None:
+                raise ValueError(f"{nombre}: incluye Farmacia, falta decir si requiere vademécum")
+            if self.despacho_parcial is None:
+                raise ValueError(
+                    f"{nombre}: incluye Farmacia, falta decir si permite despacho parcial"
+                )
+        elif any(v is not None for v in de_farmacia):
+            raise ValueError(
+                f"{nombre}: la vigencia de la receta, el vademécum y el despacho parcial "
+                "son solo de un producto con Farmacia"
+            )
+        if self.max_diagnosticos is not None and not (
+            {"teleconsulta", "consulta_ambulatoria"} & set(self.servicios)
+        ):
+            raise ValueError(
+                f"{nombre}: el máximo de diagnósticos por consulta es solo de un producto "
+                "con teleconsulta o consulta ambulatoria"
+            )
+        if self.beneficiarios_incluidos and not self.parentescos:
+            raise ValueError(f"{nombre}: incluye beneficiarios, elige sus parentescos")
+        if not self.beneficiarios_incluidos and self.parentescos:
+            raise ValueError(f"{nombre}: sin beneficiarios no lleva parentescos")
+        return self
 
     @field_validator("nombre")
     @classmethod
@@ -326,9 +404,20 @@ class ProductoEntrada(BaseModel):
 class ProductoSalida(BaseModel):
     id: str
     nombre: str
+    servicios: list[str]
     valor: float
+    tope_unidad: str | None
+    ventana_evento: str | None
+    eventos_maximo: int | None
     porcentaje: float
-    vigencia_receta_horas: int | None = None
+    vigencia_receta_horas: int | None
+    requiere_vademecum: bool | None
+    despacho_parcial: bool | None
+    max_diagnosticos: int | None
+    beneficiarios_incluidos: bool
+    parentescos: list[str]
+    carencia_dias: int
+    exclusiones: str | None
 
 
 class AseguradoraCrear(_ConRuc):

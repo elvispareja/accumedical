@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -683,14 +684,8 @@ def fijar_productos(
         db.flush()
 
     for datos in entrantes:
-        campos = {
-            "nombre": datos["nombre"],
-            "valor": datos["valor"],
-            "porcentaje": datos["porcentaje"],
-        }
-        # Si no viene (PATCH parcial), se respeta la que tenga.
-        if "vigencia_receta_horas" in datos:
-            campos["vigencia_receta_horas"] = datos["vigencia_receta_horas"]
+        # El producto llega completo (el router vuelca el esquema entero).
+        campos = {c: datos.get(c) for c in CAMPOS_PRODUCTO}
         if datos.get("id"):
             producto = existentes[uuid.UUID(str(datos["id"]))]
             cambiados = [c for c, v in campos.items() if getattr(producto, c) != v]
@@ -719,15 +714,35 @@ def fijar_productos(
     return None
 
 
+#: Lo que se guarda de un producto (M2, 6/11/2026), en el orden de la pantalla.
+CAMPOS_PRODUCTO = (
+    "nombre",
+    "servicios",
+    "valor",
+    "tope_unidad",
+    "ventana_evento",
+    "eventos_maximo",
+    "porcentaje",
+    "vigencia_receta_horas",
+    "requiere_vademecum",
+    "despacho_parcial",
+    "max_diagnosticos",
+    "beneficiarios_incluidos",
+    "parentescos",
+    "carencia_dias",
+    "exclusiones",
+)
+
+
 def _producto_auditado(
     producto: AseguradoraProducto, campos: list[str] | None = None
-) -> dict[str, str | None]:
+) -> dict[str, Any]:
     """Los campos del producto para el AuditLog, con los montos como texto exacto."""
-    todos = ["nombre", "valor", "porcentaje", "vigencia_receta_horas"]
-    return {
-        c: None if getattr(producto, c) is None else str(getattr(producto, c))
-        for c in (campos or todos)
-    }
+    def valor(campo: str) -> Any:
+        crudo = getattr(producto, campo)
+        return str(crudo) if isinstance(crudo, Decimal) else crudo
+
+    return {c: valor(c) for c in (campos or list(CAMPOS_PRODUCTO))}
 
 # ──────────────── Convenios: la red, elegida DESDE la aseguradora ────────────
 

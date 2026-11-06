@@ -385,7 +385,7 @@ export function AseguradoraFormPage() {
       setPestana('generales')
       return toast.error('Fija el punto de la aseguradora en el mapa')
     }
-    const problemaProducto = validarProductos(form.productos ?? [], farmaciaEnFormulario)
+    const problemaProducto = validarProductos(form.productos ?? [])
     if (problemaProducto) {
       setPestana('producto')
       return toast.error(problemaProducto)
@@ -745,12 +745,12 @@ export function AseguradoraFormPage() {
             <div className="space-y-4 pt-6">
               <Bloque
                 titulo="Producto"
-                descripcion="Los productos de este cliente. Cada uno es exclusivo de él."
+                descripcion="Los productos de este cliente con sus condiciones de cobertura. Cada uno es exclusivo de él y tiene sus propias reglas."
               >
                 <ProductosPanel
                   productos={form.productos ?? []}
                   onCambiar={(productos) => actualizar('productos', productos)}
-                  conFarmacia={farmaciaEnFormulario}
+                  clienteConFarmacia={farmaciaEnFormulario}
                 />
               </Bloque>
             </div>

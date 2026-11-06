@@ -47,9 +47,9 @@ from app.shared.aseguradoras.schemas import (
     AseguradoraPropiaOut,
     AseguradoraResumen,
     ContactoSalida,
-    ConvenioPrestadorOut,
     ContratoEntrada,
     ContratoSalida,
+    ConvenioPrestadorOut,
     ConveniosFijar,
     ListadoPreciosSalida,
     PaginaAseguradoras,
@@ -161,9 +161,20 @@ def _detalle_completo(db: DbSession, aseguradora_id) -> AseguradoraDetalle:
         ProductoSalida(
             id=str(p.id),
             nombre=p.nombre,
+            servicios=list(p.servicios),
             valor=float(p.valor),
+            tope_unidad=p.tope_unidad,
+            ventana_evento=p.ventana_evento,
+            eventos_maximo=p.eventos_maximo,
             porcentaje=float(p.porcentaje),
             vigencia_receta_horas=p.vigencia_receta_horas,
+            requiere_vademecum=p.requiere_vademecum,
+            despacho_parcial=p.despacho_parcial,
+            max_diagnosticos=p.max_diagnosticos,
+            beneficiarios_incluidos=p.beneficiarios_incluidos,
+            parentescos=list(p.parentescos),
+            carencia_dias=p.carencia_dias,
+            exclusiones=p.exclusiones,
         )
         for p in service.productos_de(db, fila[0].id)
     ]
@@ -311,7 +322,11 @@ def actualizar(
     modulos = cambios.pop("modulos", None)
     coberturas = cambios.pop("coberturas", None)
     contactos = cambios.pop("contactos", None)
-    productos = cambios.pop("productos", None)
+    cambios.pop("productos", None)
+    # Cada producto va COMPLETO (con sus valores por omisión), no solo lo enviado.
+    productos = (
+        None if datos.productos is None else [p.model_dump() for p in datos.productos]
+    )
     diff = service.actualizar(db, aseguradora, cambios, ctx.user.id)
     if modulos is not None or coberturas is not None:
         accesos = service.fijar_accesos(db, aseguradora_id, modulos, coberturas, ctx.user.id)
