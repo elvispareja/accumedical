@@ -1299,7 +1299,16 @@ configurables por producto», pág. 1 de la especificación). Cada producto dice
 | `exclusiones` | Texto en MAYÚSCULAS (hasta 2000) | la lista cerrada llegará con el vademécum |
 
 «Canal obligatorio de receta: solo teleconsulta AccuMedical» no es columna: es la
-regla fija RN-01. Las filas anteriores con vigencia de receta quedaron con el
+regla fija RN-01.
+
+**Vademécum del producto (`f7a1c3e5b829`, M5):** `vademecum varchar(9)[]` con los
+códigos «VAD-00001» del **vademécum maestro**, que vive en la central (tabla
+`vademecum`, cargada del Cuadro Nacional de Medicamentos Básicos XII; no se copia
+aquí). Solo si `requiere_vademecum` (y entonces al menos uno; la API comprueba
+contra la central que existan y estén activos). Los otros dos niveles del
+vademécum también viven en la central: el de cada farmacia sale de su lista de
+precios (`convenio_precios`), y la base de asegurados (`asegurados`) la carga el
+cliente desde la app de farmacia. Las filas anteriores con vigencia de receta quedaron con el
 servicio Farmacia; las demás, sin servicios hasta que se completen.
 
 ```sql

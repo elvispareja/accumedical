@@ -7,6 +7,7 @@ import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
 import { Label } from '@/shared/components/ui/label'
 import { Select } from '@/shared/components/ui/select'
+import { VademecumSelector } from '@/shared/vademecum/VademecumSelector'
 
 // ─── Catálogos (mismos códigos que los CHECK de las dos bases) ────────────────
 // Especificación de la Central, M2 «Productos y condiciones de cobertura».
@@ -72,6 +73,8 @@ export interface ProductoFormulario {
   parentescos: Parentesco[]
   carencia: string
   exclusiones: string
+  /** Vademécum del producto: códigos «VAD-00001» del maestro (solo si lo requiere). */
+  vademecumCodigos: string[]
 }
 
 /** Lo que devuelve la ficha. */
@@ -95,6 +98,7 @@ export interface ProductoSalida {
   parentescos: Parentesco[]
   carencia_dias: number
   exclusiones: string | null
+  vademecum: string[]
 }
 
 export function productoVacio(): ProductoFormulario {
@@ -116,6 +120,7 @@ export function productoVacio(): ProductoFormulario {
     parentescos: [],
     carencia: '',
     exclusiones: '',
+    vademecumCodigos: [],
   }
 }
 
@@ -148,6 +153,7 @@ export function productosDesdeApi(productos: ProductoSalida[]): ProductoFormular
     parentescos: p.parentescos,
     carencia: p.tope_unidad === null ? '' : String(p.carencia_dias),
     exclusiones: p.exclusiones ?? '',
+    vademecumCodigos: p.vademecum ?? [],
   }))
 }
 
@@ -207,6 +213,9 @@ export function validarProductos(productos: ProductoFormulario[]): string | null
         return `${nombre}: la vigencia de la receta debe ser un número entero de horas entre 1 y 8760 (por ejemplo 72)`
       }
       if (!p.vademecum) return `${nombre}: indica si requiere vademécum`
+      if (p.vademecum === 'si' && p.vademecumCodigos.length === 0) {
+        return `${nombre}: requiere vademécum, elige sus medicamentos`
+      }
       if (!p.despachoParcial) return `${nombre}: indica si permite despacho parcial`
     }
     if (conConsulta(p) && p.maxDiagnosticos.trim() && aEntero(p.maxDiagnosticos, 1, 20) === null) {
@@ -251,6 +260,7 @@ export function productosHaciaApi(productos: ProductoFormulario[]) {
         : [],
       carencia_dias: aEntero(p.carencia, 0, 3650) ?? 0,
       exclusiones: p.exclusiones.trim() || null,
+      vademecum: farmacia && p.vademecum === 'si' ? p.vademecumCodigos : [],
     }
   })
 }
@@ -320,6 +330,9 @@ export function ProductosPanel({
 }) {
   // Cerrados se ve el resumen; los nuevos nacen abiertos.
   const [cerrados, setCerrados] = useState<Set<string>>(new Set())
+  // El producto cuyo vademécum se está eligiendo.
+  const [eligiendo, setEligiendo] = useState<string | null>(null)
+  const productoEligiendo = productos.find((p) => p._key === eligiendo)
 
   function poner<K extends keyof ProductoFormulario>(
     clave: string,
@@ -580,6 +593,26 @@ export function ProductosPanel({
                             />
                           </div>
                         </div>
+                        {p.vademecum === 'si' && (
+                          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-borde bg-superficie px-4 py-3">
+                            <div>
+                              <p className="text-sm font-medium">Vademécum del producto</p>
+                              <p className="text-xs text-tenue-fg">
+                                {p.vademecumCodigos.length === 0
+                                  ? 'Todavía sin medicamentos: elige los que cubre.'
+                                  : `${p.vademecumCodigos.length} ${p.vademecumCodigos.length === 1 ? 'medicamento' : 'medicamentos'} del vademécum maestro.`}
+                              </p>
+                            </div>
+                            <Boton
+                              type="button"
+                              variante="contorno"
+                              tamano="sm"
+                              onClick={() => setEligiendo(p._key)}
+                            >
+                              Elegir medicamentos
+                            </Boton>
+                          </div>
+                        )}
                         <p id={id('receta-ayuda')} className="text-xs text-tenue-fg">
                           La vigencia de la receta es el SLA de farmacia: horas corridas desde que
                           se emite, con fines de semana y feriados. Pasadas, la receta vence y la
@@ -682,6 +715,15 @@ export function ProductosPanel({
             )
           })}
         </ul>
+      )}
+      {productoEligiendo && (
+        <VademecumSelector
+          abierto
+          onCerrar={() => setEligiendo(null)}
+          producto={nombreNormal(productoEligiendo.nombre)}
+          elegidos={productoEligiendo.vademecumCodigos}
+          onCambiar={(codigos) => poner(productoEligiendo._key, 'vademecumCodigos', codigos)}
+        />
       )}
       <Boton
         type="button"

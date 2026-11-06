@@ -66,7 +66,7 @@ ENTIDADES: list[tuple[str, str]] = [
         "SELECT id, aseguradora_id, nombre, valor, porcentaje, vigencia_receta_horas,"
         " servicios, tope_unidad, ventana_evento, eventos_maximo, requiere_vademecum,"
         " despacho_parcial, max_diagnosticos, beneficiarios_incluidos, parentescos,"
-        " carencia_dias, exclusiones,"
+        " carencia_dias, exclusiones, vademecum,"
         " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
         " FROM aseguradora_productos",
     ),

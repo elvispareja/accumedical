@@ -234,6 +234,63 @@ export async function guardarValoresFC(
   return data
 }
 
+// ─── Lista de precios por medicamento (6/11/2026, M4) ───
+
+export interface PrecioMedicamento {
+  vademecum_codigo: string
+  medicamento: string
+  nombre_comercial: string | null
+  presentacion: string
+  /** Texto decimal («12.5000»): con cuatro decimales un float podría redondear. */
+  precio: string
+  fila_excel: number
+}
+
+export interface ListaPrecios {
+  id: string
+  nombre_archivo: string
+  archivo_id: string
+  vigencia_desde: string
+  vigencia_hasta: string | null
+  filas: number
+  medicamentos: number
+  subida_at: string
+  precios: PrecioMedicamento[]
+}
+
+/** Lo que responde la central si el Excel trae errores: se muestran fila por fila. */
+export interface ErroresLista {
+  mensaje: string
+  errores: string[]
+  total_errores: number
+}
+
+export async function verListaPrecios(prestadorId: string, convenioId: string) {
+  const { data } = await api.get<ListaPrecios | null>(
+    `/shared/prestadores/${prestadorId}/convenios/${convenioId}/precios`,
+  )
+  return data
+}
+
+export async function subirListaPrecios(
+  prestadorId: string,
+  convenioId: string,
+  archivo: File,
+  vigenciaDesde: string,
+  vigenciaHasta: string,
+) {
+  const cuerpo = new FormData()
+  cuerpo.append('archivo', archivo)
+  cuerpo.append('vigencia_desde', vigenciaDesde)
+  if (vigenciaHasta) cuerpo.append('vigencia_hasta', vigenciaHasta)
+  const { data } = await api.post<ListaPrecios>(
+    `/shared/prestadores/${prestadorId}/convenios/${convenioId}/precios`,
+    cuerpo,
+    { headers: { 'Content-Type': undefined } },
+  )
+  return data
+}
+
 /**
  * Un sitio donde se atiende, con su punto en el mapa. El prestador aporta el
  * suyo y cada sede activa el propio: por eso `sede_nombre` distingue unos de

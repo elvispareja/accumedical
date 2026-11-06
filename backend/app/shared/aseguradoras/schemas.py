@@ -108,6 +108,7 @@ class ConvenioPrestadorOut(BaseModel):
     prestador_id: str
     codigo_interno: str
     nombre: str
+    tipo_codigo: str = ""
     tipo_nombre: str
     ciudad_nombre: str | None
     marcado: bool
@@ -328,6 +329,10 @@ class ProductoEntrada(BaseModel):
     parentescos: list[Parentesco] = Field(default_factory=list, max_length=3)
     carencia_dias: Annotated[int, Field(ge=0, le=3650)]
     exclusiones: str | None = Field(default=None, max_length=4000)
+    # Vademécum del producto (6/11/2026): códigos «VAD-00001» del maestro.
+    vademecum: list[Annotated[str, Field(pattern=r"^VAD-[0-9]{5}$")]] = Field(
+        default_factory=list, max_length=3000
+    )
 
     @field_validator("exclusiones")
     @classmethod
@@ -376,6 +381,11 @@ class ProductoEntrada(BaseModel):
                 f"{nombre}: el máximo de diagnósticos por consulta es solo de un producto "
                 "con teleconsulta o consulta ambulatoria"
             )
+        self.vademecum = sorted(set(self.vademecum))
+        if self.requiere_vademecum and not self.vademecum:
+            raise ValueError(f"{nombre}: requiere vademécum, elige sus medicamentos")
+        if not self.requiere_vademecum and self.vademecum:
+            raise ValueError(f"{nombre}: solo lleva medicamentos si requiere vademécum")
         if self.beneficiarios_incluidos and not self.parentescos:
             raise ValueError(f"{nombre}: incluye beneficiarios, elige sus parentescos")
         if not self.beneficiarios_incluidos and self.parentescos:
@@ -418,6 +428,7 @@ class ProductoSalida(BaseModel):
     parentescos: list[str]
     carencia_dias: int
     exclusiones: str | None
+    vademecum: list[str]
 
 
 class AseguradoraCrear(_ConRuc):

@@ -501,6 +501,10 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
             " OR (requiere_vademecum IS NULL AND despacho_parcial IS NULL)",
             name="farmacia_campos",
         ),
+        # Lista propia solo si el producto exige vademécum (6/11/2026).
+        CheckConstraint(
+            "requiere_vademecum IS TRUE OR cardinality(vademecum) = 0", name="vademecum_lista"
+        ),
         Index(
             "ix_aseguradora_productos_aseguradora_id",
             "aseguradora_id",
@@ -554,6 +558,9 @@ class AseguradoraProducto(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     # Medicamentos o diagnósticos que no cubre, en texto (la lista cerrada llegará
     # con el vademécum).
     exclusiones: Mapped[str | None] = mapped_column(String(2000))
+    # El vademécum del producto (M5): los códigos del maestro (la central) que
+    # cubre. Solo si «requiere vademécum»; entonces, al menos uno.
+    vademecum: Mapped[list[str]] = mapped_column(ARRAY(String(9)), nullable=False)
 
 # Los conceptos que se pactan en un convenio y cómo se pacta cada uno. El
 # orden es el de la pantalla, de arriba hacia abajo.

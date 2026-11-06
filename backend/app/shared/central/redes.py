@@ -132,7 +132,10 @@ def convenios_de_aseguradora(aseguradora_id: uuid.UUID) -> list[dict[str, Any]]:
     return [
         {
             "prestador": SimpleNamespace(
-                id=uuid.UUID(p["id"]), codigo_interno=p["codigo_interno"], nombre=p["nombre"]
+                id=uuid.UUID(p["id"]),
+                codigo_interno=p["codigo_interno"],
+                nombre=p["nombre"],
+                tipo_codigo=p["tipo_codigo"],
             ),
             "tipo_nombre": tipos.get(p["tipo_codigo"]),
             "ciudad_nombre": ciudades.get(p["ciudad_codigo"]) if p["ciudad_codigo"] else None,

@@ -4,11 +4,12 @@ import {
   BookOpen,
   Briefcase,
   Building2,
-  SlidersHorizontal,
   ClipboardCheck,
   Handshake,
   LogOut,
+  Pill,
   Settings,
+  SlidersHorizontal,
   Stethoscope,
   Users,
 } from 'lucide-react'
@@ -47,6 +48,7 @@ const ENTRADAS: EntradaLateral[] = [
   // Su propia app (D49): se abre en pestaña nueva en pacientes.pymes.ec.
   { a: '/pacientes/dashboard', etiqueta: 'Pacientes Accumedical', icono: Briefcase },
   { a: '/admin/cie10', etiqueta: 'CIE-10', icono: BookOpen },
+  { a: '/admin/vademecum', etiqueta: 'Vademécum', icono: Pill },
 ]
 
 // Las dos familias comerciales, en el orden en que se presentan. Una sin

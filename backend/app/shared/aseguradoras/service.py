@@ -648,6 +648,7 @@ def fijar_productos(
         nombres.add(datos["nombre"])
 
     existentes = {p.id: p for p in productos_de(db, aseguradora_id)}
+    _validar_vademecum(entrantes, existentes)
     vistos: set[uuid.UUID] = set()
     for datos in entrantes:
         if not datos.get("id"):
@@ -714,6 +715,40 @@ def fijar_productos(
     return None
 
 
+def _validar_vademecum(
+    entrantes: list[dict[str, Any]], existentes: dict[uuid.UUID, AseguradoraProducto]
+) -> None:
+    """
+    Los medicamentos de cada producto tienen que estar en el vademécum maestro
+    (la central) y activos. Uno que ya tenía el producto y que una revisión del
+    Cuadro Nacional dejó inactivo se conserva: se ve, pero no se puede agregar.
+    """
+    pedidos = {c for datos in entrantes for c in datos.get("vademecum") or []}
+    if not pedidos:
+        return
+    from app.shared.central import vademecum as maestro
+
+    conocidos = maestro.por_codigos(sorted(pedidos))
+    for datos in entrantes:
+        previos: set[str] = set()
+        if datos.get("id"):
+            anterior = existentes.get(uuid.UUID(str(datos["id"])))
+            previos = set(anterior.vademecum) if anterior else set()
+        malos = [
+            c for c in datos.get("vademecum") or []
+            if c not in previos and not (conocidos.get(c) or {}).get("activo")
+        ]
+        if malos:
+            muestra = ", ".join(malos[:5]) + ("…" if len(malos) > 5 else "")
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"{datos['nombre']}: medicamentos que no están activos en el vademécum: "
+                    f"{muestra}"
+                ),
+            )
+
+
 #: Lo que se guarda de un producto (M2, 6/11/2026), en el orden de la pantalla.
 CAMPOS_PRODUCTO = (
     "nombre",
@@ -731,6 +766,7 @@ CAMPOS_PRODUCTO = (
     "parentescos",
     "carencia_dias",
     "exclusiones",
+    "vademecum",
 )
 
 

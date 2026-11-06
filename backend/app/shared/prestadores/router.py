@@ -8,6 +8,7 @@ from fastapi import (
     APIRouter,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
     Request,
@@ -538,3 +539,94 @@ def guardar_valores(
     )
     db.commit()
     return _valores_out(db, convenio_id, aseguradora)
+
+
+# ─────────── Lista de precios por medicamento (6/11/2026, M4) ───────────
+# La de una farmacia en su convenio. La central lee el Excel (la plantilla de
+# /shared/catalogos/vademecum/plantilla-precios) y lo valida contra el
+# vademécum: todo o nada. El archivo queda en el almacén como evidencia.
+
+
+@router.get("/{prestador_id}/convenios/{convenio_id}/precios")
+def ver_precios(
+    prestador_id: uuid.UUID,
+    convenio_id: uuid.UUID,
+    db: DbSession = Depends(get_db),
+) -> dict | None:
+    from app.shared.central import precios as precios_central
+
+    convenios_service.obtener_convenio(db, prestador_id, convenio_id)
+    return precios_central.ver(convenio_id)
+
+
+@router.post("/{prestador_id}/convenios/{convenio_id}/precios")
+async def subir_precios(
+    request: Request,
+    prestador_id: uuid.UUID,
+    convenio_id: uuid.UUID,
+    archivo: UploadFile = File(...),
+    vigencia_desde: str = Form(..., max_length=10),
+    vigencia_hasta: str | None = Form(default=None, max_length=10),
+    ctx: AuthContext = Depends(require_funcion("convenio")),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> dict:
+    import datetime as dt
+
+    from app.shared.central import precios as precios_central
+
+    convenios_service.obtener_convenio(db, prestador_id, convenio_id)
+    try:
+        desde = dt.date.fromisoformat(vigencia_desde)
+        hasta = dt.date.fromisoformat(vigencia_hasta) if vigencia_hasta else None
+    except ValueError as error:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Revise las fechas de vigencia"
+        ) from error
+    for fecha in (desde, hasta):
+        if fecha is not None and not dt.date(2000, 1, 1) <= fecha <= dt.date(2100, 12, 31):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Las fechas de vigencia deben estar entre el año 2000 y el 2100",
+            )
+    maximo = settings.upload_max_size_mb * 1024 * 1024
+    contenido = bytearray()
+    while trozo := await archivo.read(CHUNK):
+        contenido.extend(trozo)
+        if len(contenido) > maximo:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"La lista no puede superar {settings.upload_max_size_mb} MB",
+            )
+    if not contenido:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El archivo está vacío")
+    if not bytes(contenido[:4]) == b"PK\x03\x04":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La lista de precios debe ser un Excel .xlsx: use la plantilla",
+        )
+    nombre = " ".join(Path(archivo.filename or "").stem.split())[:160] or "Lista de precios"
+    resultado = precios_central.subir(
+        convenio_id, bytes(contenido), nombre, desde, hasta, ctx.user.id
+    )
+    audit.registrar(
+        db,
+        accion="actualizar",
+        request=request,
+        user_id=ctx.user.id,
+        session_id=ctx.sesion.id,
+        entidad="convenio_precios",
+        entidad_id=str(convenio_id),
+        detalle={
+            "despues": {
+                "lista": resultado.get("id"),
+                "archivo": nombre,
+                "filas": resultado.get("filas"),
+                "vigencia_desde": desde.isoformat(),
+                "vigencia_hasta": hasta.isoformat() if hasta else None,
+            }
+        },
+    )
+    db.commit()
+    return resultado
+

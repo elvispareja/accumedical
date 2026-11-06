@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowLeft, Download, FileSpreadsheet, UploadCloud } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { PreciosMedicamentos } from '@/shared/convenios/PreciosMedicamentos'
 import { subirListadoPrecios, urlListadoPrecios } from '@/shared/aseguradoras/api'
 import {
   guardarValoresFC,
@@ -83,7 +84,7 @@ function basesPosibles(
   return conceptos.filter((c) => c.concepto !== fila.concepto && c.modo !== 'porcentaje')
 }
 
-type Pestana = 'listado' | 'fc'
+type Pestana = 'listado' | 'precios' | 'fc'
 
 /** Cómo se lee la red del convenio. Las dos casillas marcadas son «ambas». */
 function rotuloDeRed({ privada, publica }: { privada: boolean; publica: boolean }): string {
@@ -109,6 +110,7 @@ export function ConvenioDetalle({
   titulo,
   subtitulo,
   listadoNombre,
+  esFarmacia = false,
   red,
   onListadoSubido,
   onVolver,
@@ -120,6 +122,8 @@ export function ConvenioDetalle({
   /** Lo que identifica a la contraparte: código, tipo, ciudad… */
   subtitulo: string
   listadoNombre: string | null
+  /** Farmacia (6/11/2026): su convenio lleva precios por medicamento. */
+  esFarmacia?: boolean
   red: { privada: boolean; publica: boolean }
   /** Para que quien monta el detalle refresque SU lista sin esperar un refetch. */
   onListadoSubido: (nombre: string) => void
@@ -268,6 +272,7 @@ export function ConvenioDetalle({
         {(
           [
             ['listado', 'Listado de precios'],
+            ...(esFarmacia ? ([['precios', 'Precios de medicamentos']] as const) : []),
             ['fc', 'Valor FC'],
           ] as const
         ).map(([clave, etiqueta]) => (
@@ -288,7 +293,9 @@ export function ConvenioDetalle({
         ))}
       </div>
 
-      {pestana === 'listado' ? (
+      {pestana === 'precios' ? (
+        <PreciosMedicamentos prestadorId={prestadorId} convenioId={convenioId} />
+      ) : pestana === 'listado' ? (
         <div className="space-y-4">
           {listadoNombre ? (
             <div className="flex items-center justify-between gap-3 rounded-md border border-borde bg-tenue/40 px-4 py-3">

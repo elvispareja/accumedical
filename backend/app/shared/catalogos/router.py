@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
@@ -252,3 +252,64 @@ def buscar_cie10(
     if capitulo:
         parametros["capitulo"] = capitulo
     return _central_cie10("/api/catalogos/cie10?" + urlencode(parametros))
+
+
+# ─────────────────────── Vademécum maestro (6/11/2026) ───────────────────────
+# Vive en la central; aquí se pasa la consulta. Para el personal de Accumedical:
+# lo usa el admin para armar el vademécum de cada producto y ver el maestro.
+
+
+class VademecumCodigos(BaseModel):
+    codigos: list[str] = Field(max_length=3000)
+
+
+@router.get("/vademecum")
+def buscar_vademecum(
+    q: str | None = Query(default=None, min_length=2, max_length=80),
+    forma: str | None = Query(default=None, max_length=120),
+    via: str | None = Query(default=None, max_length=120),
+    nivel_prescripcion: str | None = Query(default=None, max_length=30),
+    limit: int = Query(default=50, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0, le=10000),
+    _: AuthContext = Depends(require_personal_accumedical),
+) -> list[dict]:
+    from app.shared.central import vademecum
+
+    return vademecum.buscar({"q": q, "forma": forma, "via": via,
+                             "nivel_prescripcion": nivel_prescripcion,
+                             "limit": limit, "offset": offset})
+
+
+@router.get("/vademecum-filtros")
+def filtros_vademecum(_: AuthContext = Depends(require_personal_accumedical)) -> dict:
+    from app.shared.central import vademecum
+
+    return vademecum.filtros()
+
+
+@router.post("/vademecum/codigos")
+def vademecum_por_codigos(
+    datos: VademecumCodigos,
+    _: AuthContext = Depends(require_personal_accumedical),
+) -> list[dict]:
+    """Los medicamentos de esos códigos (para mostrar lo elegido en un producto)."""
+    from app.shared.central import vademecum
+
+    return list(vademecum.por_codigos(datos.codigos).values())
+
+
+@router.get("/vademecum/plantilla-precios")
+def plantilla_precios(_: AuthContext = Depends(require_personal_accumedical)) -> Response:
+    """El Excel que llena cada farmacia con sus precios (todo el maestro activo)."""
+    from app.shared.central import vademecum
+
+    return Response(
+        content=vademecum.plantilla_precios(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="lista-de-precios-plantilla.xlsx"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
+

@@ -175,6 +175,7 @@ def _detalle_completo(db: DbSession, aseguradora_id) -> AseguradoraDetalle:
             parentescos=list(p.parentescos),
             carencia_dias=p.carencia_dias,
             exclusiones=p.exclusiones,
+            vademecum=list(p.vademecum),
         )
         for p in service.productos_de(db, fila[0].id)
     ]
@@ -452,6 +453,7 @@ def _convenios_out(db: DbSession, aseguradora_id: uuid.UUID) -> list[ConvenioPre
             prestador_id=str(fila["prestador"].id),
             codigo_interno=fila["prestador"].codigo_interno,
             nombre=fila["prestador"].nombre,
+            tipo_codigo=fila["prestador"].tipo_codigo,
             tipo_nombre=fila["tipo_nombre"],
             ciudad_nombre=fila["ciudad_nombre"],
             marcado=fila["marcado"],

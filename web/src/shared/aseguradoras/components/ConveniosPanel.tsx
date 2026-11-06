@@ -20,6 +20,7 @@ function traducir(c: ConvenioPrestador): SocioDeConvenio {
     id: c.prestador_id,
     titulo: c.nombre,
     subtitulo: [c.codigo_interno, c.tipo_nombre, c.ciudad_nombre].filter(Boolean).join(' · '),
+    esFarmacia: c.tipo_codigo === 'farmacia',
     marcado: c.marcado,
     convenioId: c.convenio_id,
     listadoNombre: c.listado_precios_nombre,

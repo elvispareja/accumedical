@@ -174,6 +174,8 @@ export interface ConvenioPrestador {
   prestador_id: string
   codigo_interno: string
   nombre: string
+  /** «farmacia», «hospital»…: la farmacia lleva lista de precios por medicamento. */
+  tipo_codigo: string
   tipo_nombre: string
   ciudad_nombre: string | null
   marcado: boolean

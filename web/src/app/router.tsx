@@ -27,6 +27,7 @@ import { PrestadoresMapaPage } from '@/shared/prestadores/pages/PrestadoresMapaP
 import { PrestadoresPage } from '@/shared/prestadores/pages/PrestadoresPage'
 import { TiposPrestadorPage } from '@/shared/parametros/pages/TiposPrestadorPage'
 import { Cie10Page } from '@/shared/cie10/pages/Cie10Page'
+import { VademecumPage } from '@/shared/vademecum/pages/VademecumPage'
 import { UsuarioFormPage } from '@/shared/usuarios/pages/UsuarioFormPage'
 import { UsuariosPage } from '@/shared/usuarios/pages/UsuariosPage'
 
@@ -99,6 +100,8 @@ export const router = createBrowserRouter([
           { path: 'parametros/tipos-prestador', element: <TiposPrestadorPage /> },
           // El catálogo CIE-10 de la central, para consultar (19/10/2026).
           { path: 'cie10', element: <Cie10Page /> },
+          // El vademécum maestro de la central, para consultar (6/11/2026).
+          { path: 'vademecum', element: <VademecumPage /> },
           // La lista entera de la campana. Sin rol: cada quien ve la suya.
           { path: 'notificaciones', element: <NotificacionesPage /> },
           { path: 'configuracion', element: <ConfiguracionPage /> },

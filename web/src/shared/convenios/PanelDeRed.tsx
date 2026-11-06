@@ -33,6 +33,8 @@ export interface SocioDeConvenio {
   listadoNombre: string | null
   redPrivada: boolean
   redPublica: boolean
+  /** El prestador es una farmacia: su convenio lleva precios por medicamento. */
+  esFarmacia?: boolean
 }
 
 export interface SocioMarcado {
@@ -128,6 +130,7 @@ export function PanelDeRed({
         titulo={editando.titulo}
         subtitulo={editando.subtitulo}
         listadoNombre={editando.listadoNombre}
+        esFarmacia={editando.esFarmacia ?? false}
         red={red}
         onListadoSubido={(nombre) => onListadoSubido(editando.id, nombre)}
         onVolver={() => setEditandoId(null)}
