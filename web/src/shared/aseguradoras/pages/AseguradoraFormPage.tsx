@@ -146,7 +146,8 @@ const PESTANAS = [
   // Para todo cliente, sea aseguradora, broker o cooperativa (6/11/2026).
   { id: 'producto', etiqueta: 'Producto' },
   { id: 'requerimientos', etiqueta: 'Módulos' },
-  { id: 'polizas', etiqueta: 'Pólizas y planes' },
+  // Contrato o póliza con sus datos (6/11/2026, especificación de la Central, M1).
+  { id: 'polizas', etiqueta: 'Contratos y pólizas' },
   { id: 'cobertura', etiqueta: 'Cobertura y condiciones' },
   { id: 'sla', etiqueta: 'SLA' },
   { id: 'convenios', etiqueta: 'Convenios' },
@@ -747,8 +748,8 @@ export function AseguradoraFormPage() {
           ) : pestana === 'polizas' ? (
             <div className="space-y-4 pt-6">
               <Bloque
-                titulo="Pólizas y planes"
-                descripcion="Los PDF de pólizas y planes de esta aseguradora."
+                titulo="Contratos y pólizas"
+                descripcion="Cada contrato o póliza del cliente en PDF, con su vigencia, la tarifa a AccuMedical y la forma de pago de los medicamentos."
               >
                 <PolizasPanel aseguradoraId={id ?? null} categoria="polizas" />
               </Bloque>

@@ -155,6 +155,57 @@ class AseguradoraPoliza(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
 # Las categorías válidas de documentos, espejo del CHECK de la tabla.
 CATEGORIAS_DOCUMENTO = ("polizas", "cobertura_condiciones", "sla", "convenios")
 
+# Cómo se cobra la tarifa a AccuMedical y quién financia los medicamentos
+# (especificación de la Central, M1). Espejo de los CHECK de la tabla.
+UNIDADES_TARIFA = ("asegurado_mes", "evento", "fija_mensual")
+FORMAS_PAGO_MEDICAMENTOS = ("reembolso_aparte", "incluido_en_tarifa")
+
+
+class AseguradoraContrato(Base, AuditoriaFilaMixin):
+    """
+    **Los datos del contrato o póliza** (6/11/2026, especificación de la
+    Central, M1 «Clientes y contratos»): vigencia, tarifa a AccuMedical con su
+    unidad, fecha de revisión de la tarifa y forma de pago de los medicamentos.
+
+    Uno por PDF de la pestaña «Contratos y pólizas» (`aseguradora_polizas` con
+    categoría `polizas`): el PDF es el contrato y esta fila, sus datos. Se suben
+    juntos; los PDF anteriores a esta tabla no tienen fila hasta que alguien
+    completa sus datos. Sin borrado propio: retirar el PDF retira el contrato, y
+    cada cambio queda con su antes y después en AuditLog.
+
+    La tarifa (lo que el cliente paga a AccuMedical) NO es la cobertura del
+    paciente: esa va en el producto.
+    """
+
+    __tablename__ = "aseguradora_contratos"
+    __table_args__ = (
+        CheckConstraint("vigencia_hasta >= vigencia_desde", name="vigencia"),
+        CheckConstraint("tarifa >= 0", name="tarifa"),
+        CheckConstraint(
+            "tarifa_unidad IN ('asegurado_mes', 'evento', 'fija_mensual')", name="tarifa_unidad"
+        ),
+        CheckConstraint(
+            "forma_pago_medicamentos IN ('reembolso_aparte', 'incluido_en_tarifa')",
+            name="forma_pago_medicamentos",
+        ),
+        CheckConstraint(
+            "revision_tarifa IS NULL OR revision_tarifa >= vigencia_desde",
+            name="revision_tarifa",
+        ),
+    )
+
+    poliza_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("aseguradora_polizas.id", ondelete="RESTRICT"), primary_key=True
+    )
+    vigencia_desde: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    vigencia_hasta: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    # Cuatro decimales: «USD 0,045 por asegurado al mes» sobre 54.000 asegurados
+    # ya son dólares de diferencia.
+    tarifa: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    tarifa_unidad: Mapped[str] = mapped_column(String(20), nullable=False)
+    revision_tarifa: Mapped[dt.date | None] = mapped_column(Date)
+    forma_pago_medicamentos: Mapped[str] = mapped_column(String(30), nullable=False)
+
 
 class AseguradoraPrestador(Base, AuditoriaFilaMixin, BorradoLogicoMixin):
     """

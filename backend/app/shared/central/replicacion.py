@@ -137,6 +137,14 @@ ENTIDADES: list[tuple[str, str]] = [
         " created_at, updated_at, created_by, updated_by, deleted_at, deleted_by"
         " FROM aseguradora_polizas",
     ),
+    # Los datos del contrato de cada póliza (6/11/2026), DESPUÉS de su documento.
+    (
+        "contratos_aseguradora",
+        "SELECT poliza_id AS documento_id, vigencia_desde, vigencia_hasta, tarifa,"
+        " tarifa_unidad, revision_tarifa, forma_pago_medicamentos,"
+        " created_at, updated_at, created_by, updated_by"
+        " FROM aseguradora_contratos",
+    ),
     # Directorio de usuarios. Columnas elegidas UNA A UNA: nunca password_hash,
     # mfa_secret, intentos de login, bloqueos ni último acceso. La central sabe
     # quién es cada uno, no cómo entra.

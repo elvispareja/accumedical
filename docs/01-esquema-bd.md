@@ -1416,6 +1416,30 @@ categoría y la API ya existen; falta encender su pestaña).
 Auditoría de fila, borrado lógico e índice parcial por aseguradora; solo admin
 global.
 
+### 5.2e-bis `aseguradora_contratos` — datos del contrato o póliza (`b5d9e3f7a128`)
+
+Especificación de la Central, M1 «Clientes y contratos» (6/11/2026, «sigue con lo
+de las pólizas»). La pestaña «Pólizas y planes» pasa a llamarse **«Contratos y
+pólizas»**: cada PDF de categoría `polizas` es un contrato y esta tabla guarda
+sus datos. Una fila por PDF: `poliza_id` es la PK y la FK a `aseguradora_polizas`.
+
+| Columna | Tipo | Regla |
+|---|---|---|
+| `vigencia_desde`, `vigencia_hasta` | `date` NOT NULL | `hasta >= desde`; la API exige años 2000–2100 |
+| `tarifa` | `numeric(14,4)` NOT NULL | `>= 0`; lo que el cliente paga a AccuMedical (NO la cobertura del paciente, que va en el producto) |
+| `tarifa_unidad` | `varchar(20)` NOT NULL | `asegurado_mes` · `evento` · `fija_mensual` |
+| `revision_tarifa` | `date` NULL | opcional; `>= vigencia_desde` |
+| `forma_pago_medicamentos` | `varchar(30)` NOT NULL | `reembolso_aparte` · `incluido_en_tarifa` |
+
+- El PDF y sus datos se suben JUNTOS (un solo `POST` multipart): sin datos, `422`
+  y el archivo no llega al almacén. Los PDF anteriores a esta tabla no tienen
+  fila; la pantalla los marca «Faltan los datos del contrato» y se completan con
+  `PUT …/contrato`. Nada se inventa en la migración.
+- Sin borrado propio: retirar el PDF (borrado lógico) retira el contrato. Cada
+  alta y cada cambio queda en AuditLog con `antes` y `despues`.
+- Va a la central por **réplica** (`contratos_aseguradora`, central 0015), DESPUÉS
+  de `documentos_aseguradora`. No es ficha: los documentos tampoco lo son.
+
 ### 5.3 `aseguradora_prestador` — el convenio / red de prestadores
 
 **En uso desde las dos pestañas «Convenios»** —la de la aseguradora y la del

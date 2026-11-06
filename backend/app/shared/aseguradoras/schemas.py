@@ -6,7 +6,7 @@ import unicodedata
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.shared import identificacion, personas
 from app.shared.geo import Latitud, Longitud
@@ -15,6 +15,12 @@ ESTADOS = ("activo", "inactivo")
 Estado = Literal["activo", "inactivo"]
 #: Qué clase de cliente es (5/11/2026). Mismos valores que el CHECK y la central.
 TipoAseguradora = Literal["aseguradora", "broker", "cooperativa"]
+#: Datos del contrato (6/11/2026): mismos valores que los CHECK de la tabla.
+UnidadTarifa = Literal["asegurado_mes", "evento", "fija_mensual"]
+FormaPagoMedicamentos = Literal["reembolso_aparte", "incluido_en_tarifa"]
+# Una fecha fuera de este rango es un error de tecleo («0226» por «2026»).
+_FECHA_MINIMA = dt.date(2000, 1, 1)
+_FECHA_MAXIMA = dt.date(2100, 12, 31)
 
 Texto = Annotated[str, Field(min_length=1, max_length=200)]
 
@@ -176,12 +182,57 @@ class ListadoPreciosSalida(BaseModel):
     listado_precios_nombre: str
 
 
+class ContratoEntrada(BaseModel):
+    """
+    Los datos del contrato o póliza (especificación de la Central, M1). Todos
+    obligatorios menos la fecha de revisión de la tarifa.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    vigencia_desde: dt.date
+    vigencia_hasta: dt.date
+    tarifa: Decimal = Field(ge=0, max_digits=14, decimal_places=4)
+    tarifa_unidad: UnidadTarifa
+    revision_tarifa: dt.date | None = None
+    forma_pago_medicamentos: FormaPagoMedicamentos
+
+    @model_validator(mode="after")
+    def _fechas_coherentes(self) -> ContratoEntrada:
+        for fecha in (self.vigencia_desde, self.vigencia_hasta, self.revision_tarifa):
+            if fecha is not None and not _FECHA_MINIMA <= fecha <= _FECHA_MAXIMA:
+                raise ValueError("Las fechas del contrato deben estar entre el año 2000 y el 2100")
+        if self.vigencia_hasta < self.vigencia_desde:
+            raise ValueError("La vigencia del contrato termina antes de empezar")
+        if self.revision_tarifa is not None and self.revision_tarifa < self.vigencia_desde:
+            raise ValueError(
+                "La revisión de la tarifa no puede ser antes del inicio de la vigencia"
+            )
+        return self
+
+
+class ContratoSalida(BaseModel):
+    vigencia_desde: dt.date
+    vigencia_hasta: dt.date
+    # Como texto («0.0500»): con cuatro decimales, un float podría redondear.
+    tarifa: str
+    tarifa_unidad: str
+    revision_tarifa: dt.date | None
+    forma_pago_medicamentos: str
+    actualizado_at: dt.datetime
+
+
 class PolizaSalida(BaseModel):
-    """Un PDF de pólizas y planes; el archivo se pide a su propio endpoint."""
+    """
+    Un PDF de la aseguradora; el archivo se pide a su propio endpoint. En la
+    pestaña «Contratos y pólizas» lleva los datos del contrato (`None` en un PDF
+    subido antes del 6/11/2026 al que aún no se le completaron).
+    """
 
     id: str
     nombre: str
     creada_at: dt.datetime
+    contrato: ContratoSalida | None = None
 
 
 class ContactoSalida(BaseModel):

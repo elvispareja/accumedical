@@ -256,13 +256,48 @@ export async function fijarSla(
   return data
 }
 
-// ─────────────────────────── Pólizas y planes ───────────────────────────────
+// ────────────────────────── Contratos y pólizas ──────────────────────────────
 
-/** Un PDF de pólizas y planes; el archivo se pide a su propio endpoint. */
+/** Cómo se cobra la tarifa a AccuMedical (especificación de la Central, M1). */
+export type UnidadTarifa = 'asegurado_mes' | 'evento' | 'fija_mensual'
+/** Quién financia los medicamentos que se despachan. */
+export type FormaPagoMedicamentos = 'reembolso_aparte' | 'incluido_en_tarifa'
+
+/** `etiqueta` para el select; `texto` para leerla tras el monto («USD 0,05 por asegurado al mes»). */
+export const UNIDADES_TARIFA: { valor: UnidadTarifa; etiqueta: string; texto: string }[] = [
+  { valor: 'asegurado_mes', etiqueta: 'Por asegurado al mes', texto: 'por asegurado al mes' },
+  { valor: 'evento', etiqueta: 'Por evento', texto: 'por evento' },
+  { valor: 'fija_mensual', etiqueta: 'Fija mensual', texto: 'fijos al mes' },
+]
+
+export const FORMAS_PAGO_MEDICAMENTOS: { valor: FormaPagoMedicamentos; etiqueta: string }[] = [
+  { valor: 'reembolso_aparte', etiqueta: 'Reembolso del cliente aparte' },
+  { valor: 'incluido_en_tarifa', etiqueta: 'Incluido en la tarifa' },
+]
+
+/** Los datos del contrato o póliza. Fechas `AAAA-MM-DD`; la tarifa como texto («0.0500»). */
+export interface Contrato {
+  vigencia_desde: string
+  vigencia_hasta: string
+  tarifa: string
+  tarifa_unidad: UnidadTarifa
+  revision_tarifa: string | null
+  forma_pago_medicamentos: FormaPagoMedicamentos
+  actualizado_at: string
+}
+
+export type ContratoEntrada = Omit<Contrato, 'actualizado_at'>
+
+/**
+ * Un PDF de la aseguradora; el archivo se pide a su propio endpoint. En
+ * «Contratos y pólizas» trae sus datos (`null` si es un PDF anterior al 6/11/2026
+ * al que aún no se le completaron).
+ */
 export interface Poliza {
   id: string
   nombre: string
   creada_at: string
+  contrato: Contrato | null
 }
 
 /** La pestaña a la que pertenece cada documento. */
@@ -280,16 +315,36 @@ export async function subirPoliza(
   archivo: File,
   nombre: string,
   categoria: CategoriaDocumento,
+  contrato?: ContratoEntrada,
 ) {
   const cuerpo = new FormData()
   cuerpo.append('archivo', archivo)
   cuerpo.append('nombre', nombre)
   cuerpo.append('categoria', categoria)
+  // Un contrato o póliza se sube CON sus datos: el servidor rechaza uno a medias.
+  if (contrato) {
+    for (const [campo, valor] of Object.entries(contrato)) {
+      if (valor !== null && valor !== '') cuerpo.append(campo, String(valor))
+    }
+  }
   // Sin Content-Type explícito: el navegador debe poner el boundary del multipart.
   const { data } = await api.post<Poliza[]>(
     `/shared/aseguradoras/${aseguradoraId}/polizas`,
     cuerpo,
     { headers: { 'Content-Type': undefined } },
+  )
+  return data
+}
+
+/** Completa o corrige los datos del contrato de un PDF ya subido. */
+export async function fijarContrato(
+  aseguradoraId: string,
+  polizaId: string,
+  contrato: ContratoEntrada,
+) {
+  const { data } = await api.put<Poliza[]>(
+    `/shared/aseguradoras/${aseguradoraId}/polizas/${polizaId}/contrato`,
+    contrato,
   )
   return data
 }

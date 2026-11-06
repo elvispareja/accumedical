@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import uuid
 import zipfile
+from decimal import Decimal
 from pathlib import Path
 
 import magic
@@ -18,6 +19,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -32,7 +34,11 @@ from app.shared import personas
 from app.shared.aseguradoras import service
 from app.shared.aseguradoras import usuarios as usuarios_service
 from app.shared.aseguradoras.logo import MIME_PERMITIDOS, respuesta_logo
-from app.shared.aseguradoras.models import CATEGORIAS_DOCUMENTO, AseguradoraPoliza
+from app.shared.aseguradoras.models import (
+    CATEGORIAS_DOCUMENTO,
+    AseguradoraContrato,
+    AseguradoraPoliza,
+)
 from app.shared.aseguradoras.schemas import (
     AccesoSalida,
     AseguradoraActualizar,
@@ -42,6 +48,8 @@ from app.shared.aseguradoras.schemas import (
     AseguradoraResumen,
     ContactoSalida,
     ConvenioPrestadorOut,
+    ContratoEntrada,
+    ContratoSalida,
     ConveniosFijar,
     ListadoPreciosSalida,
     PaginaAseguradoras,
@@ -701,9 +709,24 @@ def _categoria_valida(categoria: str) -> str:
     return categoria
 
 
+def _contrato_out(c: AseguradoraContrato | None) -> ContratoSalida | None:
+    if c is None:
+        return None
+    return ContratoSalida(
+        vigencia_desde=c.vigencia_desde,
+        vigencia_hasta=c.vigencia_hasta,
+        tarifa=f"{Decimal(c.tarifa).quantize(_CUATRO_DECIMALES)}",
+        tarifa_unidad=c.tarifa_unidad,
+        revision_tarifa=c.revision_tarifa,
+        forma_pago_medicamentos=c.forma_pago_medicamentos,
+        actualizado_at=c.updated_at,
+    )
+
+
 def _polizas_out(db: DbSession, aseguradora_id: uuid.UUID, categoria: str) -> list[PolizaSalida]:
-    filas = db.scalars(
-        select(AseguradoraPoliza)
+    filas = db.execute(
+        select(AseguradoraPoliza, AseguradoraContrato)
+        .outerjoin(AseguradoraContrato, AseguradoraContrato.poliza_id == AseguradoraPoliza.id)
         .where(
             AseguradoraPoliza.aseguradora_id == aseguradora_id,
             AseguradoraPoliza.categoria == categoria,
@@ -711,7 +734,55 @@ def _polizas_out(db: DbSession, aseguradora_id: uuid.UUID, categoria: str) -> li
         )
         .order_by(AseguradoraPoliza.created_at.desc())
     ).all()
-    return [PolizaSalida(id=str(p.id), nombre=p.nombre, creada_at=p.created_at) for p in filas]
+    return [
+        PolizaSalida(
+            id=str(p.id), nombre=p.nombre, creada_at=p.created_at, contrato=_contrato_out(c)
+        )
+        for p, c in filas
+    ]
+
+
+# ─── Datos del contrato (6/11/2026, especificación de la Central, M1) ───────
+
+_CUATRO_DECIMALES = Decimal("0.0001")
+_CAMPOS_CONTRATO = {
+    "vigencia_desde": "la fecha de inicio de la vigencia",
+    "vigencia_hasta": "la fecha de fin de la vigencia",
+    "tarifa": "la tarifa",
+    "tarifa_unidad": "la unidad de la tarifa",
+    "revision_tarifa": "la fecha de revisión de la tarifa",
+    "forma_pago_medicamentos": "la forma de pago de los medicamentos",
+}
+
+
+def _contrato_auditado(c: AseguradoraContrato | None) -> dict[str, object] | None:
+    """Lo que se guarda en AuditLog: texto comparable (fechas ISO, tarifa a 4 decimales)."""
+    if c is None:
+        return None
+    return {
+        "vigencia_desde": c.vigencia_desde.isoformat(),
+        "vigencia_hasta": c.vigencia_hasta.isoformat(),
+        "tarifa": f"{Decimal(c.tarifa).quantize(_CUATRO_DECIMALES)}",
+        "tarifa_unidad": c.tarifa_unidad,
+        "revision_tarifa": c.revision_tarifa.isoformat() if c.revision_tarifa else None,
+        "forma_pago_medicamentos": c.forma_pago_medicamentos,
+    }
+
+
+def _contrato_valido(crudo: dict[str, object]) -> ContratoEntrada:
+    """Valida los datos del contrato llegados por formulario; 422 en palabras si fallan."""
+    try:
+        return ContratoEntrada.model_validate(crudo)
+    except ValidationError as error:
+        primero = error.errors()[0]
+        campo = str(primero["loc"][0]) if primero.get("loc") else ""
+        if primero["type"] == "missing":
+            detalle = f"Falta {_CAMPOS_CONTRATO.get(campo, campo)}"
+        elif primero["type"] == "value_error":
+            detalle = str(primero["msg"]).removeprefix("Value error, ")
+        else:
+            detalle = f"Revisa {_CAMPOS_CONTRATO.get(campo, 'los datos del contrato')}"
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detalle) from None
 
 
 @router.get("/{aseguradora_id}/polizas", response_model=list[PolizaSalida])
@@ -735,12 +806,42 @@ async def subir_poliza(
     archivo: UploadFile = File(...),
     nombre: str = Form(default=""),
     categoria: str = Form(default="polizas"),
+    vigencia_desde: str | None = Form(default=None, max_length=10),
+    vigencia_hasta: str | None = Form(default=None, max_length=10),
+    tarifa: str | None = Form(default=None, max_length=20),
+    tarifa_unidad: str | None = Form(default=None, max_length=20),
+    revision_tarifa: str | None = Form(default=None, max_length=10),
+    forma_pago_medicamentos: str | None = Form(default=None, max_length=30),
     ctx: AuthContext = Depends(gestiona_companias),
     _: None = Depends(verificar_csrf),
     db: DbSession = Depends(get_db),
 ) -> list[PolizaSalida]:
     aseguradora, _prov, _ciu = service.obtener(db, aseguradora_id)
     categoria = _categoria_valida(categoria)
+
+    # Un contrato o póliza se sube CON sus datos (M1): nunca un PDF a medias.
+    # Se valida antes de leer el archivo: si faltan datos, nada llega al almacén.
+    crudo = {
+        k: v
+        for k, v in {
+            "vigencia_desde": vigencia_desde,
+            "vigencia_hasta": vigencia_hasta,
+            "tarifa": tarifa,
+            "tarifa_unidad": tarifa_unidad,
+            "revision_tarifa": revision_tarifa,
+            "forma_pago_medicamentos": forma_pago_medicamentos,
+        }.items()
+        if v not in (None, "")
+    }
+    if categoria == "polizas":
+        datos_contrato: ContratoEntrada | None = _contrato_valido(crudo)
+    elif crudo:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Solo un contrato o póliza lleva vigencia, tarifa y forma de pago",
+        )
+    else:
+        datos_contrato = None
 
     maximo = settings.upload_max_size_mb * 1024 * 1024
     contenido = bytearray()
@@ -778,6 +879,17 @@ async def subir_poliza(
     )
     db.add(poliza)
     db.flush()
+    contrato: AseguradoraContrato | None = None
+    if datos_contrato is not None:
+        contrato = AseguradoraContrato(
+            poliza_id=poliza.id,
+            **datos_contrato.model_dump(),
+            created_by=ctx.user.id,
+            updated_by=ctx.user.id,
+        )
+        db.add(contrato)
+        # Los CHECK de la base se prueban ANTES de mandar el archivo al almacén.
+        db.flush()
     if archivos_central.activo():
         # El archivo vive en el almacén cifrado de la central; aquí, la referencia.
         archivo_id = archivos_central.subir(bytes(contenido), visible, ctx.user.id)
@@ -797,10 +909,66 @@ async def subir_poliza(
         session_id=ctx.sesion.id,
         entidad="aseguradora_polizas",
         entidad_id=str(poliza.id),
-        detalle={"despues": {"nombre": visible, "categoria": categoria, "bytes": len(contenido)}},
+        detalle={
+            "despues": {
+                "nombre": visible,
+                "categoria": categoria,
+                "bytes": len(contenido),
+                "contrato": _contrato_auditado(contrato),
+            }
+        },
     )
     db.commit()
     return _polizas_out(db, aseguradora_id, categoria)
+
+
+@router.put(
+    "/{aseguradora_id}/polizas/{poliza_id}/contrato", response_model=list[PolizaSalida]
+)
+def fijar_contrato(
+    request: Request,
+    aseguradora_id: uuid.UUID,
+    poliza_id: uuid.UUID,
+    datos: ContratoEntrada,
+    ctx: AuthContext = Depends(gestiona_companias),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> list[PolizaSalida]:
+    """
+    Completa o corrige los datos del contrato de un PDF. El PDF no cambia
+    (otro contrato = otro PDF); el antes y el después quedan en AuditLog.
+    """
+    poliza = _poliza_de(db, aseguradora_id, poliza_id)
+    if poliza.categoria != "polizas":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Solo un contrato o póliza lleva vigencia, tarifa y forma de pago",
+        )
+    contrato = db.get(AseguradoraContrato, poliza.id, with_for_update=True)
+    antes = _contrato_auditado(contrato)
+    if contrato is None:
+        contrato = AseguradoraContrato(poliza_id=poliza.id, created_by=ctx.user.id)
+        db.add(contrato)
+    for campo, valor in datos.model_dump().items():
+        setattr(contrato, campo, valor)
+    despues = _contrato_auditado(contrato)
+    if despues != antes:
+        contrato.updated_by = ctx.user.id
+        db.flush()
+        audit.registrar(
+            db,
+            accion="crear" if antes is None else "actualizar",
+            request=request,
+            user_id=ctx.user.id,
+            session_id=ctx.sesion.id,
+            entidad="aseguradora_contratos",
+            entidad_id=str(poliza.id),
+            detalle={"documento": poliza.nombre, "antes": antes, "despues": despues},
+        )
+        db.commit()
+    else:
+        db.rollback()
+    return _polizas_out(db, aseguradora_id, "polizas")
 
 
 @router.get("/{aseguradora_id}/polizas/{poliza_id}")
@@ -836,6 +1004,7 @@ def eliminar_poliza(
 ) -> None:
     """Borrado lógico; el archivo queda en el volumen, como toda evidencia."""
     poliza = _poliza_de(db, aseguradora_id, poliza_id)
+    contrato = _contrato_auditado(db.get(AseguradoraContrato, poliza.id))
     poliza.deleted_at = func.now()
     poliza.deleted_by = ctx.user.id
     audit.registrar(
@@ -846,7 +1015,7 @@ def eliminar_poliza(
         session_id=ctx.sesion.id,
         entidad="aseguradora_polizas",
         entidad_id=str(poliza.id),
-        detalle={"antes": {"nombre": poliza.nombre}},
+        detalle={"antes": {"nombre": poliza.nombre, "contrato": contrato}},
     )
     db.commit()
 
