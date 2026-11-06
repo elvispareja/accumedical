@@ -19,12 +19,15 @@ export function Tabs({
   onCambiar,
   children,
   className,
+  etiqueta = 'Secciones de la aseguradora',
 }: {
   pestanas: Pestana[]
   activa: string
   onCambiar: (id: string) => void
   children: ReactNode
   className?: string
+  /** Lo que anuncia el lector de pantalla para el grupo de pestañas. */
+  etiqueta?: string
 }) {
   const base = useId()
   const sinMovimiento = useReducedMotion()
@@ -49,7 +52,7 @@ export function Tabs({
     <div className={className}>
       <div
         role="tablist"
-        aria-label="Secciones de la aseguradora"
+        aria-label={etiqueta}
         onKeyDown={alTeclado}
         className="flex gap-1 border-b border-borde"
       >

@@ -263,6 +263,8 @@ Convenciones: paginación `?page=1&page_size=20` (máx. 100), respuesta `{"items
 | GET | `/shared/catalogos/tipos-prestador` | Sesión | Tipos vivos con su `es_persona`. El formulario lo usa para decidir si pide especialidad y registro profesional, o registro sanitario |
 | GET | `/shared/catalogos/modulos` | **Admin global y Contabilidad** | Catálogo completo de módulos vivos, para las casillas de la aseguradora. Cerrado a los demás a propósito: `/shared/modulos` devuelve solo los del usuario justamente para no filtrar cuáles existen. Lo abre quien marca lo que una compañía contrata |
 | GET | `/shared/catalogos/coberturas` | **Admin global y Contabilidad** | En qué coberturas se divide cada módulo. Mismo criterio y mismo motivo que el anterior |
+| GET | `/shared/catalogos/cie10-agrupadores` y `/shared/catalogos/cie10-agrupadores/{AGR-00001}` | Personal de Accumedical | Los **diagnósticos agrupadores** de la CIE-10 (6/11/2026), que viven en la central: buscar (`q`: código CIE-10, «AGR-» o palabras; `solo_ajustados`, `incluir_inactivos`, `offset`) y ver uno con sus códigos. Pestaña «Agrupadores de eventos» del menú CIE-10 |
+| PUT/POST | `/shared/catalogos/cie10-agrupadores/{codigo}` (renombrar) · `/mover` · `/{codigo}/juntar` · `/{codigo}/sugerencias` (la IA propone) | **Solo el admin global**, con CSRF | Cambian cómo se cuentan los eventos de TODOS los clientes. Pasan a la central con la credencial de la plataforma (`catalogos:admin`) y el usuario; quedan en la AuditLog de la central y en la de aquí (`actualizar`, entidad `cie10_agrupador`). Un `extra` en el cuerpo es `422` |
 | GET | `/health` | Pública | Healthcheck; sin información interna |
 
 ### Aseguradoras — API en `/shared/aseguradoras`, UI en `/admin/aseguradoras`

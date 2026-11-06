@@ -6,7 +6,10 @@ import { cn } from '@/lib/utils'
 import { Boton } from '@/shared/components/ui/button'
 import { Checkbox } from '@/shared/components/ui/checkbox'
 import { Input } from '@/shared/components/ui/input'
+import { Tabs } from '@/shared/components/ui/tabs'
 import { useToast } from '@/shared/components/ui/toast'
+import { useSesion } from '@/core/auth/useSesion'
+import { AgrupadoresCie10 } from '@/shared/cie10/Agrupadores'
 import { buscarCie10, capitulosCie10, POR_PAGINA, type Cie10, type Cie10Capitulo } from '@/shared/cie10/api'
 
 function mensajeDeError(error: unknown, porDefecto: string): string {
@@ -33,6 +36,9 @@ function edad(dias: number): string {
  * central —el mismo que usarán todas las apps—; aquí solo se consulta.
  */
 export function Cie10Page() {
+  const sesion = useSesion()
+  // «Agrupadores de eventos» (6/11/2026): la tabla que une diagnósticos equivalentes.
+  const [pestana, setPestana] = useState<'catalogo' | 'agrupadores'>('catalogo')
   const [texto, setTexto] = useState('')
   const [q, setQ] = useState('')
   const [capitulo, setCapitulo] = useState<Cie10Capitulo | null>(null)
@@ -72,113 +78,134 @@ export function Cie10Page() {
         </p>
         <h1 className="mt-1.5 font-display text-2xl font-semibold tracking-tight">CIE-10</h1>
         <p className="mt-1 max-w-3xl text-sm text-tenue-fg">
-          Clasificación Internacional de Enfermedades, 10.ª revisión: texto oficial de la OPS (2018) con las
-          extensiones y restricciones del MSP de Ecuador.
+          Clasificación Internacional de Enfermedades, 10.ª revisión: texto oficial de la OPS (2018) con las extensiones
+          y restricciones del MSP de Ecuador.
           {total ? ` ${total.toLocaleString('es-EC')} códigos para diagnóstico.` : ''}
         </p>
       </header>
 
-      <div className="mt-6 rounded-md border border-borde bg-superficie p-4 sm:p-5">
-        <label htmlFor="buscar-cie10" className="font-display text-sm font-medium">
-          Buscar por código o descripción
-        </label>
-        <div className="relative mt-2">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
-            aria-hidden="true"
-          />
-          <Input
-            id="buscar-cie10"
-            type="search"
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={80}
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            placeholder="E11.9, e119, I21… o «diabetes tipo 2», «neumonía»"
-            className="h-11 pl-9 text-base"
-          />
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
-          <Checkbox
-            id="cie10-agrupadores"
-            compacto
-            checked={agrupadores}
-            onChange={setAgrupadores}
-            titulo="Ver también las categorías que agrupan (p. ej. E11)"
-          />
-          <Checkbox
-            id="cie10-retirados"
-            compacto
-            checked={retirados}
-            onChange={setRetirados}
-            titulo="Incluir códigos retirados por la OMS"
-          />
-        </div>
-        {capitulo && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-tenue-fg">En el capítulo</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-marca-suave px-3 py-1 font-medium text-marca">
-              {capitulo.capitulo} · {capitulo.titulo}
-              <button
-                type="button"
-                onClick={() => setCapitulo(null)}
-                className="grid size-4 place-items-center rounded-full hover:bg-marca/10"
-                aria-label="Quitar el filtro de capítulo"
-              >
-                <X className="size-3" aria-hidden="true" />
-              </button>
-            </span>
+      <Tabs
+        className="mt-5"
+        etiqueta="Secciones de la CIE-10"
+        pestanas={[
+          { id: 'catalogo', etiqueta: 'Catálogo' },
+          { id: 'agrupadores', etiqueta: 'Agrupadores de eventos' },
+        ]}
+        activa={pestana}
+        onCambiar={(id) => setPestana(id as typeof pestana)}
+      >
+        {pestana === 'agrupadores' ? (
+          <div className="mt-6">
+            <AgrupadoresCie10 puedeAjustar={Boolean(sesion.data?.user.es_admin_global)} />
           </div>
-        )}
-      </div>
-
-      {!buscando ? (
-        <Portada capitulos={capitulos.data} cargando={capitulos.isLoading} alElegir={setCapitulo} />
-      ) : (
-        <section className="mt-6" aria-label="Resultados">
-          {resultados.isError ? (
-            <p className="text-sm text-tenue-fg">{mensajeDeError(resultados.error, 'No pudimos consultar la CIE-10.')}</p>
-          ) : resultados.isLoading ? (
-            <div className="space-y-2" role="status" aria-label="Buscando">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="h-14 animate-pulse rounded-md bg-tenue" />
-              ))}
-            </div>
-          ) : filas.length === 0 ? (
-            <div className="rounded-md border border-dashed border-borde p-8 text-center">
-              <p className="font-medium">Ningún código coincide</p>
-              <p className="mt-1 text-sm text-tenue-fg">
-                Pruebe con menos palabras o con el inicio de una («neumon» encuentra «neumonía»).
-              </p>
-            </div>
-          ) : (
-            <>
-              <p className="mb-2 text-xs text-tenue-fg">
-                {filas.length}
-                {resultados.hasNextPage ? '+' : ''} {filas.length === 1 ? 'resultado' : 'resultados'}
-              </p>
-              <ul className="divide-y divide-borde overflow-hidden rounded-md border border-borde bg-superficie">
-                {filas.map((c) => (
-                  <FilaCie10 key={c.codigo} c={c} />
-                ))}
-              </ul>
-              {resultados.hasNextPage && (
-                <div className="mt-4 flex justify-center">
-                  <Boton
-                    variante="contorno"
-                    onClick={() => resultados.fetchNextPage()}
-                    cargando={resultados.isFetchingNextPage}
-                  >
-                    Ver más
-                  </Boton>
+        ) : (
+          <>
+            <div className="mt-6 rounded-md border border-borde bg-superficie p-4 sm:p-5">
+              <label htmlFor="buscar-cie10" className="font-display text-sm font-medium">
+                Buscar por código o descripción
+              </label>
+              <div className="relative mt-2">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-tenue-fg"
+                  aria-hidden="true"
+                />
+                <Input
+                  id="buscar-cie10"
+                  type="search"
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={80}
+                  value={texto}
+                  onChange={(e) => setTexto(e.target.value)}
+                  placeholder="E11.9, e119, I21… o «diabetes tipo 2», «neumonía»"
+                  className="h-11 pl-9 text-base"
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+                <Checkbox
+                  id="cie10-agrupadores"
+                  compacto
+                  checked={agrupadores}
+                  onChange={setAgrupadores}
+                  titulo="Ver también las categorías que agrupan (p. ej. E11)"
+                />
+                <Checkbox
+                  id="cie10-retirados"
+                  compacto
+                  checked={retirados}
+                  onChange={setRetirados}
+                  titulo="Incluir códigos retirados por la OMS"
+                />
+              </div>
+              {capitulo && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-tenue-fg">En el capítulo</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-marca-suave px-3 py-1 font-medium text-marca">
+                    {capitulo.capitulo} · {capitulo.titulo}
+                    <button
+                      type="button"
+                      onClick={() => setCapitulo(null)}
+                      className="grid size-4 place-items-center rounded-full hover:bg-marca/10"
+                      aria-label="Quitar el filtro de capítulo"
+                    >
+                      <X className="size-3" aria-hidden="true" />
+                    </button>
+                  </span>
                 </div>
               )}
-            </>
-          )}
-        </section>
-      )}
+            </div>
+
+            {!buscando ? (
+              <Portada capitulos={capitulos.data} cargando={capitulos.isLoading} alElegir={setCapitulo} />
+            ) : (
+              <section className="mt-6" aria-label="Resultados">
+                {resultados.isError ? (
+                  <p className="text-sm text-tenue-fg">
+                    {mensajeDeError(resultados.error, 'No pudimos consultar la CIE-10.')}
+                  </p>
+                ) : resultados.isLoading ? (
+                  <div className="space-y-2" role="status" aria-label="Buscando">
+                    {[0, 1, 2, 3].map((i) => (
+                      <div key={i} className="h-14 animate-pulse rounded-md bg-tenue" />
+                    ))}
+                  </div>
+                ) : filas.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-borde p-8 text-center">
+                    <p className="font-medium">Ningún código coincide</p>
+                    <p className="mt-1 text-sm text-tenue-fg">
+                      Pruebe con menos palabras o con el inicio de una («neumon» encuentra «neumonía»).
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="mb-2 text-xs text-tenue-fg">
+                      {filas.length}
+                      {resultados.hasNextPage ? '+' : ''} {filas.length === 1 ? 'resultado' : 'resultados'}
+                    </p>
+                    <ul className="divide-y divide-borde overflow-hidden rounded-md border border-borde bg-superficie">
+                      {filas.map((c) => (
+                        <FilaCie10 key={c.codigo} c={c} />
+                      ))}
+                    </ul>
+                    {resultados.hasNextPage && (
+                      <div className="mt-4 flex justify-center">
+                        <Boton
+                          variante="contorno"
+                          onClick={() => resultados.fetchNextPage()}
+                          cargando={resultados.isFetchingNextPage}
+                        >
+                          Ver más
+                        </Boton>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            )}
+          </>
+        )}
+      </Tabs>
     </div>
   )
 }

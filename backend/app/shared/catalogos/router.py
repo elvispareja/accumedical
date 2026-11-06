@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from app.core.db import get_db
-from app.core.security.deps import AuthContext, get_current_user, require_funcion, require_personal_accumedical
+from app.core.security.deps import (
+    AuthContext,
+    get_current_user,
+    require_funcion,
+    require_global_admin,
+    require_personal_accumedical,
+    verificar_csrf,
+)
 from app.shared.aseguradoras.service import COBERTURAS
 from app.shared.catalogos.models import Ciudad, Module, Provincia, TipoDocumento, TipoPrestador
 from app.shared.users.models import Role
@@ -312,4 +319,148 @@ def plantilla_precios(_: AuthContext = Depends(require_personal_accumedical)) ->
             "Cache-Control": "private, no-store",
         },
     )
+
+
+# ──────────────── Diagnósticos agrupadores de la CIE-10 (6/11/2026) ────────────────
+# Viven en la central: el código que une diagnósticos equivalentes para que la
+# misma enfermedad sea UN evento (especificación de la Central, págs. 3 y 12–13).
+# Los ve el personal de Accumedical; los ajusta solo el administrador global
+# (cambian cómo se cuentan los topes de TODOS los clientes). La central guarda
+# quién lo hizo; aquí queda además en la AuditLog de la plataforma.
+
+PATRON_AGRUPADOR = r"^AGR-[0-9]{5}$"
+
+
+class AgrupadorRenombrar(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    nombre: str = Field(min_length=1, max_length=300)
+    motivo: str | None = Field(default=None, max_length=600)
+
+
+class AgrupadorMover(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    codigos: list[str] = Field(min_length=1, max_length=3000)
+    destino: str | None = Field(default=None, pattern=PATRON_AGRUPADOR)
+    nombre_nuevo: str | None = Field(default=None, max_length=300)
+    motivo: str | None = Field(default=None, max_length=600)
+
+
+class AgrupadorJuntar(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    otros: list[str] = Field(min_length=1, max_length=50)
+    motivo: str | None = Field(default=None, max_length=600)
+
+
+def _auditar_agrupador(
+    db: DbSession, request: Request, ctx: AuthContext, codigo: str, detalle: dict
+) -> None:
+    from app.shared.audit import service as audit
+
+    audit.registrar(
+        db,
+        accion="actualizar",
+        request=request,
+        user_id=ctx.user.id,
+        session_id=ctx.sesion.id,
+        entidad="cie10_agrupador",
+        entidad_id=codigo,
+        detalle=detalle,
+    )
+    db.commit()
+
+
+@router.get("/cie10-agrupadores")
+def buscar_agrupadores(
+    q: str | None = Query(default=None, min_length=2, max_length=80),
+    capitulo: str | None = Query(default=None, pattern=r"^[IVX]{1,5}$"),
+    solo_ajustados: bool = False,
+    incluir_inactivos: bool = False,
+    offset: int = Query(default=0, ge=0, le=20000),
+    _: AuthContext = Depends(require_personal_accumedical),
+) -> dict:
+    from app.shared.central import agrupadores
+
+    return agrupadores.buscar({
+        "q": q,
+        "capitulo": capitulo,
+        "solo_ajustados": "true" if solo_ajustados else None,
+        "incluir_inactivos": "true" if incluir_inactivos else None,
+        "offset": offset or None,
+    })
+
+
+@router.get("/cie10-agrupadores/{codigo}")
+def ver_agrupador(
+    codigo: str = Path(pattern=PATRON_AGRUPADOR),
+    _: AuthContext = Depends(require_personal_accumedical),
+) -> dict:
+    from app.shared.central import agrupadores
+
+    return agrupadores.ver(codigo)
+
+
+@router.put("/cie10-agrupadores/{codigo}")
+def renombrar_agrupador(
+    request: Request,
+    datos: AgrupadorRenombrar,
+    codigo: str = Path(pattern=PATRON_AGRUPADOR),
+    ctx: AuthContext = Depends(require_global_admin),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> dict:
+    from app.shared.central import agrupadores
+
+    salida = agrupadores.renombrar(codigo, datos.model_dump(), ctx.user.id)
+    _auditar_agrupador(db, request, ctx, codigo, {"renombrar": salida.get("nombre"),
+                                                  "motivo": datos.motivo})
+    return salida
+
+
+@router.post("/cie10-agrupadores/mover")
+def mover_a_agrupador(
+    request: Request,
+    datos: AgrupadorMover,
+    ctx: AuthContext = Depends(require_global_admin),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> dict:
+    from app.shared.central import agrupadores
+
+    salida = agrupadores.mover(datos.model_dump(), ctx.user.id)
+    _auditar_agrupador(db, request, ctx, salida.get("codigo", ""), {
+        "mover": len(datos.codigos), "codigos": datos.codigos[:300], "nuevo": datos.destino is None,
+        "motivo": datos.motivo,
+    })
+    return salida
+
+
+@router.post("/cie10-agrupadores/{codigo}/juntar")
+def juntar_agrupadores(
+    request: Request,
+    datos: AgrupadorJuntar,
+    codigo: str = Path(pattern=PATRON_AGRUPADOR),
+    ctx: AuthContext = Depends(require_global_admin),
+    _: None = Depends(verificar_csrf),
+    db: DbSession = Depends(get_db),
+) -> dict:
+    from app.shared.central import agrupadores
+
+    salida = agrupadores.juntar(codigo, datos.model_dump(), ctx.user.id)
+    _auditar_agrupador(db, request, ctx, codigo, {"juntar": datos.otros, "motivo": datos.motivo})
+    return salida
+
+
+@router.post("/cie10-agrupadores/{codigo}/sugerencias")
+def sugerir_agrupacion(
+    codigo: str = Path(pattern=PATRON_AGRUPADOR),
+    ctx: AuthContext = Depends(require_global_admin),
+    _: None = Depends(verificar_csrf),
+) -> list[dict]:
+    """La IA propone; no cambia nada (cada propuesta se junta a mano)."""
+    from app.shared.central import agrupadores
+
+    return agrupadores.sugerencias(codigo, ctx.user.id)
 
