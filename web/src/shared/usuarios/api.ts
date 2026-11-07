@@ -11,7 +11,8 @@ import { api } from '@/core/api/client'
 // Ejemplo: Mario es coordinador de Calificación y además Convenio; un auditor
 // de Concurrencia puede coordinar Vida. Quitar algo NUNCA lo borra: su tramo
 // se cierra en el historial de accesos.
-export type RolEnApp = 'auditor' | 'coordinador' | 'call_center'
+// «medico» (Médico de teleconsulta, 7/11/2026): solo en Farmacovigilancia.
+export type RolEnApp = 'auditor' | 'coordinador' | 'call_center' | 'medico'
 export type FuncionPlataforma = 'convenio' | 'contabilidad'
 export type GrupoPlataforma = 'suscripcion' | 'siniestro'
 export const ETIQUETA_GRUPO: Record<GrupoPlataforma, string> = {
@@ -22,6 +23,7 @@ export const ETIQUETA_ROL: Record<string, string> = {
   auditor: 'Auditor',
   coordinador: 'Coordinador',
   call_center: 'Call center',
+  medico: 'Médico de teleconsulta',
   operador: 'Operador',
   consulta: 'Consulta',
   convenio: 'Convenio',

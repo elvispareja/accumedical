@@ -61,6 +61,8 @@ const ROLES_APP: { valor: RolEnApp; etiqueta: string }[] = [
   { valor: 'coordinador', etiqueta: 'Coordinador' },
   // Hoy hace lo mismo que el coordinador; solo donde la app lo admite.
   { valor: 'call_center', etiqueta: 'Call center' },
+  // 7/11/2026: atiende la teleconsulta; solo donde la app lo admite (Farmacovigilancia).
+  { valor: 'medico', etiqueta: 'Médico de teleconsulta' },
 ]
 
 /** Las funciones transversales: una persona a la vez en cada una. */
@@ -162,12 +164,12 @@ export function UsuarioFormPage() {
   const porFamilia = useMemo(() => {
     const mapa = new Map<
       GrupoPlataforma,
-      { codigo: string; nombre: string; conCallCenter: boolean }[]
+      { codigo: string; nombre: string; conCallCenter: boolean; conMedico: boolean }[]
     >()
     if (miFamilia) {
       mapa.set(
         miFamilia,
-        (sesion?.modulos ?? []).map((m) => ({ codigo: m.codigo, nombre: m.nombre, conCallCenter: false })),
+        (sesion?.modulos ?? []).map((m) => ({ codigo: m.codigo, nombre: m.nombre, conCallCenter: false, conMedico: false })),
       )
       return mapa
     }
@@ -175,7 +177,12 @@ export function UsuarioFormPage() {
       if (m.grupo !== 'suscripcion' && m.grupo !== 'siniestro') continue
       mapa.set(m.grupo, [
         ...(mapa.get(m.grupo) ?? []),
-        { codigo: m.codigo, nombre: m.nombre, conCallCenter: Boolean(m.con_call_center) },
+        {
+          codigo: m.codigo,
+          nombre: m.nombre,
+          conCallCenter: Boolean(m.con_call_center),
+          conMedico: Boolean(m.con_medico),
+        },
       ])
     }
     return mapa
@@ -506,7 +513,11 @@ export function UsuarioFormPage() {
                             }
                           >
                             <option value="">Sin acceso</option>
-                            {ROLES_APP.filter((r) => r.valor !== 'call_center' || m.conCallCenter).map(
+                            {ROLES_APP.filter(
+                              (r) =>
+                                (r.valor !== 'call_center' || m.conCallCenter) &&
+                                (r.valor !== 'medico' || m.conMedico),
+                            ).map(
                               (r) => (
                                 <option key={r.valor} value={r.valor}>
                                   {r.etiqueta}

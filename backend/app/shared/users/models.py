@@ -352,7 +352,7 @@ class HistorialAcceso(Base):
     aseguradora_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("aseguradoras.id", ondelete="RESTRICT")
     )
-    #: auditor, coordinador, call_center, operador, consulta, convenio, contabilidad.
+    #: auditor, coordinador, call_center, medico, operador, consulta, convenio, contabilidad.
     rol: Mapped[str] = mapped_column(String(20), nullable=False)
     desde: Mapped[dt.datetime] = mapped_column(TS, nullable=False, server_default=func.now())
     hasta: Mapped[dt.datetime | None] = mapped_column(TS)

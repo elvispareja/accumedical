@@ -243,12 +243,14 @@ def validar_funcion_unica(
 
 
 # El rol en la app tal como vive en `roles.code`, y su nombre en el historial.
-CODIGO_ROL = {"coordinador": ROL_COORDINADOR, "auditor": "auditor", "call_center": "call_center"}
+CODIGO_ROL = {"coordinador": ROL_COORDINADOR, "auditor": "auditor", "call_center": "call_center",
+              "medico": "medico"}
 ROL_DE_CODIGO = {v: k for k, v in CODIGO_ROL.items()}
 ETIQUETA_ROL = {
     "coordinador": "Coordinador",
     "auditor": "Auditor",
     "call_center": "Call center",
+    "medico": "Médico de teleconsulta",
     "operador": "Operador",
     "consulta": "Consulta",
     "convenio": "Convenio",

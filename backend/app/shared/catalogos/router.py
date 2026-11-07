@@ -76,6 +76,8 @@ class ModuloCatalogo(BaseModel):
     subgrupo: str | None = None
     # Si se le puede dar el rol «call_center» (14/10/2026; hoy solo Calificación).
     con_call_center: bool = False
+    # Si se le puede dar el rol «medico» (7/11/2026; hoy solo Farmacovigilancia).
+    con_medico: bool = False
 
 
 @router.get("/modulos", response_model=list[ModuloCatalogo])
@@ -104,10 +106,14 @@ def listar_modulos(
             select(Role.module_code).where(Role.code == "call_center", Role.activo.is_(True))
         )
     )
+    con_medico = set(
+        db.scalars(select(Role.module_code).where(Role.code == "medico", Role.activo.is_(True)))
+    )
     return [
         ModuloCatalogo(
             codigo=f[0], slug=f[1], nombre=f[2], color_acento=f[3], orden=f[4],
             grupo=f[5], subgrupo=f[6], con_call_center=f[0] in con_call_center,
+            con_medico=f[0] in con_medico,
         )
         for f in filas
     ]

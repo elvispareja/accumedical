@@ -29,7 +29,8 @@ FUNCIONES = ("convenio", "contabilidad")
 # y, aparte, puede llevar una función transversal. Ejemplo: Mario es
 # coordinador de Calificación y además Convenio; un auditor de Concurrencia
 # puede ser coordinador de Vida. «call_center» solo donde la app lo admite.
-RolEnApp = Literal["auditor", "coordinador", "call_center"]
+# «medico» (Médico de teleconsulta, 7/11/2026): solo en Farmacovigilancia.
+RolEnApp = Literal["auditor", "coordinador", "call_center", "medico"]
 FuncionPlataforma = Literal["convenio", "contabilidad"]
 
 

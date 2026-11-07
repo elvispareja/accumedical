@@ -15,6 +15,8 @@ export interface ModuloCatalogo extends OpcionCatalogo {
   subgrupo: string | null
   /** Si admite el rol «Call center» (14/10/2026; hoy solo Calificación de Riesgo). */
   con_call_center?: boolean
+  /** Admite el rol «Médico de teleconsulta» (hoy solo Farmacovigilancia). */
+  con_medico?: boolean
 }
 
 export interface TipoPrestadorCatalogo extends OpcionCatalogo {
