@@ -36,7 +36,8 @@ export function Tabs({
     const indice = pestanas.findIndex((p) => p.id === activa)
     let siguiente = indice
     if (evento.key === 'ArrowRight') siguiente = (indice + 1) % pestanas.length
-    else if (evento.key === 'ArrowLeft') siguiente = (indice - 1 + pestanas.length) % pestanas.length
+    else if (evento.key === 'ArrowLeft')
+      siguiente = (indice - 1 + pestanas.length) % pestanas.length
     else if (evento.key === 'Home') siguiente = 0
     else if (evento.key === 'End') siguiente = pestanas.length - 1
     else return
@@ -54,7 +55,9 @@ export function Tabs({
         role="tablist"
         aria-label={etiqueta}
         onKeyDown={alTeclado}
-        className="flex gap-1 border-b border-borde"
+        // En el celular no caben todas: se desplazan de lado en vez de
+        // ensanchar la página entera (7/11/2026).
+        className="flex gap-1 overflow-x-auto border-b border-borde"
       >
         {pestanas.map((p) => {
           const seleccionada = p.id === activa
@@ -69,7 +72,7 @@ export function Tabs({
               tabIndex={seleccionada ? 0 : -1}
               onClick={() => onCambiar(p.id)}
               className={cn(
-                'relative px-4 py-2.5 font-display text-sm font-medium transition-colors duration-150 ease-natural',
+                'relative shrink-0 whitespace-nowrap px-4 py-2.5 font-display text-sm font-medium transition-colors duration-150 ease-natural',
                 seleccionada ? 'text-marca' : 'text-tenue-fg hover:text-tinta',
               )}
             >
@@ -84,7 +87,7 @@ export function Tabs({
                   initial={sinMovimiento ? { opacity: 0 } : { opacity: 0, scaleX: 0.4 }}
                   animate={{ opacity: 1, scaleX: 1 }}
                   transition={{ duration: 0.18, ease: [0.22, 0.61, 0.36, 1] }}
-                  className="absolute inset-x-2 -bottom-px h-0.5 origin-center rounded-full bg-marca"
+                  className="absolute inset-x-2 bottom-0 h-0.5 origin-center rounded-full bg-marca"
                 />
               )}
             </button>

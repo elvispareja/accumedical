@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ChevronDown, FileUp, Package, Plus, Trash2, X } from 'lucide-react'
+import { FileUp, Package, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -352,7 +352,8 @@ export function validarProductos(productos: ProductoFormulario[]): string | null
     if (p.carencia.trim() && aEntero(p.carencia, 0, 3650) === null) {
       return `${nombre}: la carencia debe ser un número entero de días entre 0 y 3650`
     }
-    if (p.exclusiones.length > 2000) return `${nombre}: las exclusiones admiten hasta 2000 caracteres`
+    if (p.exclusiones.length > 2000)
+      return `${nombre}: las exclusiones admiten hasta 2000 caracteres`
   }
   return null
 }
@@ -426,6 +427,19 @@ function resumen(p: ProductoFormulario): string {
   }
   if (conFarmacia(p) && p.vigencia) partes.push(`receta ${p.vigencia} h`)
   return partes.join(' · ') || 'Sin condiciones todavía'
+}
+
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <th
+      className={cn(
+        'px-4 py-2.5 text-left font-display text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-tenue-fg',
+        className,
+      )}
+    >
+      {children}
+    </th>
+  )
 }
 
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
@@ -531,7 +545,8 @@ function MontoConUnidad<U extends string>({
  * eventos, más un tope común opcional (sirve el plan con un tope por servicio y
  * el que comparte uno solo). A la vista, lo del resumen de la doctora; el
  * resto, en «Más condiciones». Se guarda con la ficha («Guardar cambios»);
- * quitar uno lo da de baja lógica.
+ * quitar uno lo da de baja lógica. Desde el 7/11/2026 se ve como tabla y el
+ * formulario de cada producto se abre al dar «Editar».
  */
 export function ProductosPanel({
   productos,
@@ -561,13 +576,20 @@ export function ProductosPanel({
       )
     },
     onError: (error) => {
-      const detalle = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+      const detalle = (error as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail
       toast.error(typeof detalle === 'string' ? detalle : 'No se pudo leer el vademécum')
     },
     onSettled: () => setSubiendoPara(null),
   })
-  // Cerrados se ve el resumen; los nuevos nacen abiertos.
-  const [cerrados, setCerrados] = useState<Set<string>>(new Set())
+  // La pestaña muestra la TABLA de productos y, al dar «Editar», el formulario
+  // de ese producto (7/11/2026, pedido del usuario: «no verlo tan pesado»).
+  // `antes` es cómo estaba al abrirlo, para que «Cancelar» lo deje igual; `null`
+  // si es nuevo.
+  const [editando, setEditando] = useState<{
+    clave: string
+    antes: ProductoFormulario | null
+  } | null>(null)
   // Lo que no está en el resumen de la doctora, plegado para no abrumar.
   const [conMas, setConMas] = useState<Set<string>>(new Set())
   // Los contratos del cliente: cada producto sale de uno (6/11/2026).
@@ -577,7 +599,11 @@ export function ProductosPanel({
     enabled: Boolean(aseguradoraId),
   })
   const conDatos = (contratos.data ?? []).filter((c) => c.contrato !== null)
-  const fecha = new Intl.DateTimeFormat('es-EC', { day: 'numeric', month: 'short', year: 'numeric' })
+  const fecha = new Intl.DateTimeFormat('es-EC', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
   const fechaCorta = (iso: string) => {
     const [a = 0, m = 1, d = 1] = iso.split('-').map(Number)
     return fecha.format(new Date(a, m - 1, d))
@@ -648,515 +674,710 @@ export function ProductosPanel({
     return marcado ? [...new Set([...lista, valor])] : lista.filter((x) => x !== valor)
   }
 
-  return (
-    <div className="space-y-4">
-      {productos.length === 0 ? (
-        <div className="rounded-md border border-dashed border-borde px-6 py-10 text-center">
-          <Package className="mx-auto size-6 text-tenue-fg" aria-hidden="true" />
-          <p className="mt-3 font-display text-sm font-medium">Todavía no hay productos</p>
-          <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">
-            Agrega cada producto con los servicios que cubre y sus condiciones.
-          </p>
+  const productoEditando = editando ? productos.find((p) => p._key === editando.clave) : undefined
+
+  function abrirNuevo() {
+    const nuevo = productoVacio(conDatos.length === 1 ? conDatos[0]!.id : '')
+    onCambiar([...productos, nuevo])
+    setEditando({ clave: nuevo._key, antes: null })
+  }
+
+  /** Deja el producto como estaba al abrirlo; el nuevo, ni siquiera queda. */
+  function cancelarEdicion() {
+    if (!editando) return
+    const { clave, antes } = editando
+    onCambiar(
+      antes
+        ? productos.map((p) => (p._key === clave ? antes : p))
+        : productos.filter((p) => p._key !== clave),
+    )
+    setEditando(null)
+  }
+
+  /** Vuelve a la tabla; puede quedar incompleto, no con datos mal escritos. */
+  function terminarEdicion() {
+    const problema = validarProductos(productos)
+    if (problema) return toast.error(problema)
+    setEditando(null)
+  }
+
+  function quitar(p: ProductoFormulario) {
+    const nombre = nombreNormal(p.nombre) || 'este producto'
+    if (
+      p.id &&
+      !window.confirm(
+        `¿Quitar «${nombre}»? Se da de baja al guardar la ficha; su historial se conserva.`,
+      )
+    ) {
+      return
+    }
+    onCambiar(productos.filter((x) => x._key !== p._key))
+  }
+
+  const contratoDe = (p: ProductoFormulario) => conDatos.find((c) => c.id === p.contratoId)?.nombre
+
+  /** El formulario completo de UN producto: solo al dar «Editar» o «Agregar». */
+  function formulario(p: ProductoFormulario) {
+    const id = (campo: string) => `producto-${campo}-${p._key}`
+    const faltan = faltanProducto(p)
+    const masAbierto = conMas.has(p._key)
+    const conTopeComun = Boolean(p.valor.trim())
+    const quedan = SERVICIOS.filter((s) => !conServicio(p, s.valor))
+    const botones = (
+      <div className="flex flex-wrap justify-end gap-2">
+        <Boton type="button" variante="contorno" onClick={cancelarEdicion}>
+          Cancelar
+        </Boton>
+        <Boton type="button" onClick={terminarEdicion}>
+          Listo
+        </Boton>
+      </div>
+    )
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="font-display text-sm font-semibold">
+              {editando?.antes ? 'Editar producto' : 'Nuevo producto'}
+            </p>
+            <p className="text-xs text-tenue-fg">
+              Queda guardado al dar «Guardar cambios» de la ficha.
+            </p>
+          </div>
+          {botones}
         </div>
-      ) : (
-        <ul className="space-y-3">
-          {productos.map((p, i) => {
-            const id = (campo: string) => `producto-${campo}-${p._key}`
-            const abierto = !cerrados.has(p._key)
-            const faltan = faltanProducto(p)
-            const masAbierto = conMas.has(p._key)
-            const conTopeComun = Boolean(p.valor.trim())
-            const quedan = SERVICIOS.filter((s) => !conServicio(p, s.valor))
-            return (
-              <li key={p._key} className="rounded-md border border-borde bg-fondo/40">
-                {/* ── Cabecera: nombre, resumen y acciones ── */}
-                <div className="flex items-start gap-3 p-4">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <Label htmlFor={id('nombre')}>
-                      Nombre <span className="text-peligro">*</span>
-                    </Label>
-                    <Input
-                      id={id('nombre')}
-                      value={p.nombre}
-                      onChange={(e) => poner(p._key, 'nombre', e.target.value)}
-                      placeholder="ASISTENCIA TOTAL"
-                      maxLength={150}
-                    />
-                    {!abierto && (
-                      <p className={cn('text-xs', faltan.length ? 'text-aviso' : 'text-tenue-fg')}>
-                        {faltan.length ? `Incompleto · ${resumen(p)}` : resumen(p)}
-                      </p>
-                    )}
-                  </div>
-                  <Boton
-                    type="button"
-                    variante="fantasma"
-                    tamano="icono"
-                    onClick={() => alternarClave(setCerrados, p._key)}
-                    aria-expanded={abierto}
-                    aria-label={abierto ? 'Contraer el producto' : 'Ver las condiciones'}
-                    title={abierto ? 'Contraer' : 'Ver las condiciones'}
-                    className="mt-7"
+        <div className="space-y-6 rounded-md border border-borde bg-fondo/40 p-4">
+          <div className="space-y-2">
+            <Label htmlFor={id('nombre')}>
+              Nombre <span className="text-peligro">*</span>
+            </Label>
+            <Input
+              id={id('nombre')}
+              value={p.nombre}
+              onChange={(e) => poner(p._key, 'nombre', e.target.value)}
+              placeholder="ASISTENCIA TOTAL"
+              maxLength={150}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={id('contrato')}>
+              Contrato del que sale <span className="text-peligro">*</span>
+            </Label>
+            {conDatos.length === 0 ? (
+              <p className="rounded-md border border-dashed border-borde px-3 py-2 text-sm text-tenue-fg">
+                {aseguradoraId
+                  ? 'Primero sube el contrato en la pestaña «Contratos y pólizas»: cada producto sale de un contrato.'
+                  : 'Guarda la ficha y sube su contrato en «Contratos y pólizas»: cada producto sale de un contrato.'}
+              </p>
+            ) : (
+              <Select
+                id={id('contrato')}
+                value={p.contratoId}
+                onChange={(e) => poner(p._key, 'contratoId', e.target.value)}
+                required
+              >
+                <option value="" disabled>
+                  Elige el contrato
+                </option>
+                {conDatos.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre} · {fechaCorta(c.contrato!.vigencia_desde)} –{' '}
+                    {fechaCorta(c.contrato!.vigencia_hasta)}
+                    {c.contrato!.vigencia_hasta < hoy ? ' (vencido)' : ''}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <p className="text-xs text-tenue-fg">
+              Un contrato puede traer varios productos. El producto está vigente mientras lo esté su
+              contrato.
+            </p>
+          </div>
+
+          {/* ── Cada servicio con su cobertura, tope, deducible y eventos ── */}
+          <Seccion titulo="Servicios que cubre *">
+            {p.servicios.length === 0 && (
+              <p className="text-sm text-tenue-fg">
+                Agrega cada servicio: farmacia, teleconsulta, consulta ambulatoria u hospitalaria.
+                Cada uno lleva su cobertura.
+              </p>
+            )}
+            <ul className="space-y-3">
+              {p.servicios.map((s) => {
+                const sid = (campo: string) => id(`${s.servicio}-${campo}`)
+                const cobertura = aNumero(s.porcentaje)
+                const copago =
+                  Number.isNaN(cobertura) || cobertura > 100
+                    ? null
+                    : (Math.round((100 - cobertura) * 100) / 100).toString().replace('.', ',')
+                const farmacia = s.servicio === 'farmacia'
+                return (
+                  <li
+                    key={s.servicio}
+                    className="space-y-4 rounded-md border border-borde bg-superficie p-4"
                   >
-                    <ChevronDown
-                      aria-hidden="true"
-                      className={cn('transition-transform duration-150', abierto && 'rotate-180')}
-                    />
-                  </Boton>
-                  <Boton
-                    type="button"
-                    variante="fantasma"
-                    tamano="icono"
-                    onClick={() => onCambiar(productos.filter((x) => x._key !== p._key))}
-                    aria-label={`Quitar el producto ${p.nombre || i + 1}`}
-                    title="Quitar el producto"
-                    className="mt-7 hover:text-peligro"
-                  >
-                    <Trash2 aria-hidden="true" />
-                  </Boton>
-                </div>
-
-                {abierto && (
-                  <div className="space-y-6 border-t border-borde p-4">
-                    <div className="space-y-2">
-                      <Label htmlFor={id('contrato')}>
-                        Contrato del que sale <span className="text-peligro">*</span>
-                      </Label>
-                      {conDatos.length === 0 ? (
-                        <p className="rounded-md border border-dashed border-borde px-3 py-2 text-sm text-tenue-fg">
-                          {aseguradoraId
-                            ? 'Primero sube el contrato en la pestaña «Contratos y pólizas»: cada producto sale de un contrato.'
-                            : 'Guarda la ficha y sube su contrato en «Contratos y pólizas»: cada producto sale de un contrato.'}
-                        </p>
-                      ) : (
-                        <Select
-                          id={id('contrato')}
-                          value={p.contratoId}
-                          onChange={(e) => poner(p._key, 'contratoId', e.target.value)}
-                          required
-                        >
-                          <option value="" disabled>
-                            Elige el contrato
-                          </option>
-                          {conDatos.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.nombre} · {fechaCorta(c.contrato!.vigencia_desde)} –{' '}
-                              {fechaCorta(c.contrato!.vigencia_hasta)}
-                              {c.contrato!.vigencia_hasta < hoy ? ' (vencido)' : ''}
-                            </option>
-                          ))}
-                        </Select>
-                      )}
-                      <p className="text-xs text-tenue-fg">
-                        Un contrato puede traer varios productos. El producto está vigente mientras
-                        lo esté su contrato.
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-display text-sm font-semibold">
+                        {nombreServicio(s.servicio)}
                       </p>
-                    </div>
-
-                    {/* ── Cada servicio con su cobertura, tope, deducible y eventos ── */}
-                    <Seccion titulo="Servicios que cubre *">
-                      {p.servicios.length === 0 && (
-                        <p className="text-sm text-tenue-fg">
-                          Agrega cada servicio: farmacia, teleconsulta, consulta ambulatoria u
-                          hospitalaria. Cada uno lleva su cobertura.
-                        </p>
-                      )}
-                      <ul className="space-y-3">
-                        {p.servicios.map((s) => {
-                          const sid = (campo: string) => id(`${s.servicio}-${campo}`)
-                          const cobertura = aNumero(s.porcentaje)
-                          const copago =
-                            Number.isNaN(cobertura) || cobertura > 100
-                              ? null
-                              : (Math.round((100 - cobertura) * 100) / 100).toString().replace('.', ',')
-                          const farmacia = s.servicio === 'farmacia'
-                          return (
-                            <li
-                              key={s.servicio}
-                              className="space-y-4 rounded-md border border-borde bg-superficie p-4"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="font-display text-sm font-semibold">
-                                  {nombreServicio(s.servicio)}
-                                </p>
-                                <Boton
-                                  type="button"
-                                  variante="fantasma"
-                                  tamano="icono"
-                                  onClick={() => quitarServicio(p._key, s.servicio)}
-                                  aria-label={`Quitar ${nombreServicio(s.servicio)} del producto`}
-                                  title="Quitar el servicio"
-                                  className="hover:text-peligro"
-                                >
-                                  <X aria-hidden="true" />
-                                </Boton>
-                              </div>
-                              {farmacia && !clienteConFarmacia && (
-                                <p className="rounded-md border border-aviso/30 bg-aviso/10 px-3 py-2 text-sm text-aviso">
-                                  El cliente no tiene marcado Farmacovigilancia en la pestaña
-                                  Módulos.
-                                </p>
-                              )}
-                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)]">
-                                <div className="space-y-2">
-                                  <Label htmlFor={sid('cobertura')}>
-                                    Cobertura (%) <span className="text-peligro">*</span>
-                                  </Label>
-                                  <Input
-                                    id={sid('cobertura')}
-                                    value={s.porcentaje}
-                                    onChange={(e) =>
-                                      ponerServicio(p._key, s.servicio, 'porcentaje', e.target.value)
-                                    }
-                                    inputMode="decimal"
-                                    placeholder="80"
-                                    className="tabular"
-                                    maxLength={6}
-                                  />
-                                  <p className="text-xs text-tenue-fg">
-                                    {copago === null ? 'El copago se calcula' : `Copago del paciente: ${copago} %`}
-                                  </p>
-                                </div>
-                                <div className="sm:col-span-2 lg:col-span-1">
-                                  <MontoConUnidad
-                                    id={sid('tope')}
-                                    etiqueta={conTopeComun ? 'Tope propio (USD)' : 'Tope (USD)'}
-                                    obligatorio={!conTopeComun}
-                                    monto={s.tope}
-                                    unidad={s.topeUnidad}
-                                    unidades={unidadesDeTope(farmacia)}
-                                    placeholder={conTopeComun ? 'EL COMÚN' : '1500,00'}
-                                    conUnidad={Boolean(s.tope.trim())}
-                                    onMonto={(v) => ponerServicio(p._key, s.servicio, 'tope', v)}
-                                    onUnidad={(v) => ponerServicio(p._key, s.servicio, 'topeUnidad', v)}
-                                  />
-                                </div>
-                                <div className="sm:col-span-2 lg:col-span-1">
-                                  <MontoConUnidad
-                                    id={sid('deducible')}
-                                    etiqueta="Deducible (USD)"
-                                    monto={s.deducible}
-                                    unidad={s.deducibleUnidad}
-                                    unidades={UNIDADES_DEDUCIBLE}
-                                    placeholder="0"
-                                    conUnidad={!sinDeducible(s)}
-                                    onMonto={(v) => ponerServicio(p._key, s.servicio, 'deducible', v)}
-                                    onUnidad={(v) =>
-                                      ponerServicio(p._key, s.servicio, 'deducibleUnidad', v)
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor={sid('eventos')}>Número de eventos</Label>
-                                  <Input
-                                    id={sid('eventos')}
-                                    value={s.eventosIlimitados ? '' : s.eventos}
-                                    onChange={(e) =>
-                                      ponerServicio(p._key, s.servicio, 'eventos', e.target.value)
-                                    }
-                                    inputMode="numeric"
-                                    placeholder={s.eventosIlimitados ? 'ILIMITADOS' : '3'}
-                                    className="tabular"
-                                    maxLength={4}
-                                    disabled={s.eventosIlimitados}
-                                  />
-                                  <Checkbox
-                                    id={sid('ilimitados')}
-                                    checked={s.eventosIlimitados}
-                                    onChange={(v) =>
-                                      ponerServicio(p._key, s.servicio, 'eventosIlimitados', v)
-                                    }
-                                    titulo="Ilimitados"
-                                    compacto
-                                  />
-                                </div>
-                                {farmacia && (
-                                  <div className="space-y-2">
-                                    <Label htmlFor={id('receta')}>
-                                      Vigencia de la receta (horas){' '}
-                                      <span className="text-peligro">*</span>
-                                    </Label>
-                                    <Input
-                                      id={id('receta')}
-                                      value={p.vigencia}
-                                      onChange={(e) => poner(p._key, 'vigencia', e.target.value)}
-                                      inputMode="numeric"
-                                      placeholder="72"
-                                      className="tabular"
-                                      maxLength={4}
-                                    />
-                                    <p className="text-xs text-tenue-fg">
-                                      El SLA de farmacia: pasadas, la receta vence.
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                      {quedan.length > 0 && (
-                        <div className="max-w-xs">
-                          <Select
-                            id={id('agregar-servicio')}
-                            aria-label="Agregar un servicio al producto"
-                            value=""
-                            onChange={(e) =>
-                              agregarServicio(p._key, e.target.value as ServicioProducto)
-                            }
-                          >
-                            <option value="" disabled>
-                              + Agregar servicio
-                            </option>
-                            {quedan.map((s) => (
-                              <option key={s.valor} value={s.valor}>
-                                {s.etiqueta}
-                              </option>
-                            ))}
-                          </Select>
-                        </div>
-                      )}
-                    </Seccion>
-
-                    {/* ── El tope que comparten todos sus servicios ── */}
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                      <MontoConUnidad
-                        id={id('tope-comun')}
-                        etiqueta="Tope común a sus servicios (USD), opcional"
-                        monto={p.valor}
-                        unidad={p.topeUnidad}
-                        unidades={unidadesDeTope(conFarmacia(p))}
-                        placeholder="10,00"
-                        conUnidad={conTopeComun}
-                        onMonto={(v) => poner(p._key, 'valor', v)}
-                        onUnidad={(v) => poner(p._key, 'topeUnidad', v)}
-                      />
-                      <p className="self-end text-xs text-tenue-fg">
-                        Lo máximo que paga el producto sumando todos sus servicios (Asistencia
-                        Total: USD 10 por evento entre farmacia y teleconsulta). Con él, el tope de
-                        cada servicio es opcional; si hay los dos, se paga hasta el menor.
-                      </p>
-                    </div>
-
-                    {/* ── Estado y lo que no está en el resumen ── */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-borde bg-superficie px-4 py-3">
-                      <div className="min-w-0">
-                        <p className={cn('text-sm font-medium', faltan.length ? 'text-aviso' : 'text-exito')}>
-                          {faltan.length ? 'Incompleto: no se usa hasta completarlo' : 'Completo'}
-                        </p>
-                        <p className="text-xs text-tenue-fg">
-                          {faltan.length ? `Falta ${faltan.join(', ')}.` : resumen(p)}
-                        </p>
-                      </div>
                       <Boton
                         type="button"
-                        variante="contorno"
-                        tamano="sm"
-                        onClick={() => alternarClave(setConMas, p._key)}
-                        aria-expanded={masAbierto}
+                        variante="fantasma"
+                        tamano="icono"
+                        onClick={() => quitarServicio(p._key, s.servicio)}
+                        aria-label={`Quitar ${nombreServicio(s.servicio)} del producto`}
+                        title="Quitar el servicio"
+                        className="hover:text-peligro"
                       >
-                        {masAbierto ? 'Ocultar más condiciones' : 'Más condiciones'}
+                        <X aria-hidden="true" />
                       </Boton>
                     </div>
-
-                    {masAbierto && (
-                      <div className="space-y-6">
-                        <Seccion titulo="Quiénes entran y desde cuándo">
-                          <div className="grid gap-4 sm:grid-cols-3">
-                            <div className="space-y-2">
-                              <Label htmlFor={id('carencia')}>
-                                Carencia (días) <span className="text-peligro">*</span>
-                              </Label>
-                              <Input
-                                id={id('carencia')}
-                                value={p.carencia}
-                                onChange={(e) => poner(p._key, 'carencia', e.target.value)}
-                                inputMode="numeric"
-                                placeholder="0"
-                                className="tabular"
-                                maxLength={4}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor={id('beneficiarios')}>
-                                ¿Incluye beneficiarios? <span className="text-peligro">*</span>
-                              </Label>
-                              <SelectSiNo
-                                id={id('beneficiarios')}
-                                valor={p.beneficiarios}
-                                onCambiar={(v) => poner(p._key, 'beneficiarios', v)}
-                              />
-                            </div>
-                            {p.beneficiarios === 'si' && (
-                              <div className="space-y-2">
-                                <p className="text-sm font-medium">
-                                  Parentescos <span className="text-peligro">*</span>
-                                </p>
-                                <div className="flex flex-wrap gap-x-5 gap-y-2 pt-2">
-                                  {PARENTESCOS.map((x) => (
-                                    <Checkbox
-                                      key={x.valor}
-                                      id={id(`parentesco-${x.valor}`)}
-                                      checked={p.parentescos.includes(x.valor)}
-                                      onChange={(v) =>
-                                        poner(p._key, 'parentescos', alternar(p.parentescos, x.valor, v))
-                                      }
-                                      titulo={x.etiqueta}
-                                      compacto
-                                    />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </Seccion>
-
-                        <Seccion titulo="Cómo se cuenta un evento">
-                          <div className="grid gap-4 sm:grid-cols-3">
-                            <div className="space-y-2">
-                              <Label htmlFor={id('ventana')}>
-                                Ventana del evento <span className="text-peligro">*</span>
-                              </Label>
-                              <Select
-                                id={id('ventana')}
-                                value={p.ventana}
-                                onChange={(e) => poner(p._key, 'ventana', e.target.value as VentanaEvento)}
-                                required
-                              >
-                                <option value="" disabled>
-                                  Elige la ventana
-                                </option>
-                                {VENTANAS.map((v) => (
-                                  <option key={v.valor} value={v.valor}>
-                                    {v.etiqueta}
-                                  </option>
-                                ))}
-                              </Select>
-                            </div>
-                            <p className="self-end text-xs text-tenue-fg sm:col-span-2">
-                              Un evento es la misma enfermedad del mismo asegurado dentro de la
-                              ventana: enfermedades distintas suman topes; la misma repetida
-                              comparte el saldo.
-                            </p>
-                          </div>
-                        </Seccion>
-
-                        {conFarmacia(p) && (
-                          <Seccion titulo="Farmacia">
-                            <div className="grid gap-4 sm:grid-cols-3">
-                              <div className="space-y-2">
-                                <Label htmlFor={id('vademecum')}>
-                                  ¿Requiere vademécum? <span className="text-peligro">*</span>
-                                </Label>
-                                <SelectSiNo
-                                  id={id('vademecum')}
-                                  valor={p.vademecum}
-                                  onCambiar={(v) => poner(p._key, 'vademecum', v)}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor={id('parcial')}>
-                                  ¿Permite despacho parcial? <span className="text-peligro">*</span>
-                                </Label>
-                                <SelectSiNo
-                                  id={id('parcial')}
-                                  valor={p.despachoParcial}
-                                  onCambiar={(v) => poner(p._key, 'despachoParcial', v)}
-                                />
-                              </div>
-                            </div>
-                            {p.vademecum === 'si' && (
-                              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-borde bg-superficie px-4 py-3">
-                                <div>
-                                  <p className="text-sm font-medium">Vademécum del producto</p>
-                                  <p className="text-xs text-tenue-fg">
-                                    {p.vademecumCodigos.length === 0
-                                      ? 'Todavía sin medicamentos: elige los que cubre.'
-                                      : `${p.vademecumCodigos.length} ${p.vademecumCodigos.length === 1 ? 'medicamento' : 'medicamentos'} del vademécum maestro.`}
-                                  </p>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <Boton
-                                    type="button"
-                                    tamano="sm"
-                                    disabled={!p.id || !aseguradoraId}
-                                    cargando={leer.isPending && subiendoPara === p._key}
-                                    title={
-                                      p.id
-                                        ? 'El PDF o Excel que entregó el cliente: se lee y se cruza con el maestro'
-                                        : 'Guarda primero el producto'
-                                    }
-                                    onClick={() => {
-                                      setSubiendoPara(p._key)
-                                      archivoVademecum.current?.click()
-                                    }}
-                                  >
-                                    <FileUp aria-hidden="true" />
-                                    Subir vademécum del cliente
-                                  </Boton>
-                                  <Boton
-                                    type="button"
-                                    variante="contorno"
-                                    tamano="sm"
-                                    onClick={() => setEligiendo(p._key)}
-                                  >
-                                    Elegir a mano
-                                  </Boton>
-                                </div>
-                                {!p.id && (
-                                  <p className="w-full text-xs text-tenue-fg">
-                                    Para subir el PDF o Excel del cliente, guarda primero el producto.
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </Seccion>
-                        )}
-
-                        {conConsulta(p) && (
-                          <Seccion titulo="Consulta">
-                            <div className="grid gap-4 sm:grid-cols-3">
-                              <div className="space-y-2">
-                                <Label htmlFor={id('diagnosticos')}>
-                                  Máximo de diagnósticos por consulta
-                                </Label>
-                                <Input
-                                  id={id('diagnosticos')}
-                                  value={p.maxDiagnosticos}
-                                  onChange={(e) => poner(p._key, 'maxDiagnosticos', e.target.value)}
-                                  inputMode="numeric"
-                                  placeholder="SIN LÍMITE"
-                                  className="tabular"
-                                  maxLength={2}
-                                />
-                                <p className="text-xs text-tenue-fg">Opcional. Vacío = sin límite.</p>
-                              </div>
-                            </div>
-                          </Seccion>
-                        )}
-
-                        <Seccion titulo="Exclusiones">
-                          <textarea
-                            id={id('exclusiones')}
-                            value={p.exclusiones}
-                            onChange={(e) =>
-                              poner(p._key, 'exclusiones', e.target.value.toLocaleUpperCase())
-                            }
-                            rows={3}
-                            maxLength={2000}
-                            aria-label="Exclusiones"
-                            placeholder="MEDICAMENTOS O DIAGNÓSTICOS QUE ESTE PRODUCTO NO CUBRE (OPCIONAL)"
-                            className="block w-full rounded-md border border-borde bg-fondo px-3 py-2 text-sm placeholder:text-tenue-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-marca/40"
-                          />
-                        </Seccion>
-                      </div>
+                    {farmacia && !clienteConFarmacia && (
+                      <p className="rounded-md border border-aviso/30 bg-aviso/10 px-3 py-2 text-sm text-aviso">
+                        El cliente no tiene marcado Farmacovigilancia en la pestaña Módulos.
+                      </p>
                     )}
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)]">
+                      <div className="space-y-2">
+                        <Label htmlFor={sid('cobertura')}>
+                          Cobertura (%) <span className="text-peligro">*</span>
+                        </Label>
+                        <Input
+                          id={sid('cobertura')}
+                          value={s.porcentaje}
+                          onChange={(e) =>
+                            ponerServicio(p._key, s.servicio, 'porcentaje', e.target.value)
+                          }
+                          inputMode="decimal"
+                          placeholder="80"
+                          className="tabular"
+                          maxLength={6}
+                        />
+                        <p className="text-xs text-tenue-fg">
+                          {copago === null
+                            ? 'El copago se calcula'
+                            : `Copago del paciente: ${copago} %`}
+                        </p>
+                      </div>
+                      <div className="sm:col-span-2 lg:col-span-1">
+                        <MontoConUnidad
+                          id={sid('tope')}
+                          etiqueta={conTopeComun ? 'Tope propio (USD)' : 'Tope (USD)'}
+                          obligatorio={!conTopeComun}
+                          monto={s.tope}
+                          unidad={s.topeUnidad}
+                          unidades={unidadesDeTope(farmacia)}
+                          placeholder={conTopeComun ? 'EL COMÚN' : '1500,00'}
+                          conUnidad={Boolean(s.tope.trim())}
+                          onMonto={(v) => ponerServicio(p._key, s.servicio, 'tope', v)}
+                          onUnidad={(v) => ponerServicio(p._key, s.servicio, 'topeUnidad', v)}
+                        />
+                      </div>
+                      <div className="sm:col-span-2 lg:col-span-1">
+                        <MontoConUnidad
+                          id={sid('deducible')}
+                          etiqueta="Deducible (USD)"
+                          monto={s.deducible}
+                          unidad={s.deducibleUnidad}
+                          unidades={UNIDADES_DEDUCIBLE}
+                          placeholder="0"
+                          conUnidad={!sinDeducible(s)}
+                          onMonto={(v) => ponerServicio(p._key, s.servicio, 'deducible', v)}
+                          onUnidad={(v) => ponerServicio(p._key, s.servicio, 'deducibleUnidad', v)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={sid('eventos')}>Número de eventos</Label>
+                        <Input
+                          id={sid('eventos')}
+                          value={s.eventosIlimitados ? '' : s.eventos}
+                          onChange={(e) =>
+                            ponerServicio(p._key, s.servicio, 'eventos', e.target.value)
+                          }
+                          inputMode="numeric"
+                          placeholder={s.eventosIlimitados ? 'ILIMITADOS' : '3'}
+                          className="tabular"
+                          maxLength={4}
+                          disabled={s.eventosIlimitados}
+                        />
+                        <Checkbox
+                          id={sid('ilimitados')}
+                          checked={s.eventosIlimitados}
+                          onChange={(v) =>
+                            ponerServicio(p._key, s.servicio, 'eventosIlimitados', v)
+                          }
+                          titulo="Ilimitados"
+                          compacto
+                        />
+                      </div>
+                      {farmacia && (
+                        <div className="space-y-2">
+                          <Label htmlFor={id('receta')}>
+                            Vigencia de la receta (horas) <span className="text-peligro">*</span>
+                          </Label>
+                          <Input
+                            id={id('receta')}
+                            value={p.vigencia}
+                            onChange={(e) => poner(p._key, 'vigencia', e.target.value)}
+                            inputMode="numeric"
+                            placeholder="72"
+                            className="tabular"
+                            maxLength={4}
+                          />
+                          <p className="text-xs text-tenue-fg">
+                            El SLA de farmacia: pasadas, la receta vence.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+            {quedan.length > 0 && (
+              <div className="max-w-xs">
+                <Select
+                  id={id('agregar-servicio')}
+                  aria-label="Agregar un servicio al producto"
+                  value=""
+                  onChange={(e) => agregarServicio(p._key, e.target.value as ServicioProducto)}
+                >
+                  <option value="" disabled>
+                    + Agregar servicio
+                  </option>
+                  {quedan.map((s) => (
+                    <option key={s.valor} value={s.valor}>
+                      {s.etiqueta}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </Seccion>
+
+          {/* ── El tope que comparten todos sus servicios ── */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <MontoConUnidad
+              id={id('tope-comun')}
+              etiqueta="Tope común a sus servicios (USD), opcional"
+              monto={p.valor}
+              unidad={p.topeUnidad}
+              unidades={unidadesDeTope(conFarmacia(p))}
+              placeholder="10,00"
+              conUnidad={conTopeComun}
+              onMonto={(v) => poner(p._key, 'valor', v)}
+              onUnidad={(v) => poner(p._key, 'topeUnidad', v)}
+            />
+            <p className="self-end text-xs text-tenue-fg">
+              Lo máximo que paga el producto sumando todos sus servicios (Asistencia Total: USD 10
+              por evento entre farmacia y teleconsulta). Con él, el tope de cada servicio es
+              opcional; si hay los dos, se paga hasta el menor.
+            </p>
+          </div>
+
+          {/* ── Estado y lo que no está en el resumen ── */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-borde bg-superficie px-4 py-3">
+            <div className="min-w-0">
+              <p className={cn('text-sm font-medium', faltan.length ? 'text-aviso' : 'text-exito')}>
+                {faltan.length ? 'Incompleto: no se usa hasta completarlo' : 'Completo'}
+              </p>
+              <p className="text-xs text-tenue-fg">
+                {faltan.length ? `Falta ${faltan.join(', ')}.` : resumen(p)}
+              </p>
+            </div>
+            <Boton
+              type="button"
+              variante="contorno"
+              tamano="sm"
+              onClick={() => alternarClave(setConMas, p._key)}
+              aria-expanded={masAbierto}
+            >
+              {masAbierto ? 'Ocultar más condiciones' : 'Más condiciones'}
+            </Boton>
+          </div>
+
+          {masAbierto && (
+            <div className="space-y-6">
+              <Seccion titulo="Quiénes entran y desde cuándo">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor={id('carencia')}>
+                      Carencia (días) <span className="text-peligro">*</span>
+                    </Label>
+                    <Input
+                      id={id('carencia')}
+                      value={p.carencia}
+                      onChange={(e) => poner(p._key, 'carencia', e.target.value)}
+                      inputMode="numeric"
+                      placeholder="0"
+                      className="tabular"
+                      maxLength={4}
+                    />
                   </div>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+                  <div className="space-y-2">
+                    <Label htmlFor={id('beneficiarios')}>
+                      ¿Incluye beneficiarios? <span className="text-peligro">*</span>
+                    </Label>
+                    <SelectSiNo
+                      id={id('beneficiarios')}
+                      valor={p.beneficiarios}
+                      onCambiar={(v) => poner(p._key, 'beneficiarios', v)}
+                    />
+                  </div>
+                  {p.beneficiarios === 'si' && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">
+                        Parentescos <span className="text-peligro">*</span>
+                      </p>
+                      <div className="flex flex-wrap gap-x-5 gap-y-2 pt-2">
+                        {PARENTESCOS.map((x) => (
+                          <Checkbox
+                            key={x.valor}
+                            id={id(`parentesco-${x.valor}`)}
+                            checked={p.parentescos.includes(x.valor)}
+                            onChange={(v) =>
+                              poner(p._key, 'parentescos', alternar(p.parentescos, x.valor, v))
+                            }
+                            titulo={x.etiqueta}
+                            compacto
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Seccion>
+
+              <Seccion titulo="Cómo se cuenta un evento">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor={id('ventana')}>
+                      Ventana del evento <span className="text-peligro">*</span>
+                    </Label>
+                    <Select
+                      id={id('ventana')}
+                      value={p.ventana}
+                      onChange={(e) => poner(p._key, 'ventana', e.target.value as VentanaEvento)}
+                      required
+                    >
+                      <option value="" disabled>
+                        Elige la ventana
+                      </option>
+                      {VENTANAS.map((v) => (
+                        <option key={v.valor} value={v.valor}>
+                          {v.etiqueta}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <p className="self-end text-xs text-tenue-fg sm:col-span-2">
+                    Un evento es la misma enfermedad del mismo asegurado dentro de la ventana:
+                    enfermedades distintas suman topes; la misma repetida comparte el saldo.
+                  </p>
+                </div>
+              </Seccion>
+
+              {conFarmacia(p) && (
+                <Seccion titulo="Farmacia">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor={id('vademecum')}>
+                        ¿Requiere vademécum? <span className="text-peligro">*</span>
+                      </Label>
+                      <SelectSiNo
+                        id={id('vademecum')}
+                        valor={p.vademecum}
+                        onCambiar={(v) => poner(p._key, 'vademecum', v)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={id('parcial')}>
+                        ¿Permite despacho parcial? <span className="text-peligro">*</span>
+                      </Label>
+                      <SelectSiNo
+                        id={id('parcial')}
+                        valor={p.despachoParcial}
+                        onCambiar={(v) => poner(p._key, 'despachoParcial', v)}
+                      />
+                    </div>
+                  </div>
+                  {p.vademecum === 'si' && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-borde bg-superficie px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">Vademécum del producto</p>
+                        <p className="text-xs text-tenue-fg">
+                          {p.vademecumCodigos.length === 0
+                            ? 'Todavía sin medicamentos: elige los que cubre.'
+                            : `${p.vademecumCodigos.length} ${p.vademecumCodigos.length === 1 ? 'medicamento' : 'medicamentos'} del vademécum maestro.`}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Boton
+                          type="button"
+                          tamano="sm"
+                          disabled={!p.id || !aseguradoraId}
+                          cargando={leer.isPending && subiendoPara === p._key}
+                          title={
+                            p.id
+                              ? 'El PDF o Excel que entregó el cliente: se lee y se cruza con el maestro'
+                              : 'Guarda primero el producto'
+                          }
+                          onClick={() => {
+                            setSubiendoPara(p._key)
+                            archivoVademecum.current?.click()
+                          }}
+                        >
+                          <FileUp aria-hidden="true" />
+                          Subir vademécum del cliente
+                        </Boton>
+                        <Boton
+                          type="button"
+                          variante="contorno"
+                          tamano="sm"
+                          onClick={() => setEligiendo(p._key)}
+                        >
+                          Elegir a mano
+                        </Boton>
+                      </div>
+                      {!p.id && (
+                        <p className="w-full text-xs text-tenue-fg">
+                          Para subir el PDF o Excel del cliente, guarda primero el producto.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </Seccion>
+              )}
+
+              {conConsulta(p) && (
+                <Seccion titulo="Consulta">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor={id('diagnosticos')}>
+                        Máximo de diagnósticos por consulta
+                      </Label>
+                      <Input
+                        id={id('diagnosticos')}
+                        value={p.maxDiagnosticos}
+                        onChange={(e) => poner(p._key, 'maxDiagnosticos', e.target.value)}
+                        inputMode="numeric"
+                        placeholder="SIN LÍMITE"
+                        className="tabular"
+                        maxLength={2}
+                      />
+                      <p className="text-xs text-tenue-fg">Opcional. Vacío = sin límite.</p>
+                    </div>
+                  </div>
+                </Seccion>
+              )}
+
+              <Seccion titulo="Exclusiones">
+                <textarea
+                  id={id('exclusiones')}
+                  value={p.exclusiones}
+                  onChange={(e) => poner(p._key, 'exclusiones', e.target.value.toLocaleUpperCase())}
+                  rows={3}
+                  maxLength={2000}
+                  aria-label="Exclusiones"
+                  placeholder="MEDICAMENTOS O DIAGNÓSTICOS QUE ESTE PRODUCTO NO CUBRE (OPCIONAL)"
+                  className="block w-full rounded-md border border-borde bg-fondo px-3 py-2 text-sm placeholder:text-tenue-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-marca/40"
+                />
+              </Seccion>
+            </div>
+          )}
+        </div>
+        {botones}
+      </div>
+    )
+  }
+
+  const insignia =
+    'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-display text-[0.6875rem] font-medium'
+
+  // Las piezas de cada fila: las usan la tabla (computadora) y las tarjetas (celular).
+  const textoServicio = (s: ServicioFormulario) =>
+    [
+      nombreServicio(s.servicio) + (s.porcentaje.trim() ? ` ${s.porcentaje} %` : ''),
+      s.tope.trim() ? `hasta USD ${s.tope} ${textoUnidad(UNIDADES_TOPE, s.topeUnidad)}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  const servicios = (p: ProductoFormulario, cortar: boolean) =>
+    p.servicios.length === 0 ? (
+      <span className="text-xs text-tenue-fg">Sin servicios</span>
+    ) : (
+      <ul className="space-y-0.5 text-xs">
+        {ordenados(p.servicios).map((s) => (
+          <li key={s.servicio} className={cn(cortar && 'truncate')} title={textoServicio(s)}>
+            {textoServicio(s)}
+          </li>
+        ))}
+      </ul>
+    )
+  const topeComun = (p: ProductoFormulario) =>
+    p.valor.trim() ? (
+      <span className="tabular">
+        USD {p.valor} {textoUnidad(UNIDADES_TOPE, p.topeUnidad)}
+      </span>
+    ) : (
+      <span className="text-tenue-fg">Por servicio</span>
+    )
+  const receta = (p: ProductoFormulario) =>
+    conFarmacia(p) && p.vigencia.trim() ? `${p.vigencia} h` : null
+  const estado = (p: ProductoFormulario) => {
+    const faltan = faltanProducto(p)
+    return faltan.length ? (
+      <span
+        className={cn(insignia, 'border-aviso/30 bg-aviso/10 text-aviso')}
+        title={`Falta ${faltan.join(', ')}`}
+      >
+        Incompleto
+      </span>
+    ) : (
+      <span className={cn(insignia, 'border-exito/30 bg-exito/10 text-exito')}>
+        <span className="size-1.5 rounded-full bg-exito" aria-hidden="true" />
+        Completo
+      </span>
+    )
+  }
+  const nombreDe = (p: ProductoFormulario, i: number) =>
+    nombreNormal(p.nombre) || `Producto ${i + 1}`
+  const acciones = (p: ProductoFormulario, nombre: string) => (
+    <div className="flex shrink-0 justify-end gap-1">
+      <Boton
+        type="button"
+        variante="fantasma"
+        tamano="icono"
+        onClick={() => setEditando({ clave: p._key, antes: p })}
+        aria-label={`Editar ${nombre}`}
+        title="Editar"
+      >
+        <Pencil aria-hidden="true" />
+      </Boton>
+      <Boton
+        type="button"
+        variante="fantasma"
+        tamano="icono"
+        onClick={() => quitar(p)}
+        aria-label={`Quitar ${nombre}`}
+        title="Quitar"
+        className="hover:text-peligro"
+      >
+        <Trash2 aria-hidden="true" />
+      </Boton>
+    </div>
+  )
+  const contrato = (p: ProductoFormulario) => (
+    <p className="truncate text-xs text-tenue-fg">
+      {contratoDe(p) ?? 'Sin contrato'}
+      {!p.id && ' · sin guardar'}
+    </p>
+  )
+
+  return (
+    <div className="space-y-4">
+      {productoEditando ? (
+        formulario(productoEditando)
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-tenue-fg">
+              {productos.length === 0
+                ? 'Todavía no hay productos de este cliente.'
+                : `${productos.length} ${productos.length === 1 ? 'producto' : 'productos'}.`}
+            </p>
+            <Boton type="button" tamano="sm" onClick={abrirNuevo}>
+              <Plus aria-hidden="true" />
+              Agregar producto
+            </Boton>
+          </div>
+          {productos.length === 0 ? (
+            <div className="rounded-md border border-dashed border-borde px-6 py-10 text-center">
+              <Package className="mx-auto size-6 text-tenue-fg" aria-hidden="true" />
+              <p className="mt-3 font-display text-sm font-medium">Todavía no hay productos</p>
+              <p className="mx-auto mt-1 max-w-sm text-sm text-tenue-fg">
+                Agrega cada producto con los servicios que cubre y sus condiciones.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Computadora: la tabla. */}
+              <div className="hidden overflow-hidden rounded-md border border-borde bg-superficie md:block">
+                <table className="w-full table-fixed text-sm">
+                  <thead>
+                    <tr className="border-b border-borde bg-superficie-hundida text-left">
+                      <Th>Producto</Th>
+                      <Th className="w-[30%]">Servicios</Th>
+                      <Th className="w-[9.5rem]">Tope común</Th>
+                      <Th className="w-[5.5rem]">Receta</Th>
+                      <Th className="w-[8rem]">Estado</Th>
+                      <th className="w-[6rem] px-4 py-2.5">
+                        <span className="sr-only">Acciones</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productos.map((p, i) => {
+                      const nombre = nombreDe(p, i)
+                      return (
+                        <tr
+                          key={p._key}
+                          className="border-b border-borde last:border-b-0 hover:bg-tenue/50"
+                        >
+                          <td className="px-4 py-3">
+                            <p className="truncate font-medium" title={nombre}>
+                              {nombre}
+                            </p>
+                            {contrato(p)}
+                          </td>
+                          <td className="px-4 py-3">{servicios(p, true)}</td>
+                          <td className="px-4 py-3 text-xs">{topeComun(p)}</td>
+                          <td className="tabular px-4 py-3 text-xs">
+                            {receta(p) ?? <span className="text-tenue-fg">—</span>}
+                          </td>
+                          <td className="px-4 py-3">{estado(p)}</td>
+                          <td className="px-4 py-3">{acciones(p, nombre)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {/* Celular: una tarjeta por producto, sin tabla que se salga. */}
+              <ul className="space-y-3 md:hidden">
+                {productos.map((p, i) => {
+                  const nombre = nombreDe(p, i)
+                  return (
+                    <li key={p._key} className="rounded-md border border-borde bg-superficie p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{nombre}</p>
+                          {contrato(p)}
+                        </div>
+                        {acciones(p, nombre)}
+                      </div>
+                      <div className="mt-3">{servicios(p, false)}</div>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                        {estado(p)}
+                        <span>
+                          <span className="text-tenue-fg">Tope común: </span>
+                          {topeComun(p)}
+                        </span>
+                        {receta(p) && (
+                          <span>
+                            <span className="text-tenue-fg">Receta: </span>
+                            <span className="tabular">{receta(p)}</span>
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )}
+        </>
       )}
       <input
         ref={archivoVademecum}
@@ -1191,16 +1412,6 @@ export function ProductosPanel({
           onCambiar={(codigos) => poner(productoEligiendo._key, 'vademecumCodigos', codigos)}
         />
       )}
-      <Boton
-        type="button"
-        variante="contorno"
-        onClick={() =>
-          onCambiar([...productos, productoVacio(conDatos.length === 1 ? conDatos[0]!.id : '')])
-        }
-      >
-        <Plus aria-hidden="true" />
-        Agregar producto
-      </Boton>
     </div>
   )
 }
