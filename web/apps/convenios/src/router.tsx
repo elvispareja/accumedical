@@ -8,6 +8,7 @@ import { ArmazonApp, SoloFuncion } from '@/core/layout/ArmazonApp'
 import { ErrorPage } from '@/core/pages/ErrorPage'
 import { LoginPage } from '@/core/pages/LoginPage'
 import { AseguradoraFormPage } from '@/shared/aseguradoras/pages/AseguradoraFormPage'
+import { AseguradorasMapaPage } from '@/shared/aseguradoras/pages/AseguradorasMapaPage'
 import { AseguradorasPage } from '@/shared/aseguradoras/pages/AseguradorasPage'
 import { RedConvenioMapaPage } from '@/shared/aseguradoras/pages/RedConvenioMapaPage'
 import { RedConvenioPage } from '@/shared/aseguradoras/pages/RedConvenioPage'
@@ -62,6 +63,8 @@ export const router = createBrowserRouter(
         // La portada: las aseguradoras, para entrar a la red de cada una.
         { path: 'dashboard', element: <AseguradorasPage /> },
         { path: 'aseguradoras', element: <Navigate to="/dashboard" replace /> },
+        // El listado ofrece «Mapa» también aquí: sin esta ruta llevaba al login (9/11/2026).
+        { path: 'aseguradoras/mapa', element: <AseguradorasMapaPage /> },
         { path: 'aseguradoras/:id/editar', element: <AseguradoraFormPage /> },
         { path: 'red-convenio', element: <RedConvenioPage /> },
         { path: 'red-convenio/mapa', element: <RedConvenioMapaPage /> },

@@ -424,8 +424,10 @@ export function AseguradoraFormPage() {
   // Farmacovigilancia (6/11/2026): la vigencia de la receta va en cada producto y
   // la tarifa en el contrato. Los productos se guardan con la ficha, así que
   // miran lo marcado; el contrato se guarda aparte y mira lo guardado.
+  // La vista «basico» (la función Convenio) no trae módulos: sin el `?.` la
+  // pantalla se caía al abrir la red de una aseguradora en Convenios (9/11/2026).
   const farmaciaGuardada = Boolean(
-    detalle.data?.modulos.some((m) => m.codigo === 'farmacia' && m.activo),
+    detalle.data?.modulos?.some((m) => m.codigo === 'farmacia' && m.activo),
   )
 
   return (
