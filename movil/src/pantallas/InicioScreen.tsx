@@ -389,7 +389,9 @@ export function InicioScreen({ sesion, onSalir }: { sesion: Sesion; onSalir: () 
                 <View style={estilos.filaDato}>
                   <Ionicons name="mail-outline" size={15} color={colores.tenue} />
                   <Text style={estilos.dato} numberOfLines={2}>
-                    Avisado a: {item.correos.join(', ')}
+                    {/* Cada correo es {email, etiqueta}: sin el map, la tarjeta decía
+                        «Avisado a: [object Object]» (visto el 9/11/2026). */}
+                    Avisado a: {item.correos.map((c) => c.email).join(', ')}
                   </Text>
                 </View>
               )}

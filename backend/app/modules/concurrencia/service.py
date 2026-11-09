@@ -1348,8 +1348,15 @@ def ids_del_personal(
     ):
         for lado in ("antes", "despues"):
             valor = ((detalle or {}).get(lado) or {}).get("auditor_id")
-            if valor:
-                intervinieron.add(uuid.UUID(valor))
+            if not valor:
+                continue
+            # La auditoría no se corrige (nada se borra): una prueba manual del
+            # 27/10/2026 en el laboratorio dejó el texto "None" como auditor y
+            # este filtro respondía 500. Lo que no es un id se ignora al leer.
+            try:
+                intervinieron.add(uuid.UUID(str(valor)))
+            except ValueError:
+                continue
     return con_tramo, intervinieron
 
 
